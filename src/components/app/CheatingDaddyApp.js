@@ -607,7 +607,7 @@ export class CheatingDaddyApp extends LitElement {
             }
             success = await cheatingDaddy.initializeCloud(this.selectedProfile);
         } else if (providerMode === 'local') {
-            success = await cheatingDaddy.initializeLocal(this.selectedProfile);
+            success = await cheatingDaddy.initializeLocal(this.selectedProfile, this.selectedLanguage);
         } else if (providerMode === 'groq') {
             const groqKey = await cheatingDaddy.storage.getGroqApiKey();
             if (!groqKey || groqKey.trim() === '') {
