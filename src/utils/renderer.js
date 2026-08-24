@@ -379,6 +379,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         stopCapture();
         return false;
     }
+}
 
 function setupLinuxMicProcessing(micStream) {
     // Setup microphone audio processing for Linux
