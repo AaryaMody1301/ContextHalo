@@ -20,6 +20,7 @@ let whisperProcess = null;
 let whisperBaseUrl = null;
 let localConversationHistory = [];
 let currentSystemPrompt = null;
+let currentLanguage = 'en';
 let isLocalActive = false;
 let initializationController = null;
 let llamaCacheSnapshot = new Set();
@@ -140,7 +141,7 @@ async function transcribeAudio(pcm16kBuffer) {
     formData.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'speech.wav');
     formData.append('response_format', 'json');
     formData.append('temperature', '0.0');
-    formData.append('language', 'en');
+    formData.append('language', currentLanguage || 'en');
 
     const response = await fetch(`${whisperBaseUrl}/inference`, {
         method: 'POST',
@@ -422,8 +423,9 @@ async function startLlamaServer(executablePath, modelPath, projectorPath) {
     await waitForServer(`${llamaBaseUrl}/health`, llamaProcess, 30 * 60 * 1000);
 }
 
-async function initializeLocalSession(model, whisperModel, profile, customPrompt) {
-    console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile });
+async function initializeLocalSession(model, whisperModel, profile, customPrompt, language = 'en-US') {
+    currentLanguage = String(language || 'en').split('-')[0] || 'en';
+    console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile, language: currentLanguage });
     sendToRenderer('session-initializing', true);
 
     try {
@@ -504,6 +506,7 @@ function closeLocalSession() {
     resampleRemainder = Buffer.alloc(0);
     localConversationHistory = [];
     currentSystemPrompt = null;
+    currentLanguage = 'en';
 }
 
 async function cancelLocalInitialization() {
