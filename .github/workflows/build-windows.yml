@@ -46,13 +46,18 @@ jobs:
       - name: Prepare Windows release files
         shell: pwsh
         run: |
-          $packageDir = Get-ChildItem -Path "out" -Directory |
-            Where-Object { $_.Name -match '(?i)win32-x64$' } |
+          $packageDir = Get-ChildItem -Path "out" -Directory -Recurse |
+            Where-Object {
+              (Get-ChildItem $_.FullName -Recurse -File -Filter "*.exe" -ErrorAction SilentlyContinue).Count -gt 0 -and
+              (Test-Path (Join-Path $_.FullName "resources"))
+            } |
             Select-Object -First 1
 
           if (-not $packageDir) {
-            $packageDir = Get-ChildItem -Path "out" -Directory |
-              Where-Object { $_.Name -notmatch '(?i)^make$' } |
+            $packageDir = Get-ChildItem -Path "out" -Directory -Recurse |
+              Where-Object {
+                (Get-ChildItem $_.FullName -Recurse -File -Filter "*.exe" -ErrorAction SilentlyContinue).Count -gt 0
+              } |
               Select-Object -First 1
           }
 
