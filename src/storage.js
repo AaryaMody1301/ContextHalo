@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
 const DEFAULT_CREDENTIALS = {
     apiKey: '',
     groqApiKey: '',
+    cloudToken: '',
 };
 
 const DEFAULT_PREFERENCES = {
