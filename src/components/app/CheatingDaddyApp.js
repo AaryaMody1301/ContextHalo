@@ -423,23 +423,13 @@ export class CheatingDaddyApp extends LitElement {
     async _checkForUpdates() {
         try {
             this._localVersion = await cheatingDaddy.getVersion();
+            // This fork's portable releases are identified by GitHub release tags,
+            // while the app package version is currently static. Do not compare
+            // against the original upstream repository and generate false updates.
+            this._updateAvailable = false;
             this.requestUpdate();
-
-            const res = await fetch('https://raw.githubusercontent.com/sohzm/cheating-daddy/refs/heads/master/package.json');
-            if (!res.ok) return;
-            const remote = await res.json();
-            const remoteVersion = remote.version;
-
-            const toNum = v => v.split('.').map(Number);
-            const [rMaj, rMin, rPatch] = toNum(remoteVersion);
-            const [lMaj, lMin, lPatch] = toNum(this._localVersion);
-
-            if (rMaj > lMaj || (rMaj === lMaj && rMin > lMin) || (rMaj === lMaj && rMin === lMin && rPatch > lPatch)) {
-                this._updateAvailable = true;
-                this.requestUpdate();
-            }
         } catch (e) {
-            // silently ignore
+            // Keep the UI usable if version retrieval fails.
         }
     }
 
@@ -597,49 +587,59 @@ export class CheatingDaddyApp extends LitElement {
 
     async handleStart() {
         const prefs = await cheatingDaddy.storage.getPreferences();
-        const providerMode = prefs.providerMode === 'cloud' ? 'byok' : prefs.providerMode || 'byok';
+        const providerMode = prefs.providerMode || 'byok';
+
+        const failStart = message => {
+            this.setStatus(message);
+            const mainView = this.shadowRoot.querySelector('main-view');
+            if (mainView && mainView.triggerApiKeyError) {
+                mainView.triggerApiKeyError();
+            }
+        };
+
+        let success = false;
 
         if (providerMode === 'cloud') {
             const creds = await cheatingDaddy.storage.getCredentials();
             if (!creds.cloudToken || creds.cloudToken.trim() === '') {
-                const mainView = this.shadowRoot.querySelector('main-view');
-                if (mainView && mainView.triggerApiKeyError) {
-                    mainView.triggerApiKeyError();
-                }
+                failStart('No cloud token configured');
                 return;
             }
-
-            const success = await cheatingDaddy.initializeCloud(this.selectedProfile);
-            if (!success) {
-                const mainView = this.shadowRoot.querySelector('main-view');
-                if (mainView && mainView.triggerApiKeyError) {
-                    mainView.triggerApiKeyError();
-                }
-                return;
-            }
+            success = await cheatingDaddy.initializeCloud(this.selectedProfile);
         } else if (providerMode === 'local') {
-            const success = await cheatingDaddy.initializeLocal(this.selectedProfile);
-            if (!success) {
-                const mainView = this.shadowRoot.querySelector('main-view');
-                if (mainView && mainView.triggerApiKeyError) {
-                    mainView.triggerApiKeyError();
-                }
+            success = await cheatingDaddy.initializeLocal(this.selectedProfile);
+        } else if (providerMode === 'groq') {
+            const groqKey = await cheatingDaddy.storage.getGroqApiKey();
+            if (!groqKey || groqKey.trim() === '') {
+                failStart('No Groq API key configured');
                 return;
             }
+            success = await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
         } else {
             const apiKey = await cheatingDaddy.storage.getApiKey();
-            if (!apiKey || apiKey === '') {
-                const mainView = this.shadowRoot.querySelector('main-view');
-                if (mainView && mainView.triggerApiKeyError) {
-                    mainView.triggerApiKeyError();
-                }
+            if (!apiKey || apiKey.trim() === '') {
+                failStart('No Gemini API key configured');
                 return;
             }
-
-            await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            success = await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
         }
 
-        cheatingDaddy.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        // Never enter the assistant screen after a provider initialization failure.
+        if (!success) {
+            failStart(this.statusText || 'Could not connect to the selected AI provider');
+            return;
+        }
+
+        const captureStarted = await cheatingDaddy.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        if (!captureStarted) {
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('close-session');
+            }
+            failStart(this.statusText || 'Could not start screen/audio capture');
+            return;
+        }
+
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();
@@ -909,7 +909,7 @@ export class CheatingDaddyApp extends LitElement {
                     ${
                         this._updateAvailable
                             ? html`
-                                  <button class="update-btn" @click=${() => this.handleExternalLinkClick('https://cheatingdaddy.com/download')}>
+                                  <button class="update-btn" @click=${() => this.handleExternalLinkClick('https://github.com/AaryaMody1301/Updated_Public_Repo/releases')}>
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                           <path
                                               fill="none"
