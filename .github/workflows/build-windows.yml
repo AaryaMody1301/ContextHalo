@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows Portable EXE
 
 on:
   push:
@@ -8,21 +8,28 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: windows-portable-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
+    name: Build standalone Windows x64 EXE
     runs-on: windows-latest
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
+          package-manager-cache: false
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
+      - name: Install dependencies and refresh lockfile
+        shell: pwsh
+        run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Verify application syntax
         shell: pwsh
@@ -31,71 +38,35 @@ jobs:
           node --check src/utils/gemini.js
           node --check src/storage.js
 
-      - name: Package Windows application
+      - name: Build portable Windows EXE
         shell: pwsh
-        run: npm run package -- --platform=win32 --arch=x64
+        run: npm run build:portable -- --publish never
 
-      - name: Inspect package output
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "out")) {
-            throw "Electron Forge did not create the out directory."
-          }
-          Get-ChildItem -Path "out" -Recurse -File | Select-Object FullName, Length
-
-      - name: Prepare Windows release files
+      - name: Verify portable EXE
         shell: pwsh
         run: |
-          $packageDir = Get-ChildItem -Path "out" -Directory -Recurse |
-            Where-Object {
-              (Get-ChildItem $_.FullName -Recurse -File -Filter "*.exe" -ErrorAction SilentlyContinue).Count -gt 0 -and
-              (Test-Path (Join-Path $_.FullName "resources"))
-            } |
-            Select-Object -First 1
-
-          if (-not $packageDir) {
-            $packageDir = Get-ChildItem -Path "out" -Directory -Recurse |
-              Where-Object {
-                (Get-ChildItem $_.FullName -Recurse -File -Filter "*.exe" -ErrorAction SilentlyContinue).Count -gt 0
-              } |
-              Select-Object -First 1
-          }
-
-          if (-not $packageDir) {
-            throw "Could not identify the packaged Windows application directory under out/."
-          }
-
-          $exe = Get-ChildItem -Path $packageDir.FullName -Recurse -File -Filter "*.exe" |
-            Select-Object -First 1
-
+          $exe = Get-ChildItem -Path "dist" -File -Filter "Cheating-Daddy-Windows-x64.exe" | Select-Object -First 1
           if (-not $exe) {
-            throw "No Windows executable was found inside $($packageDir.FullName)."
+            Write-Host "Contents of dist/:"
+            Get-ChildItem -Path "dist" -Recurse | Select-Object FullName, Length
+            throw "Portable Windows EXE was not produced."
           }
+          Write-Host "Portable EXE: $($exe.FullName)"
+          Write-Host "Size: $([math]::Round($exe.Length / 1MB, 2)) MB"
 
-          New-Item -ItemType Directory -Force -Path "release" | Out-Null
-          Copy-Item $exe.FullName "release/Cheating-Daddy-Windows-x64.exe" -Force
-          Compress-Archive -Path (Join-Path $packageDir.FullName '*') -DestinationPath "release/Cheating-Daddy-Windows-x64.zip" -Force
-
-          Write-Host "Package directory: $($packageDir.FullName)"
-          Write-Host "Executable: $($exe.FullName)"
-
-      - name: Upload Windows build artifact
+      - name: Upload portable EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Cheating-Daddy-Windows-x64
-          path: |
-            release/Cheating-Daddy-Windows-x64.exe
-            release/Cheating-Daddy-Windows-x64.zip
+          name: Cheating-Daddy-Windows-x64-Portable
+          path: dist/Cheating-Daddy-Windows-x64.exe
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish GitHub release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.8.0-build.${{ github.run_number }}
-          name: Cheating Daddy Windows Build ${{ github.run_number }}
+          tag_name: v0.8.0-portable.${{ github.run_number }}
+          name: Cheating Daddy Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: |
-            release/Cheating-Daddy-Windows-x64.exe
-            release/Cheating-Daddy-Windows-x64.zip
+          files: dist/Cheating-Daddy-Windows-x64.exe
