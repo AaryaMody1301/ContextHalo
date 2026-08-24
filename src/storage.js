@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const CONFIG_VERSION = 1;
+const CONFIG_VERSION = 2;
 
 // Default values
 const DEFAULT_CONFIG = {
@@ -111,55 +111,34 @@ function writeJsonFile(filePath, data) {
     }
 }
 
-// Check if we need to reset (no configVersion or wrong version)
-function needsReset() {
-    const configPath = getConfigPath();
-    if (!fs.existsSync(configPath)) {
-        return true;
-    }
-
-    try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        return !config.configVersion || config.configVersion !== CONFIG_VERSION;
-    } catch {
-        return true;
-    }
-}
-
-// Wipe and reinitialize the config directory
-function resetConfigDir() {
-    const configDir = getConfigDir();
-
-    console.log('Resetting config directory...');
-
-    // Remove existing directory if it exists
-    if (fs.existsSync(configDir)) {
-        fs.rmSync(configDir, { recursive: true, force: true });
-    }
-
-    // Create fresh directory structure
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.mkdirSync(getHistoryDir(), { recursive: true });
-
-    // Initialize with defaults
-    writeJsonFile(getConfigPath(), DEFAULT_CONFIG);
-    writeJsonFile(getCredentialsPath(), DEFAULT_CREDENTIALS);
-    writeJsonFile(getPreferencesPath(), DEFAULT_PREFERENCES);
-
-    console.log('Config directory initialized with defaults');
-}
-
-// Initialize storage - call this on app startup
+// Initialize or migrate storage without deleting user credentials, preferences,
+// limits, or history. Earlier versions wiped the entire configuration directory
+// whenever configVersion changed, which made normal upgrades destructive.
 function initializeStorage() {
-    if (needsReset()) {
-        resetConfigDir();
-    } else {
-        // Ensure history directory exists
-        const historyDir = getHistoryDir();
-        if (!fs.existsSync(historyDir)) {
-            fs.mkdirSync(historyDir, { recursive: true });
-        }
+    const configDir = getConfigDir();
+    if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
     }
+
+    const config = readJsonFile(getConfigPath(), {});
+    writeJsonFile(getConfigPath(), { ...DEFAULT_CONFIG, ...config, configVersion: CONFIG_VERSION });
+
+    const credentials = readJsonFile(getCredentialsPath(), {});
+    writeJsonFile(getCredentialsPath(), { ...DEFAULT_CREDENTIALS, ...credentials });
+
+    const preferences = readJsonFile(getPreferencesPath(), {});
+    writeJsonFile(getPreferencesPath(), { ...DEFAULT_PREFERENCES, ...preferences });
+
+    if (!fs.existsSync(getLimitsPath())) {
+        writeJsonFile(getLimitsPath(), DEFAULT_LIMITS);
+    }
+
+    const historyDir = getHistoryDir();
+    if (!fs.existsSync(historyDir)) {
+        fs.mkdirSync(historyDir, { recursive: true });
+    }
+
+    console.log('Storage initialized and migrated without deleting user data');
 }
 
 // ============ CONFIG ============
