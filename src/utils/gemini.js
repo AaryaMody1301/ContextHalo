@@ -14,7 +14,7 @@ function getLocalAi() {
     return _localai;
 }
 
-// Provider mode: 'byok', 'cloud', or 'local'
+// Provider mode: 'byok', 'groq', 'cloud', or 'local'
 let currentProviderMode = 'byok';
 
 // Groq conversation history for context
@@ -48,7 +48,7 @@ let systemAudioProc = null;
 let messageBuffer = '';
 let groqRequestStartedForTurn = false;
 
-const GROQ_MAX_COMPLETION_TOKENS = 16384;
+const GROQ_MAX_COMPLETION_TOKENS = 2048;
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
 
@@ -212,7 +212,7 @@ function hasGroqKey() {
 }
 
 function sendFinalTranscriptionToGroq() {
-    if (!hasGroqKey() || groqRequestStartedForTurn) {
+    if (currentProviderMode !== 'groq' || !hasGroqKey() || groqRequestStartedForTurn) {
         return;
     }
 
@@ -272,6 +272,18 @@ function getGroqReasoningOptions(model, disableThinking) {
     return {};
 }
 
+function formatGroqError(status, body, headers) {
+    if (status === 429) {
+        const retryAfter = headers?.get?.('retry-after');
+        const reset = headers?.get?.('x-ratelimit-reset-tokens') || headers?.get?.('x-ratelimit-reset-requests');
+        return retryAfter ? `Groq rate limit reached. Retry in ${retryAfter}s.` : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}.`;
+    }
+    if (status === 401) return 'Groq authentication failed. Check the API key.';
+    if (status === 403) return 'Groq request is not permitted for this key/model.';
+    if (status === 413) return 'Groq request is too large. Reduce context.';
+    return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
+}
+
 async function sendToGroq(transcription) {
     const groqApiKey = getGroqApiKey();
     if (!groqApiKey) {
@@ -326,7 +338,7 @@ async function sendToGroq(transcription) {
                 status: response.status,
                 body: errorText,
             });
-            sendToRenderer('update-status', `Groq error: ${response.status}`);
+            sendToRenderer('update-status', formatGroqError(response.status, errorText, response.headers));
             return;
         }
 
@@ -470,7 +482,7 @@ async function sendImageToGroq(base64Data, prompt) {
                 status: response.status,
                 body: errorText,
             });
-            return { success: false, error: `Groq error: ${response.status}` };
+            return { success: false, error: formatGroqError(response.status, errorText, response.headers) };
         }
 
         logTransportEvent('groq.image.http_response', {
@@ -742,8 +754,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             },
             config: {
                 responseModalities: [Modality.AUDIO],
-                proactivity: { proactiveAudio: true },
-                outputAudioTranscription: {},
+                                outputAudioTranscription: {},
                 tools: enabledTools,
                 // Enable speaker diarization
                 inputAudioTranscription: {
@@ -1197,7 +1208,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return result;
             }
 
-            const result = hasGroqKey() ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
+            const result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
             return result;
         } catch (error) {
             console.error('Error sending image:', error);
