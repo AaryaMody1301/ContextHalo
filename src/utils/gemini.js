@@ -1259,9 +1259,9 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return { success: false, error: 'Gemini session could not be initialized. Check the status message for details.' };
     });
 
-    ipcMain.handle('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt) => {
+    ipcMain.handle('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt, language = 'en-US') => {
         currentProviderMode = 'local';
-        const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt);
+        const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt, language);
         if (!success) {
             currentProviderMode = 'byok';
         }
