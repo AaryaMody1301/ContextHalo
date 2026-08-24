@@ -12,30 +12,85 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
+
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Verify application syntax
+        shell: pwsh
+        run: |
+          node --check src/index.js
+          node --check src/utils/gemini.js
+          node --check src/storage.js
+
       - name: Package Windows application
         shell: pwsh
         run: npm run package -- --platform=win32 --arch=x64
-      - name: Publish packaged app
+
+      - name: Inspect package output
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path out\cheating-daddy-win32-x64\* -DestinationPath release\Cheating-Daddy-Windows-x64.zip
-      - name: Upload artifact
+          if (-not (Test-Path "out")) {
+            throw "Electron Forge did not create the out directory."
+          }
+          Get-ChildItem -Path "out" -Recurse -File | Select-Object FullName, Length
+
+      - name: Prepare Windows release files
+        shell: pwsh
+        run: |
+          $packageDir = Get-ChildItem -Path "out" -Directory |
+            Where-Object { $_.Name -match '(?i)win32-x64$' } |
+            Select-Object -First 1
+
+          if (-not $packageDir) {
+            $packageDir = Get-ChildItem -Path "out" -Directory |
+              Where-Object { $_.Name -notmatch '(?i)^make$' } |
+              Select-Object -First 1
+          }
+
+          if (-not $packageDir) {
+            throw "Could not identify the packaged Windows application directory under out/."
+          }
+
+          $exe = Get-ChildItem -Path $packageDir.FullName -Recurse -File -Filter "*.exe" |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "No Windows executable was found inside $($packageDir.FullName)."
+          }
+
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+          Copy-Item $exe.FullName "release/Cheating-Daddy-Windows-x64.exe" -Force
+          Compress-Archive -Path (Join-Path $packageDir.FullName '*') -DestinationPath "release/Cheating-Daddy-Windows-x64.zip" -Force
+
+          Write-Host "Package directory: $($packageDir.FullName)"
+          Write-Host "Executable: $($exe.FullName)"
+
+      - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Cheating-Daddy-Windows-x64
-          path: release/Cheating-Daddy-Windows-x64.zip
+          path: |
+            release/Cheating-Daddy-Windows-x64.exe
+            release/Cheating-Daddy-Windows-x64.zip
           if-no-files-found: error
+          retention-days: 90
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.8.0-build.${{ github.run_number }}
           name: Cheating Daddy Windows Build ${{ github.run_number }}
-          files: release/Cheating-Daddy-Windows-x64.zip
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            release/Cheating-Daddy-Windows-x64.exe
+            release/Cheating-Daddy-Windows-x64.zip
