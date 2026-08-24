@@ -391,8 +391,9 @@ async function processGroqAudioQueue(sampleRate, language) {
         if (transcript) {
             currentTranscription = transcript;
             sendToRenderer('update-status', 'Generating Groq response...');
-            await sendToGroq(transcript);
+            const groqResult = await sendToGroq(transcript);
             currentTranscription = '';
+            return groqResult;
         }
         return { success: true };
     } catch (error) {
@@ -885,16 +886,13 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             },
             config: {
                 responseModalities: [Modality.AUDIO],
-                                outputAudioTranscription: {},
+                // Gemini 3.1 Live documents these as empty configuration
+                // objects. Speaker diarization fields are not valid Live API
+                // transcription settings and can cause an invalid setup request.
+                inputAudioTranscription: {},
+                outputAudioTranscription: {},
                 tools: enabledTools,
-                // Enable speaker diarization
-                inputAudioTranscription: {
-                    enableSpeakerDiarization: true,
-                    minSpeakerCount: 2,
-                    maxSpeakerCount: 2,
-                },
-                contextWindowCompression: { slidingWindow: {} },
-                speechConfig: { languageCode: language },
+                thinkingConfig: { thinkingLevel: 'minimal' },
                 systemInstruction: {
                     parts: [{ text: systemPrompt }],
                 },
