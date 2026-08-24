@@ -48,7 +48,13 @@ let systemAudioProc = null;
 let messageBuffer = '';
 let groqRequestStartedForTurn = false;
 
-const GROQ_MAX_COMPLETION_TOKENS = 2048;
+const GROQ_MAX_COMPLETION_TOKENS = 768;
+const GROQ_MAX_HISTORY_MESSAGES = 8;
+const GROQ_MAX_HISTORY_CHARS = 12000;
+const GROQ_MAX_SYSTEM_PROMPT_CHARS = 6000;
+const GROQ_AUDIO_CHUNK_SECONDS = 8;
+let groqSystemAudioBuffer = Buffer.alloc(0);
+let groqTranscriptionInFlight = false;
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
 
@@ -272,16 +278,108 @@ function getGroqReasoningOptions(model, disableThinking) {
     return {};
 }
 
+function compactGroqErrorBody(body) {
+    try {
+        const parsed = JSON.parse(body);
+        return parsed?.error?.message || parsed?.message || body;
+    } catch {
+        return body || '';
+    }
+}
+
 function formatGroqError(status, body, headers) {
     if (status === 429) {
         const retryAfter = headers?.get?.('retry-after');
         const reset = headers?.get?.('x-ratelimit-reset-tokens') || headers?.get?.('x-ratelimit-reset-requests');
-        return retryAfter ? `Groq rate limit reached. Retry in ${retryAfter}s.` : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}.`;
+        const detail = compactGroqErrorBody(body);
+        return retryAfter ? `Groq rate limit reached. Retry in ${retryAfter}s.` : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}${detail ? `: ${detail.slice(0, 180)}` : '.'}`;
     }
     if (status === 401) return 'Groq authentication failed. Check the API key.';
     if (status === 403) return 'Groq request is not permitted for this key/model.';
     if (status === 413) return 'Groq request is too large. Reduce context.';
     return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
+}
+
+// Groq-only voice path. This deliberately avoids opening Gemini Live when a
+// Groq key is selected, so Gemini quota exhaustion cannot block Groq chats.
+function pcmToWavBuffer(pcm, sampleRate = 24000, channels = 1) {
+    const bitsPerSample = 16;
+    const blockAlign = channels * bitsPerSample / 8;
+    const byteRate = sampleRate * blockAlign;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcm.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(pcm.length, 40);
+    return Buffer.concat([header, pcm]);
+}
+
+function getPcmSampleRate(mimeType) {
+    const match = String(mimeType || '').match(/rate=(\d+)/i);
+    return match ? Number(match[1]) : 24000;
+}
+
+async function sendGroqSystemAudio(data, mimeType, language = 'en-US') {
+    if (groqTranscriptionInFlight) return { success: true };
+
+    const sampleRate = getPcmSampleRate(mimeType);
+    const pcm = Buffer.from(data, 'base64');
+    groqSystemAudioBuffer = Buffer.concat([groqSystemAudioBuffer, pcm]);
+
+    // Keep requests comfortably below Groq's 20 RPM free-tier Whisper limit.
+    const minBytes = sampleRate * 2 * GROQ_AUDIO_CHUNK_SECONDS;
+    if (groqSystemAudioBuffer.length < minBytes) return { success: true };
+
+    const chunk = groqSystemAudioBuffer;
+    groqSystemAudioBuffer = Buffer.alloc(0);
+    groqTranscriptionInFlight = true;
+
+    try {
+        const wav = pcmToWavBuffer(chunk, sampleRate, 1);
+        const form = new FormData();
+        form.append('model', 'whisper-large-v3-turbo');
+        form.append('language', String(language).split('-')[0]);
+        form.append('response_format', 'json');
+        form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
+
+        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${getGroqApiKey()}` },
+            body: form,
+        });
+
+        const body = await response.text();
+        if (!response.ok) {
+            const message = formatGroqError(response.status, body, response.headers);
+            console.error('Groq transcription error:', response.status, body);
+            sendToRenderer('update-status', message);
+            return { success: false, error: message };
+        }
+
+        const transcript = JSON.parse(body)?.text?.trim();
+        if (transcript) {
+            currentTranscription = transcript;
+            sendToRenderer('update-status', 'Generating Groq response...');
+            await sendToGroq(transcript);
+            currentTranscription = '';
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Groq audio transcription failed:', error);
+        sendToRenderer('update-status', 'Groq transcription error: ' + error.message);
+        return { success: false, error: error.message };
+    } finally {
+        groqTranscriptionInFlight = false;
+    }
 }
 
 async function sendToGroq(transcription) {
@@ -310,9 +408,10 @@ async function sendToGroq(transcription) {
         content: transcription.trim(),
     });
 
-    if (groqConversationHistory.length > 20) {
-        groqConversationHistory = groqConversationHistory.slice(-20);
+    if (groqConversationHistory.length > GROQ_MAX_HISTORY_MESSAGES) {
+        groqConversationHistory = groqConversationHistory.slice(-GROQ_MAX_HISTORY_MESSAGES);
     }
+    groqConversationHistory = trimConversationHistoryForGemma(groqConversationHistory, GROQ_MAX_HISTORY_CHARS);
 
     try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -323,7 +422,7 @@ async function sendToGroq(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                messages: [{ role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' }, ...groqConversationHistory],
+                messages: [{ role: 'system', content: (currentSystemPrompt || 'You are a helpful assistant.').slice(0, GROQ_MAX_SYSTEM_PROMPT_CHARS) }, ...groqConversationHistory],
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -338,9 +437,9 @@ async function sendToGroq(transcription) {
                 status: response.status,
                 body: errorText,
             });
-            sendToRenderer('update-status', formatGroqError(response.status, errorText, response.headers));
-            currentProviderMode = 'byok';
-            sendToRenderer('update-status', 'Groq unavailable; switched to Gemini Live.');
+            const message = formatGroqError(response.status, errorText, response.headers);
+            sendToRenderer('update-status', message);
+            sendToRenderer('new-response', message);
             return;
         }
 
@@ -1086,7 +1185,22 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US') => {
-        currentProviderMode = hasGroqKey() ? 'groq' : 'byok';
+        // A configured Groq key means Groq is the active provider. Do not open a
+        // Gemini Live session in that mode: doing so made Groq chats fail whenever
+        // the unrelated Gemini project quota was exhausted.
+        if (hasGroqKey()) {
+            currentProviderMode = 'groq';
+            const enabledTools = await getEnabledTools();
+            currentSystemPrompt = getSystemPrompt(profile, customPrompt, enabledTools.some(tool => tool.googleSearch));
+            initializeNewSession(profile, customPrompt);
+            sessionParams = { language };
+            reconnectAttempts = 0;
+            groqSystemAudioBuffer = Buffer.alloc(0);
+            sendToRenderer('update-status', 'Groq connected');
+            return true;
+        }
+
+        currentProviderMode = 'byok';
         const session = await initializeGeminiSession(apiKey, customPrompt, profile, language);
         if (session) {
             geminiSessionRef.current = session;
@@ -1133,6 +1247,9 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: error.message };
             }
         }
+        if (currentProviderMode === 'groq') {
+            return await sendGroqSystemAudio(data, mimeType, sessionParams?.language || 'en-US');
+        }
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             process.stdout.write('.');
@@ -1168,6 +1285,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: error.message };
             }
         }
+        // Candidate microphone audio is not sent back as a new Groq question.
+        if (currentProviderMode === 'groq') return { success: true };
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             process.stdout.write(',');
@@ -1244,16 +1363,17 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             }
         }
 
+        if (currentProviderMode === 'groq') {
+            console.log('Sending text message to Groq:', text);
+            groqRequestStartedForTurn = true;
+            await sendToGroq(text.trim());
+            return { success: true };
+        }
+
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
 
         try {
             console.log('Sending text message:', text);
-
-            if (currentProviderMode === 'groq') {
-                groqRequestStartedForTurn = true;
-                await sendToGroq(text.trim());
-                return { success: true };
-            }
 
             await geminiSessionRef.current.sendRealtimeInput({ text: text.trim() });
             return { success: true };
@@ -1305,6 +1425,15 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 getLocalAi().closeLocalSession();
                 currentProviderMode = 'byok';
                 closeTransportLog();
+                return { success: true };
+            }
+
+            if (currentProviderMode === 'groq') {
+                groqSystemAudioBuffer = Buffer.alloc(0);
+                groqConversationHistory = [];
+                currentProviderMode = 'byok';
+                closeTransportLog();
+                sendToRenderer('update-status', 'Session closed');
                 return { success: true };
             }
 
