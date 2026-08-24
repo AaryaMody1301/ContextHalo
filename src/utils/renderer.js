@@ -141,16 +141,26 @@ function arrayBufferToBase64(buffer) {
 }
 
 async function initializeGemini(profile = 'interview', language = 'en-US') {
-    const apiKey = await storage.getApiKey();
-    if (apiKey) {
-        const prefs = await storage.getPreferences();
-        const success = await ipcRenderer.invoke('initialize-gemini', apiKey, prefs.customPrompt || '', profile, language);
-        if (success) {
-            cheatingDaddy.setStatus('Live');
-        } else {
-            cheatingDaddy.setStatus('error');
-        }
+    const prefs = await storage.getPreferences();
+    const provider = prefs.providerMode === 'groq' ? 'groq' : 'byok';
+    const apiKey = provider === 'groq' ? '' : await storage.getApiKey();
+
+    const result = await ipcRenderer.invoke(
+        'initialize-gemini',
+        apiKey || '',
+        prefs.customPrompt || '',
+        profile,
+        language,
+        provider
+    );
+
+    if (result?.success) {
+        cheatingDaddy.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Live');
+        return true;
     }
+
+    cheatingDaddy.setStatus(result?.error || 'Connection failed');
+    return false;
 }
 
 async function initializeLocal(profile = 'interview') {
@@ -362,11 +372,13 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
         // Manual mode only - screenshots captured on demand via shortcut
         console.log('Manual mode enabled - screenshots will be captured on demand only');
+        return true;
     } catch (err) {
         console.error('Error starting capture:', err);
-        cheatingDaddy.setStatus('error');
+        cheatingDaddy.setStatus('Capture failed: ' + err.message);
+        stopCapture();
+        return false;
     }
-}
 
 function setupLinuxMicProcessing(micStream) {
     // Setup microphone audio processing for Linux
