@@ -27,9 +27,9 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - name: Install dependencies and refresh lockfile
+      - name: Install locked dependencies
         shell: pwsh
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Verify application syntax
         shell: pwsh
