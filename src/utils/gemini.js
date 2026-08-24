@@ -339,6 +339,8 @@ async function sendToGroq(transcription) {
                 body: errorText,
             });
             sendToRenderer('update-status', formatGroqError(response.status, errorText, response.headers));
+            currentProviderMode = 'byok';
+            sendToRenderer('update-status', 'Groq unavailable; switched to Gemini Live.');
             return;
         }
 
@@ -699,7 +701,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         sendFinalTranscriptionToGroq();
                     }
 
-                    if (!hasGroqKey() && message.serverContent?.outputTranscription?.text) {
+                    if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
                         const isFirstChunk = messageBuffer === '';
                         messageBuffer += message.serverContent.outputTranscription.text;
                         sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
@@ -707,7 +709,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
                     if (message.serverContent?.generationComplete) {
                         if (currentTranscription.trim() !== '') {
-                            if (!hasGroqKey() && messageBuffer.trim() !== '') {
+                            if (currentProviderMode !== 'groq' && messageBuffer.trim() !== '') {
                                 saveConversationTurn(currentTranscription, messageBuffer);
                             }
                             currentTranscription = '';
@@ -1084,7 +1086,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US') => {
-        currentProviderMode = 'byok';
+        currentProviderMode = hasGroqKey() ? 'groq' : 'byok';
         const session = await initializeGeminiSession(apiKey, customPrompt, profile, language);
         if (session) {
             geminiSessionRef.current = session;
@@ -1247,9 +1249,10 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         try {
             console.log('Sending text message:', text);
 
-            if (hasGroqKey()) {
+            if (currentProviderMode === 'groq') {
                 groqRequestStartedForTurn = true;
-                sendToGroq(text.trim());
+                await sendToGroq(text.trim());
+                return { success: true };
             }
 
             await geminiSessionRef.current.sendRealtimeInput({ text: text.trim() });
