@@ -1,6 +1,6 @@
 {
     "name": "cheating-daddy",
-    "productName": "cheating-daddy",
+    "productName": "Cheating-Daddy",
     "version": "0.8.0",
     "description": "cheating daddy",
     "main": "src/index.js",
@@ -8,6 +8,7 @@
         "start": "electron-forge start",
         "package": "electron-forge package",
         "make": "electron-forge make",
+        "build:portable": "electron-builder --win portable --x64",
         "publish": "electron-forge publish",
         "lint": "echo \"No linting configured\""
     },
@@ -24,21 +25,41 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
-        "@google/genai": "^1.2.0",
+        "@google/genai": "^2.18.0",
         "electron-squirrel-startup": "^1.0.1",
         "ws": "^8.19.0"
     },
     "devDependencies": {
-        "@electron-forge/cli": "^7.8.1",
-        "@electron-forge/maker-deb": "^7.8.1",
-        "@electron-forge/maker-dmg": "^7.8.1",
-        "@electron-forge/maker-rpm": "^7.8.1",
-        "@electron-forge/maker-squirrel": "^7.8.1",
-        "@electron-forge/maker-zip": "^7.8.1",
-        "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
-        "@electron-forge/plugin-fuses": "^7.8.1",
+        "@electron-forge/cli": "^7.11.2",
+        "@electron-forge/maker-deb": "^7.11.2",
+        "@electron-forge/maker-dmg": "^7.11.2",
+        "@electron-forge/maker-rpm": "^7.11.2",
+        "@electron-forge/maker-squirrel": "^7.11.2",
+        "@electron-forge/maker-zip": "^7.11.2",
+        "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+        "@electron-forge/plugin-fuses": "^7.11.2",
         "@electron/fuses": "^1.8.0",
         "@reforged/maker-appimage": "^5.0.0",
-        "electron": "^30.0.5"
+        "electron": "^30.5.1",
+        "electron-builder": "^26.15.3"
+    },
+    "build": {
+        "appId": "com.aaryamody.cheatingdaddy",
+        "productName": "Cheating-Daddy",
+        "asar": true,
+        "directories": {
+            "output": "dist"
+        },
+        "win": {
+            "target": [
+                {
+                    "target": "portable",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
+            "artifactName": "Cheating-Daddy-Windows-x64.exe"
+        }
     }
 }
