@@ -73,12 +73,26 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download portable EXE
+        uses: actions/download-artifact@v5
+        with:
+          name: Cheating-Daddy-Windows-x64-Portable
+          path: release
+
       - name: Publish GitHub Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.8.0-portable.${{ github.run_number }}
           name: Cheating Daddy Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: dist/Cheating-Daddy-Windows-x64.exe
+          files: release/Cheating-Daddy-Windows-x64.exe
