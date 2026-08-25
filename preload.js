@@ -53,6 +53,7 @@ const allowedChannels = {
         'save-session-context',
         'save-conversation-turn',
         'save-screen-analysis',
+        'screen-analysis-started',
         'screen-analysis-complete',
         'reconnect-failed',
         'clear-sensitive-data',
@@ -107,8 +108,6 @@ const safeIpcRenderer = {
 
 contextBridge.exposeInMainWorld('electronAPI', safeIpcRenderer);
 
-// Backward-compatible shim for the existing renderer code while it migrates away
-// from direct Electron imports. Only the constrained IPC surface is exposed.
 contextBridge.exposeInMainWorld('require', moduleName => {
     if (moduleName === 'electron') {
         return { ipcRenderer: safeIpcRenderer };
