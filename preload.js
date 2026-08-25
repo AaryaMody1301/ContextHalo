@@ -27,6 +27,7 @@ const allowedChannels = {
         'quit-application',
         'open-external',
         'window-minimize',
+        'window-toggle-maximize',
         'toggle-window-visibility',
         'initialize-cloud',
         'initialize-gemini',
@@ -60,6 +61,9 @@ const allowedChannels = {
         'scroll-response-up',
         'scroll-response-down',
         'shortcut',
+        'whisper-downloading',
+        'local-ai-download-progress',
+        'groq-rate-limit',
     ],
 };
 
@@ -80,22 +84,30 @@ const safeIpcRenderer = {
     },
     on(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        return ipcRenderer.on(channel, listener);
+        ipcRenderer.on(channel, listener);
+        return safeIpcRenderer;
     },
     once(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        return ipcRenderer.once(channel, listener);
+        ipcRenderer.once(channel, listener);
+        return safeIpcRenderer;
     },
     removeListener(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        return ipcRenderer.removeListener(channel, listener);
+        ipcRenderer.removeListener(channel, listener);
+        return safeIpcRenderer;
+    },
+    removeAllListeners(channel) {
+        assertAllowed(allowedChannels.on, channel);
+        ipcRenderer.removeAllListeners(channel);
+        return safeIpcRenderer;
     },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', safeIpcRenderer);
 
 // Backward-compatible shim for the existing renderer code while it migrates away
-// from direct Electron imports. Only the safe IPC surface is exposed.
+// from direct Electron imports. Only the constrained IPC surface is exposed.
 contextBridge.exposeInMainWorld('require', moduleName => {
     if (moduleName === 'electron') {
         return { ipcRenderer: safeIpcRenderer };
