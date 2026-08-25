@@ -477,6 +477,7 @@ async function sendToGroq(transcription) {
             }),
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Groq API error:', response.status, errorText);
@@ -632,6 +633,7 @@ async function sendImageToGroq(base64Data, prompt) {
             }),
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Groq image API error:', response.status, errorText);
@@ -858,6 +860,19 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         }
                     }
 
+                    const modelParts = message.serverContent?.modelTurn?.parts || [];
+                    for (const part of modelParts) {
+                        if (part?.text && currentProviderMode !== 'groq') {
+                            const isFirstChunk = messageBuffer === '';
+                            messageBuffer += part.text;
+                            sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
+                        }
+                    }
+
+                    const resumeHandle = message.sessionResumptionUpdate?.newHandle
+                        || message.serverContent?.sessionResumptionUpdate?.newHandle;
+                    if (resumeHandle) geminiSessionResumptionHandle = resumeHandle;
+
                     if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
                         const isFirstChunk = messageBuffer === '';
                         messageBuffer += message.serverContent.outputTranscription.text;
@@ -918,6 +933,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 // transcription settings and can cause an invalid setup request.
                 inputAudioTranscription: {},
                 outputAudioTranscription: {},
+                sessionResumption: geminiSessionResumptionHandle
+                    ? { handle: geminiSessionResumptionHandle }
+                    : {},
                 tools: enabledTools,
                 thinkingConfig: { thinkingLevel: 'minimal' },
                 systemInstruction: {
@@ -996,6 +1014,11 @@ async function attemptReconnect() {
     // If we still have attempts left, try again
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         return attemptReconnect();
+    }
+
+    if (geminiSessionResumptionHandle) {
+        console.warn('Discarding stale Gemini session resumption handle after repeated failures');
+        geminiSessionResumptionHandle = null;
     }
 
     // Max attempts reached - notify frontend
