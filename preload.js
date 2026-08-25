@@ -108,6 +108,8 @@ const safeIpcRenderer = {
 
 contextBridge.exposeInMainWorld('electronAPI', safeIpcRenderer);
 
+// Backward-compatible shim for renderer code while still exposing only the
+// channel-filtered facade instead of Electron's real ipcRenderer object.
 contextBridge.exposeInMainWorld('require', moduleName => {
     if (moduleName === 'electron') {
         return { ipcRenderer: safeIpcRenderer };
@@ -118,7 +120,4 @@ contextBridge.exposeInMainWorld('require', moduleName => {
 contextBridge.exposeInMainWorld('process', {
     platform: process.platform,
     arch: process.arch,
-    env: {
-        NODE_ENV: process.env.NODE_ENV || 'production',
-    },
 });
