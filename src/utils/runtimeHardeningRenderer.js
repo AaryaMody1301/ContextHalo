@@ -273,6 +273,7 @@ async function patchMainViewPlatformGuard() {
 
     const proto = MainView.prototype;
     const originalSaveMode = proto._saveMode;
+    const originalLoadFromStorage = proto._loadFromStorage;
     const supported = ['win32', 'darwin'].includes(window.process.platform);
 
     proto._saveMode = async function (mode) {
@@ -281,6 +282,14 @@ async function patchMainViewPlatformGuard() {
             return;
         }
         return originalSaveMode.call(this, mode);
+    };
+
+    proto._loadFromStorage = async function (...args) {
+        const result = await originalLoadFromStorage.apply(this, args);
+        if (!supported && this._mode === 'local') {
+            await originalSaveMode.call(this, 'byok');
+        }
+        return result;
     };
 
     proto.__platformHardened = true;
