@@ -13,10 +13,12 @@ const {
     installWindowsIpcHardening,
     setupWindowsWindowHardening,
 } = require('./utils/windowsRuntimeMain');
+const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 
-// Provider networking and SDK wrappers must be installed before gemini.js
-// captures fetch/@google/genai references.
+// Provider networking, Local AI compatibility and SDK wrappers must be installed
+// before gemini.js/localai.js capture their dependencies.
 installWindowsProviderTransport();
+installWindowsLocalAiRuntime();
 installProviderRuntimeHardening();
 installAnalyzeProviderFallback();
 
