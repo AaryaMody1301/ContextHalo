@@ -271,16 +271,23 @@ async function runWithProviderScope(label, timeoutMs, fn) {
     const parent = providerScope.getStore();
     const controller = new AbortController();
     const parentSignal = parent?.signal || null;
-    const signals = parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal;
+    const signal = parentSignal ? AbortSignal.any([controller.signal, parentSignal]) : controller.signal;
     const deadline = Math.min(parent?.deadline || Number.POSITIVE_INFINITY, Date.now() + timeoutMs);
-    const timer = setTimeout(() => {
-        if (!controller.signal.aborted) controller.abort(createAbortError(`${label} timed out after ${Math.ceil(timeoutMs / 1000)} seconds`));
-    }, timeoutMs);
+    const timeoutError = createAbortError(`${label} timed out after ${Math.ceil(timeoutMs / 1000)} seconds`);
+    let timer = null;
+
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            if (!controller.signal.aborted) controller.abort(timeoutError);
+            reject(timeoutError);
+        }, timeoutMs);
+    });
 
     try {
-        return await providerScope.run({ label, signal: signals, deadline }, fn);
+        const workPromise = providerScope.run({ label, signal, deadline }, () => Promise.resolve().then(fn));
+        return await Promise.race([workPromise, timeoutPromise]);
     } finally {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
     }
 }
 
@@ -298,6 +305,10 @@ function resetProviderSession() {
     sessionController = new AbortController();
 }
 
+function setFetchImplementationForTests(fetchImplementation) {
+    originalFetch = fetchImplementation;
+}
+
 module.exports = {
     installWindowsProviderTransport,
     runWithProviderScope,
@@ -306,5 +317,7 @@ module.exports = {
     classifyProviderRequest,
     parseRetryAfterMs,
     tuneProviderRequest,
+    boundedFetch,
+    setFetchImplementationForTests,
     POLICIES,
 };
