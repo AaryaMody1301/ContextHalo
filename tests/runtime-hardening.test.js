@@ -7,7 +7,7 @@ function read(relativePath) {
     return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 }
 
-test('Analyze Screen uses serialized retries and dedicated lifecycle events', () => {
+test('Analyze Screen uses serialized retries, stream guards, and lifecycle events', () => {
     const main = read('src/utils/runtimeHardeningMain.js');
     const renderer = read('src/utils/runtimeHardeningRenderer.js');
     const preload = read('preload.js');
@@ -15,6 +15,9 @@ test('Analyze Screen uses serialized retries and dedicated lifecycle events', ()
     assert.match(main, /imageRequestQueue/);
     assert.match(main, /callWithProviderRetry/);
     assert.equal(main.includes('/\\b409\\b/i'), true);
+    assert.match(main, /Empty provider response/);
+    assert.match(main, /Provider stream timed out/);
+    assert.match(main, /normalizeImageResult/);
     assert.match(main, /screen-analysis-started/);
     assert.match(main, /screen-analysis-complete/);
     assert.match(renderer, /runAnalyzeScreen/);
@@ -33,7 +36,7 @@ test('global shortcut and duplicate session start share guarded renderer paths',
     assert.match(renderer, /session-initializing/);
 });
 
-test('preload permits required runtime events and safe listener cleanup', () => {
+test('preload permits required runtime events and exposes safe platform architecture', () => {
     const preload = read('preload.js');
 
     assert.match(preload, /whisper-downloading/);
@@ -41,16 +44,18 @@ test('preload permits required runtime events and safe listener cleanup', () => 
     assert.match(preload, /groq-rate-limit/);
     assert.match(preload, /removeAllListeners\(channel\)/);
     assert.match(preload, /window-toggle-maximize/);
+    assert.match(preload, /arch: process\.arch/);
 });
 
-test('audio modes and Groq voice use VAD instead of fixed eight-second questions', () => {
+test('audio modes and Groq voice use VAD without interleaving microphone and system PCM', () => {
     const main = read('src/utils/runtimeHardeningMain.js');
 
     assert.match(main, /GROQ_VAD/);
     assert.match(main, /silenceFramesRequired/);
     assert.match(main, /processGroqVadChunk/);
-    assert.match(main, /mode === 'mic_only'/);
-    assert.match(main, /channel === 'send-mic-audio-content'/);
+    assert.match(main, /runtimeProviderMode === 'groq'/);
+    assert.match(main, /if \(mode === 'mic_only'\) return channel === 'send-mic-audio-content'/);
+    assert.match(main, /return channel === 'send-audio-content'/);
     assert.match(main, /startRuntimeMacGroqAudio/);
 });
 
@@ -74,6 +79,19 @@ test('window fallback selects the primary display and search preference is stora
     assert.match(main, /storage\.getPreferences\(\)\.googleSearchEnabled === true/);
 });
 
+test('final renderer guard covers supported local architectures and Analyze lifecycle polish', () => {
+    const finalRenderer = read('src/utils/runtimeFinalRenderer.js');
+    const html = read('src/index.html');
+
+    assert.match(finalRenderer, /platform === 'win32' && arch === 'x64'/);
+    assert.match(finalRenderer, /platform === 'darwin'/);
+    assert.match(finalRenderer, /arch === 'arm64'/);
+    assert.match(finalRenderer, /patchResponseDeduplication/);
+    assert.match(finalRenderer, /screen-analysis-started/);
+    assert.match(finalRenderer, /screen-analysis-complete/);
+    assert.match(html, /runtimeFinalRenderer\.js/);
+});
+
 test('bootstrap installs hardening before provider IPC registration and accepts null keybind reset', () => {
     const index = read('src/index.js');
     const html = read('src/index.html');
@@ -82,4 +100,5 @@ test('bootstrap installs hardening before provider IPC registration and accepts 
     assert.match(index, /installIpcHandlerHardening/);
     assert.match(index, /keybinds !== null/);
     assert.match(html, /runtimeHardeningRenderer\.js/);
+    assert.match(html, /runtimeFinalRenderer\.js/);
 });
