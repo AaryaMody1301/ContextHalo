@@ -157,7 +157,8 @@ function installWindowsLocalAiRuntime() {
             return await originalEnsureLlamaModel(...args);
         } catch (error) {
             const message = String(error?.message || error);
-            if (!message.includes('checksum metadata')) throw error;
+            const metadataFailure = message.includes('checksum metadata') || message.includes('does not provide mmproj-BF16.gguf');
+            if (!metadataFailure) throw error;
             console.warn('Falling back to Hugging Face Xet metadata for Local AI model verification');
             return ensureXetLlamaModel(runtime, ...args);
         }
