@@ -1,8 +1,8 @@
 {
     "name": "cheating-daddy",
-    "productName": "Cheating-Daddy",
+    "productName": "Cheating Daddy",
     "version": "0.8.0",
-    "description": "cheating daddy",
+    "description": "A real-time desktop AI assistant for interviews, meetings, presentations, and screen-based workflows.",
     "main": "src/index.js",
     "scripts": {
         "start": "electron-forge start",
@@ -10,18 +10,20 @@
         "make": "electron-forge make",
         "build:portable": "electron-builder --win portable --x64",
         "publish": "electron-forge publish",
-        "lint": "echo \"No linting configured\""
+        "lint": "node -e \"console.log('Linting is not configured yet; run npm run check instead.')\"",
+        "check": "node --check src/index.js && node --check preload.js && node --check src/utils/gemini.js && node --check src/storage.js"
     },
     "keywords": [
-        "cheating daddy",
-        "cheating daddy ai",
-        "cheating daddy ai assistant",
-        "cheating daddy ai assistant for interviews",
-        "cheating daddy ai assistant for interviews"
+        "electron",
+        "desktop-ai",
+        "ai-assistant",
+        "gemini",
+        "groq",
+        "screen-analysis",
+        "interview-assistant"
     ],
     "author": {
-        "name": "sohzm",
-        "email": "sohambharambe9@gmail.com"
+        "name": "Aarya Mody"
     },
     "license": "GPL-3.0",
     "dependencies": {
@@ -45,7 +47,7 @@
     },
     "build": {
         "appId": "com.aaryamody.cheatingdaddy",
-        "productName": "Cheating-Daddy",
+        "productName": "Cheating Daddy",
         "asar": true,
         "directories": {
             "output": "dist"
