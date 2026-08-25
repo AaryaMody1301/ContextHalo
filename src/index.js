@@ -5,8 +5,18 @@ if (require('electron-squirrel-startup')) {
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
 const { installAnalyzeProviderFallback } = require('./utils/analyzeProviderFallback');
+const {
+    installWindowsProviderTransport,
+    abortProviderSession,
+} = require('./utils/windowsProviderTransport');
+const {
+    installWindowsIpcHardening,
+    setupWindowsWindowHardening,
+} = require('./utils/windowsRuntimeMain');
 
-// Patch provider construction before gemini.js destructures @google/genai.
+// Provider networking and SDK wrappers must be installed before gemini.js
+// captures fetch/@google/genai references.
+installWindowsProviderTransport();
 installProviderRuntimeHardening();
 installAnalyzeProviderFallback();
 
@@ -20,6 +30,7 @@ let mainWindow = null;
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
     setupRuntimeWindowHardening(mainWindow);
+    setupWindowsWindowHardening(mainWindow);
     return mainWindow;
 }
 
@@ -37,19 +48,19 @@ function validateObject(value) {
 
 app.whenReady().then(async () => {
     storage.initializeStorage();
-    if (process.platform === 'darwin') {
-        const { desktopCapturer } = require('electron');
-        desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
-    }
     createMainWindow();
 
-    // Wrap provider IPC registration once. The registered handlers retain the
-    // hardening wrappers after ipcMain.handle itself is restored.
+    // Install the Windows wrapper first, then the shared runtime wrapper. The
+    // resulting registered handler is Windows -> shared hardening -> provider,
+    // which gives the Windows layer authority to impose a single overall request
+    // deadline and to mix loopback/microphone PCM before provider routing.
+    const restoreWindowsIpc = installWindowsIpcHardening();
     const restoreIpcHandle = installIpcHandlerHardening();
     try {
         setupGeminiIpcHandlers(geminiSessionRef);
     } finally {
         restoreIpcHandle();
+        restoreWindowsIpc();
     }
 
     setupStorageIpcHandlers();
@@ -58,16 +69,13 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
     stopMacOSAudioCapture();
-    if (process.platform !== 'darwin') app.quit();
+    app.quit();
 });
 
 app.on('before-quit', () => {
+    abortProviderSession('Application is closing');
     stopMacOSAudioCapture();
     require('./utils/localai').closeLocalSession();
-});
-
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
 });
 
 function setupStorageIpcHandlers() {
