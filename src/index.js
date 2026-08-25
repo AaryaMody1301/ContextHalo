@@ -15,6 +15,8 @@ const {
 } = require('./utils/windowsRuntimeMain');
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 
+const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
+
 // Provider networking, Local AI compatibility and SDK wrappers must be installed
 // before gemini.js/localai.js capture their dependencies.
 installWindowsProviderTransport();
@@ -29,10 +31,55 @@ const storage = require('./storage');
 const geminiSessionRef = { current: null };
 let mainWindow = null;
 
+function installWindowsSmokeCheck(window) {
+    if (!WINDOWS_SMOKE_MODE) return;
+
+    let finished = false;
+    const finish = (success, detail) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        console.log(success ? `[Windows smoke] PASS: ${detail}` : `[Windows smoke] FAIL: ${detail}`);
+        setTimeout(() => app.exit(success ? 0 : 1), 50);
+    };
+
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 20 seconds'), 20000);
+
+    window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+        finish(false, `load failed (${errorCode}): ${errorDescription}`);
+    });
+    window.webContents.once('render-process-gone', (_event, details) => {
+        finish(false, `renderer process exited: ${details.reason}`);
+    });
+    window.webContents.once('did-finish-load', async () => {
+        try {
+            const result = await window.webContents.executeJavaScript(`
+                (async () => {
+                    await customElements.whenDefined('cheating-daddy-app');
+                    await customElements.whenDefined('main-view');
+                    await customElements.whenDefined('assistant-view');
+                    return {
+                        bridge: Boolean(window.electronAPI && window.require),
+                        platform: window.process?.platform,
+                        arch: window.process?.arch,
+                        app: Boolean(document.querySelector('cheating-daddy-app')),
+                    };
+                })()
+            `, true);
+
+            const ready = result?.bridge === true && result?.platform === 'win32' && result?.arch === 'x64' && result?.app === true;
+            finish(ready, ready ? 'sandboxed preload and renderer loaded' : `unexpected renderer state ${JSON.stringify(result)}`);
+        } catch (error) {
+            finish(false, error.message);
+        }
+    });
+}
+
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
     setupRuntimeWindowHardening(mainWindow);
     setupWindowsWindowHardening(mainWindow);
+    installWindowsSmokeCheck(mainWindow);
     return mainWindow;
 }
 
