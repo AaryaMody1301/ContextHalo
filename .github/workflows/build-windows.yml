@@ -2,14 +2,16 @@ name: Build Windows Portable EXE
 
 on:
   push:
+    branches: [main, phase-1-complete-fixes]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: windows-portable-${{ github.ref }}
+  group: windows-portable-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,35 +27,27 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          package-manager-cache: false
+          cache: npm
 
-      - name: Synchronize package lock
+      - name: Verify lockfile is in sync
         shell: pwsh
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Commit synchronized package lock
-        shell: pwsh
-        run: |
-          if (git diff --quiet -- package-lock.json) {
-            Write-Host "package-lock.json is already synchronized."
-          } else {
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "chore: synchronize package-lock.json"
-            git push
-          }
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
 
       - name: Install locked dependencies
         shell: pwsh
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Verify application syntax
         shell: pwsh
         run: |
-          node --check src/index.js
-          node --check src/utils/gemini.js
-          node --check src/storage.js
+          $files = Get-ChildItem -Path src -Recurse -Filter *.js
+          foreach ($file in $files) {
+            node --check $file.FullName
+          }
+
+      - name: Run tests
+        shell: pwsh
+        run: npm test --if-present
 
       - name: Build portable Windows EXE
         shell: pwsh
@@ -80,6 +74,7 @@ jobs:
           retention-days: 90
 
       - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.8.0-portable.${{ github.run_number }}
