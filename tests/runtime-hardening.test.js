@@ -14,7 +14,7 @@ test('Analyze Screen uses serialized retries and dedicated lifecycle events', ()
 
     assert.match(main, /imageRequestQueue/);
     assert.match(main, /callWithProviderRetry/);
-    assert.match(main, /\b409\b/);
+    assert.equal(main.includes('/\\b409\\b/i'), true);
     assert.match(main, /screen-analysis-started/);
     assert.match(main, /screen-analysis-complete/);
     assert.match(renderer, /runAnalyzeScreen/);
