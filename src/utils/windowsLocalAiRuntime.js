@@ -36,7 +36,7 @@ async function getHuggingFaceFileSha256(repository, filePath, signal) {
         signal,
     });
 
-    if (![200, 302, 307].includes(response.status)) {
+    if (response.status < 200 || response.status >= 400) {
         throw new Error(`Could not read Hugging Face metadata for ${filePath}: HTTP ${response.status}`);
     }
 
