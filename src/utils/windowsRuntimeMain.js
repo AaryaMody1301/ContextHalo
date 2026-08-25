@@ -1,4 +1,4 @@
-const { BrowserWindow, ipcMain } = require('electron');
+const { BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('electron');
 const storage = require('../storage');
 const {
     abortProviderSession,
@@ -209,6 +209,23 @@ function installWindowsIpcHardening() {
 
 function setupWindowsWindowHardening(mainWindow) {
     if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
+
+    // This runs after the legacy shared window hardening and intentionally owns
+    // the final Windows display-capture policy: primary display + WASAPI loopback.
+    session.defaultSession.setDisplayMediaRequestHandler(
+        async (request, callback) => {
+            try {
+                const sources = await desktopCapturer.getSources({ types: ['screen'] });
+                const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+                const source = sources.find(candidate => String(candidate.display_id) === primaryDisplayId) || sources[0];
+                callback(source ? { video: source, audio: 'loopback' } : {});
+            } catch (error) {
+                console.error('Windows display capture selection failed:', error);
+                callback({});
+            }
+        },
+        { useSystemPicker: false }
+    );
 
     const webContents = mainWindow.webContents;
     if (webContents.__windowsSendPatched) return;
