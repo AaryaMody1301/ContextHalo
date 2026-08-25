@@ -53,6 +53,7 @@ const allowedChannels = {
         'save-session-context',
         'save-conversation-turn',
         'save-screen-analysis',
+        'screen-analysis-complete',
         'reconnect-failed',
         'clear-sensitive-data',
         'click-through-toggled',
