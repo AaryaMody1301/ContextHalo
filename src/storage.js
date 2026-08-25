@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 
 const CONFIG_VERSION = 4;
+const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
     onboarded: false,
@@ -81,6 +82,75 @@ function writeJsonFile(filePath, data) {
     }
 }
 
+function getWindowsSafeStorage() {
+    if (os.platform() !== 'win32') return null;
+    try {
+        const electron = require('electron');
+        const safeStorage = electron && typeof electron === 'object' ? electron.safeStorage : null;
+        if (!safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function') return null;
+        return safeStorage.isEncryptionAvailable() ? safeStorage : null;
+    } catch {
+        return null;
+    }
+}
+
+function isEncryptedCredentialFile(raw) {
+    return raw?.format === CREDENTIAL_FORMAT && raw?.encrypted && typeof raw.encrypted === 'object';
+}
+
+function encryptCredential(value, safeStorage) {
+    if (!value) return '';
+    return safeStorage.encryptString(String(value)).toString('base64');
+}
+
+function decryptCredential(value, safeStorage) {
+    if (!value) return '';
+    return safeStorage.decryptString(Buffer.from(String(value), 'base64'));
+}
+
+function decodeStoredCredentials(raw) {
+    if (!isEncryptedCredentialFile(raw)) {
+        return { ...DEFAULT_CREDENTIALS, ...(raw && typeof raw === 'object' ? raw : {}) };
+    }
+
+    const safeStorage = getWindowsSafeStorage();
+    if (!safeStorage) {
+        console.warn('Windows credential encryption is unavailable; encrypted API keys cannot be read in this process.');
+        return null;
+    }
+
+    try {
+        return {
+            apiKey: decryptCredential(raw.encrypted.apiKey, safeStorage),
+            groqApiKey: decryptCredential(raw.encrypted.groqApiKey, safeStorage),
+            cloudToken: decryptCredential(raw.encrypted.cloudToken, safeStorage),
+        };
+    } catch (error) {
+        console.error('Could not decrypt Windows credentials:', error.message);
+        return null;
+    }
+}
+
+function writeCredentialsFile(credentials) {
+    const normalized = { ...DEFAULT_CREDENTIALS, ...(credentials || {}) };
+    const safeStorage = getWindowsSafeStorage();
+
+    if (safeStorage) {
+        return writeJsonFile(getCredentialsPath(), {
+            format: CREDENTIAL_FORMAT,
+            encrypted: {
+                apiKey: encryptCredential(normalized.apiKey, safeStorage),
+                groqApiKey: encryptCredential(normalized.groqApiKey, safeStorage),
+                cloudToken: encryptCredential(normalized.cloudToken, safeStorage),
+            },
+        });
+    }
+
+    // Plain JSON remains only as a development/test fallback when Electron's
+    // Windows DPAPI-backed safeStorage API is not available (for example node:test).
+    return writeJsonFile(getCredentialsPath(), normalized);
+}
+
 function normalizeFontSize(value) {
     const legacy = { small: 16, medium: 20, large: 24 };
     if (typeof value === 'string' && legacy[value]) return legacy[value];
@@ -130,7 +200,16 @@ function migratePreferences(rawPreferences = {}) {
 function initializeStorage() {
     fs.mkdirSync(getConfigDir(), { recursive: true });
     writeJsonFile(getConfigPath(), migrateConfig(readJsonFile(getConfigPath(), {})));
-    writeJsonFile(getCredentialsPath(), { ...DEFAULT_CREDENTIALS, ...readJsonFile(getCredentialsPath(), {}) });
+
+    const rawCredentials = readJsonFile(getCredentialsPath(), {});
+    if (isEncryptedCredentialFile(rawCredentials)) {
+        // Never rewrite an encrypted file if DPAPI is temporarily unavailable.
+        const decoded = decodeStoredCredentials(rawCredentials);
+        if (decoded && getWindowsSafeStorage()) writeCredentialsFile(decoded);
+    } else {
+        writeCredentialsFile({ ...DEFAULT_CREDENTIALS, ...rawCredentials });
+    }
+
     writeJsonFile(getPreferencesPath(), migratePreferences(readJsonFile(getPreferencesPath(), {})));
     if (!fs.existsSync(getLimitsPath())) writeJsonFile(getLimitsPath(), DEFAULT_LIMITS);
     fs.mkdirSync(getHistoryDir(), { recursive: true });
@@ -139,8 +218,11 @@ function initializeStorage() {
 function getConfig() { return migrateConfig(readJsonFile(getConfigPath(), {})); }
 function setConfig(config) { return writeJsonFile(getConfigPath(), migrateConfig({ ...getConfig(), ...config })); }
 function updateConfig(key, value) { return setConfig({ [key]: value }); }
-function getCredentials() { return { ...DEFAULT_CREDENTIALS, ...readJsonFile(getCredentialsPath(), {}) }; }
-function setCredentials(credentials) { return writeJsonFile(getCredentialsPath(), { ...getCredentials(), ...credentials }); }
+function getCredentials() {
+    const decoded = decodeStoredCredentials(readJsonFile(getCredentialsPath(), {}));
+    return decoded || { ...DEFAULT_CREDENTIALS };
+}
+function setCredentials(credentials) { return writeCredentialsFile({ ...getCredentials(), ...credentials }); }
 function getApiKey() { return getCredentials().apiKey || ''; }
 function setApiKey(apiKey) { return setCredentials({ apiKey }); }
 function getGroqApiKey() { return getCredentials().groqApiKey || ''; }
