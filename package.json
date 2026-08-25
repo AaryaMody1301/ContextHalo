@@ -47,7 +47,7 @@
         "@electron-forge/plugin-fuses": "^7.11.2",
         "@electron/fuses": "^1.8.0",
         "@reforged/maker-appimage": "^5.0.0",
-        "electron": "^30.5.1",
+        "electron": "^43.4.1",
         "electron-builder": "^26.15.3"
     },
     "build": {
