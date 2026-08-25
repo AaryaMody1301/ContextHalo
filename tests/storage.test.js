@@ -81,3 +81,30 @@ test('renderer entrypoint loads provider fixes and removes the stale script refe
     assert.equal(indexHtml.includes('src="script.js"'), false);
     assert.equal(indexHtml.includes('src="utils/runtimeProviderFixes.js"'), true);
 });
+
+test('provider UI exposes Gemini, Groq, and Local modes with the intended free-tier models', () => {
+    const fixes = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'runtimeProviderFixes.js'), 'utf8');
+    assert.match(fixes, /_saveMode\('groq'\)/);
+    assert.match(fixes, /_saveMode\('byok'\)/);
+    assert.match(fixes, /_saveMode\('local'\)/);
+    assert.match(fixes, /whisper-large-v3-turbo/);
+    assert.match(fixes, /Gemini 3\.7 Flash/);
+    assert.match(fixes, /does not require a Gemini key/);
+});
+
+test('backend keeps providers isolated and routes screenshots to the matching provider', () => {
+    const gemini = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'gemini.js'), 'utf8');
+    assert.match(gemini, /currentProviderMode = 'groq'/);
+    assert.match(gemini, /geminiSessionRef\.current = null/);
+    assert.match(gemini, /currentProviderMode === 'groq' \? await sendImageToGroq\(data, prompt\) : await sendImageToGeminiHttp\(data, prompt\)/);
+    assert.match(gemini, /form\.append\('model', 'whisper-large-v3-turbo'\)/);
+    assert.match(gemini, /model: getConfig\(\)\.geminiLiveModel/);
+});
+
+test('supported Electron runtime and lockfile stay aligned', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+    const lockfile = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package-lock.json'), 'utf8'));
+    assert.equal(packageJson.devDependencies.electron, '^43.4.1');
+    assert.equal(lockfile.packages[''].devDependencies.electron, '^43.4.1');
+    assert.equal(lockfile.packages['node_modules/electron'].version, '43.4.1');
+});
