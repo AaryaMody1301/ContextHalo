@@ -12,7 +12,6 @@ function addOnce(anchor, insertion) {
     changes += 1;
 }
 
-// Capture Groq headers for both streaming chat completion paths before status handling.
 source = source.replace(
     /        \}\);\n\n        if \(!response\.ok\) \{/g,
     (match, offset, whole) => {
@@ -24,8 +23,6 @@ source = source.replace(
     }
 );
 
-// Live model turns can contain multiple parts in one event. Handle text parts
-// in addition to the audio-output transcription stream.
 addOnce(
     "                    if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {",
     `                    const modelParts = message.serverContent?.modelTurn?.parts || [];
@@ -44,7 +41,6 @@ addOnce(
                     if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {`
 );
 
-// Ask the Live API for resumption and send the latest handle on reconnect.
 addOnce(
     "                outputAudioTranscription: {},\n                tools: enabledTools,",
     `                outputAudioTranscription: {},
@@ -54,8 +50,6 @@ addOnce(
                 tools: enabledTools,`
 );
 
-// A resumed handle can occasionally be rejected. On the final reconnect path,
-// drop the stale handle so the existing fresh-session reconnect logic can recover.
 addOnce(
     "    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {\n        return attemptReconnect();\n    }",
     `    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -74,3 +68,5 @@ if (changes === 0) {
     fs.writeFileSync(file, source);
     console.log(`Final provider corrections applied: ${changes}`);
 }
+
+// Full-build validation trigger for the final patched source.
