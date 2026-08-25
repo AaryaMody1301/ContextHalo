@@ -110,13 +110,16 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
         repository: 'unsloth/Qwen3.5-4B-GGUF',
         quant: 'Q4_K_M',
     });
-    assert.throws(() => parseModelReference('../bad:Q4'), /unsupported|format/i);
+    assert.throws(() => parseModelReference('../bad:Q4'), /unsupported|unsafe|format/i);
+    assert.throws(() => parseModelReference('owner/..:Q4'), /unsupported|unsafe|format/i);
 });
 
 test('Windows security and packaging configuration are enabled together', () => {
     const windowSource = read('src/utils/window.js');
+    const windowsRuntime = read('src/utils/windowsRuntimeMain.js');
     const storageSource = read('src/storage.js');
     const preloadSource = read('preload.js');
+    const cloudSource = read('src/utils/cloud.js');
     const packageJson = JSON.parse(read('package.json'));
     const indexSource = read('src/index.js');
     const analyzeSource = read('src/utils/analyzeProviderFallback.js');
@@ -126,9 +129,13 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.match(windowSource, /setPermissionRequestHandler/);
     assert.match(windowSource, /setPermissionCheckHandler/);
     assert.match(windowSource, /Content-Security-Policy/);
+    assert.match(windowsRuntime, /audio: 'loopback'/);
+    assert.match(windowsRuntime, /useSystemPicker: false/);
+    assert.match(windowsRuntime, /screen\.getPrimaryDisplay\(\)\.id/);
     assert.match(storageSource, /safeStorage\.encryptString/);
     assert.match(storageSource, /windows-safe-storage-v1/);
     assert.equal(preloadSource.includes('process.env'), false);
+    assert.equal(cloudSource.includes("console.log('[Cloud] Connecting to', url)"), false);
     assert.equal(packageJson.build.win.icon, 'src/assets/logo.ico');
     assert.ok(indexSource.indexOf('installWindowsProviderTransport();') < indexSource.indexOf("require('./utils/gemini')"));
     assert.ok(indexSource.indexOf('installWindowsLocalAiRuntime();') < indexSource.indexOf("require('./utils/gemini')"));
