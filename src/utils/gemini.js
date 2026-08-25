@@ -48,13 +48,15 @@ let systemAudioProc = null;
 let messageBuffer = '';
 let groqRequestStartedForTurn = false;
 
-const GROQ_MAX_COMPLETION_TOKENS = 768;
+const GROQ_MAX_COMPLETION_TOKENS = 2048;
 const GROQ_MAX_HISTORY_MESSAGES = 8;
 const GROQ_MAX_HISTORY_CHARS = 12000;
 const GROQ_MAX_SYSTEM_PROMPT_CHARS = 6000;
 const GROQ_AUDIO_CHUNK_SECONDS = 8;
 let groqSystemAudioBuffer = Buffer.alloc(0);
 let groqTranscriptionInFlight = false;
+let groqRateLimitState = null;
+let geminiSessionResumptionHandle = null;
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
 
@@ -302,6 +304,22 @@ function compactGroqErrorBody(body) {
     }
 }
 
+function captureGroqRateLimitHeaders(headers) {
+    if (!headers || typeof headers.get !== 'function') return;
+    const read = name => headers.get(name) || null;
+    groqRateLimitState = {
+        limitRequests: read('x-ratelimit-limit-requests'),
+        remainingRequests: read('x-ratelimit-remaining-requests'),
+        resetRequests: read('x-ratelimit-reset-requests'),
+        limitTokens: read('x-ratelimit-limit-tokens'),
+        remainingTokens: read('x-ratelimit-remaining-tokens'),
+        resetTokens: read('x-ratelimit-reset-tokens'),
+        retryAfter: read('retry-after'),
+        updatedAt: Date.now(),
+    };
+    sendToRenderer('groq-rate-limit', groqRateLimitState);
+}
+
 function formatGroqError(status, body, headers) {
     if (status === 429) {
         const retryAfter = headers?.get?.('retry-after');
@@ -379,6 +397,7 @@ async function processGroqAudioQueue(sampleRate, language) {
             body: form,
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         const body = await response.text();
         if (!response.ok) {
             const message = formatGroqError(response.status, body, response.headers);
@@ -478,6 +497,7 @@ async function sendToGroq(transcription) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
@@ -487,10 +507,13 @@ async function sendToGroq(transcription) {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.text.stream_chunk', { chunk });
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            logTransportEvent('groq.text.stream_chunk', { chunkLength: chunk.length });
+            sseBuffer += chunk;
+            const lines = sseBuffer.split(/\r?\n/);
+            sseBuffer = lines.pop() || '';
+            const completeLines = lines.filter(line => line.trim() !== '');
 
-            for (const line of lines) {
+            for (const line of completeLines) {
                 if (line.startsWith('data: ')) {
                     const data = line.slice(6);
                     if (data === '[DONE]') continue;
@@ -625,6 +648,7 @@ async function sendImageToGroq(base64Data, prompt) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
@@ -634,10 +658,13 @@ async function sendImageToGroq(base64Data, prompt) {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.image.stream_chunk', { chunk });
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            logTransportEvent('groq.image.stream_chunk', { chunkLength: chunk.length });
+            sseBuffer += chunk;
+            const lines = sseBuffer.split(/\r?\n/);
+            sseBuffer = lines.pop() || '';
+            const completeLines = lines.filter(line => line.trim() !== '');
 
-            for (const line of lines) {
+            for (const line of completeLines) {
                 if (!line.startsWith('data: ')) continue;
 
                 const data = line.slice(6);
