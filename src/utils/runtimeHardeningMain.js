@@ -1,4 +1,6 @@
-const { BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('electron');
+const { spawn } = require('child_process');
+const path = require('path');
 const storage = require('../storage');
 
 const RETRYABLE_PROVIDER_PATTERNS = [
@@ -20,6 +22,7 @@ let imageRequestQueue = Promise.resolve();
 let groqUtteranceQueue = Promise.resolve();
 let originalIpcHandle = null;
 let googleGenAiPatched = false;
+let runtimeMacAudioProc = null;
 const registeredHandlers = new Map();
 
 const GROQ_VAD = {
@@ -264,6 +267,69 @@ function processGroqVadChunk(event, data, mimeType) {
     return { success: true };
 }
 
+function convertStereoToMono(stereoBuffer) {
+    const samples = Math.floor(stereoBuffer.length / 4);
+    const mono = Buffer.alloc(samples * 2);
+    for (let i = 0; i < samples; i++) {
+        const left = stereoBuffer.readInt16LE(i * 4);
+        mono.writeInt16LE(left, i * 2);
+    }
+    return mono;
+}
+
+function stopRuntimeMacAudio() {
+    if (runtimeMacAudioProc) {
+        try { runtimeMacAudioProc.kill('SIGTERM'); } catch {}
+        runtimeMacAudioProc = null;
+    }
+}
+
+function startRuntimeMacGroqAudio(event) {
+    stopRuntimeMacAudio();
+
+    const executablePath = app.isPackaged
+        ? path.join(process.resourcesPath, 'SystemAudioDump')
+        : path.join(__dirname, '../assets', 'SystemAudioDump');
+
+    runtimeMacAudioProc = spawn(executablePath, [], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env },
+    });
+
+    if (!runtimeMacAudioProc.pid) {
+        runtimeMacAudioProc = null;
+        return false;
+    }
+
+    const sampleRate = 24000;
+    const bytesPerFrame = 4;
+    const chunkSize = Math.floor(sampleRate * bytesPerFrame * 0.1);
+    let pending = Buffer.alloc(0);
+
+    runtimeMacAudioProc.stdout.on('data', data => {
+        pending = Buffer.concat([pending, data]);
+        while (pending.length >= chunkSize) {
+            const stereo = pending.subarray(0, chunkSize);
+            pending = pending.subarray(chunkSize);
+            const mono = convertStereoToMono(stereo);
+            processGroqVadChunk(event, mono.toString('base64'), 'audio/pcm;rate=24000');
+        }
+    });
+
+    runtimeMacAudioProc.stderr.on('data', data => {
+        console.error('SystemAudioDump stderr:', data.toString());
+    });
+    runtimeMacAudioProc.once('close', () => {
+        runtimeMacAudioProc = null;
+    });
+    runtimeMacAudioProc.once('error', error => {
+        console.error('SystemAudioDump error:', error);
+        runtimeMacAudioProc = null;
+    });
+
+    return true;
+}
+
 function shouldForwardAudioChannel(channel) {
     const mode = storage.getPreferences().audioMode || 'speaker_only';
     if (mode === 'mic_only') return channel === 'send-mic-audio-content';
@@ -271,12 +337,12 @@ function shouldForwardAudioChannel(channel) {
     return channel === 'send-audio-content';
 }
 
-function sendScreenAnalysisCompletion(event, result) {
+function sendScreenAnalysisLifecycle(event, channel, result = null) {
     if (!event?.sender || event.sender.isDestroyed?.()) return;
     try {
-        event.sender.send('screen-analysis-complete', result);
+        event.sender.send(channel, result);
     } catch (error) {
-        console.warn('Could not report Analyze Screen completion:', error.message);
+        console.warn(`Could not report ${channel}:`, error.message);
     }
 }
 
@@ -288,6 +354,7 @@ function wrapIpcHandler(channel, handler) {
             const provider = args[4] === 'groq' ? 'groq' : 'byok';
             runtimeProviderMode = provider;
             resetGroqVad();
+            stopRuntimeMacAudio();
             global.__runtimeFreshGeminiSession = provider === 'byok';
             return handler(event, ...args);
         };
@@ -297,6 +364,7 @@ function wrapIpcHandler(channel, handler) {
         return async (event, ...args) => {
             runtimeProviderMode = 'local';
             resetGroqVad();
+            stopRuntimeMacAudio();
             return handler(event, ...args);
         };
     }
@@ -305,12 +373,14 @@ function wrapIpcHandler(channel, handler) {
         return async (event, ...args) => {
             runtimeProviderMode = 'cloud';
             resetGroqVad();
+            stopRuntimeMacAudio();
             return handler(event, ...args);
         };
     }
 
     if (channel === 'close-session') {
         return async (event, ...args) => {
+            stopRuntimeMacAudio();
             const result = await handler(event, ...args);
             runtimeProviderMode = 'byok';
             resetGroqVad();
@@ -319,19 +389,39 @@ function wrapIpcHandler(channel, handler) {
         };
     }
 
+    if (channel === 'start-macos-audio') {
+        return async (event, ...args) => {
+            const audioMode = storage.getPreferences().audioMode || 'speaker_only';
+            if (audioMode === 'mic_only') return { success: true, skipped: true };
+            if (runtimeProviderMode === 'groq') {
+                const success = startRuntimeMacGroqAudio(event);
+                return { success, error: success ? undefined : 'Could not start SystemAudioDump' };
+            }
+            return handler(event, ...args);
+        };
+    }
+
+    if (channel === 'stop-macos-audio') {
+        return async (event, ...args) => {
+            stopRuntimeMacAudio();
+            return handler(event, ...args);
+        };
+    }
+
     if (channel === 'send-image-content') {
         return (event, ...args) => {
+            sendScreenAnalysisLifecycle(event, 'screen-analysis-started');
             const queued = imageRequestQueue.then(() => callWithProviderRetry(() => handler(event, ...args)));
             imageRequestQueue = queued.catch(() => {});
 
             return queued.then(
                 result => {
-                    sendScreenAnalysisCompletion(event, result);
+                    sendScreenAnalysisLifecycle(event, 'screen-analysis-complete', result);
                     return result;
                 },
                 error => {
                     const result = { success: false, error: error?.message || String(error) };
-                    sendScreenAnalysisCompletion(event, result);
+                    sendScreenAnalysisLifecycle(event, 'screen-analysis-complete', result);
                     throw error;
                 }
             );
@@ -380,6 +470,14 @@ function setupRuntimeWindowHardening(mainWindow) {
         else mainWindow.maximize();
         return { success: true, maximized: mainWindow.isMaximized() };
     });
+
+    const originalExecuteJavaScript = mainWindow.webContents.executeJavaScript.bind(mainWindow.webContents);
+    mainWindow.webContents.executeJavaScript = (code, ...args) => {
+        if (typeof code === 'string' && code.includes("localStorage.getItem('googleSearchEnabled')")) {
+            return Promise.resolve(String(storage.getPreferences().googleSearchEnabled === true));
+        }
+        return originalExecuteJavaScript(code, ...args);
+    };
 
     session.defaultSession.setDisplayMediaRequestHandler(
         async (request, callback) => {
