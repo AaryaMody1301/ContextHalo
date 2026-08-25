@@ -2,23 +2,21 @@ name: Apply Phase 1 Provider Fixes
 
 on:
   push:
-    branches: [phase-1-complete-fixes]
-  workflow_dispatch:
+    branches:
+      - phase-1-complete-fixes
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: ${{ !startsWith(github.event.head_commit.message, 'phase1: apply provider fixes') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           ref: phase-1-complete-fixes
-          fetch-depth: 1
 
-      - name: Patch provider reliability
+      - name: Apply provider fixes
         shell: bash
         run: |
           python3 <<'PY'
@@ -28,127 +26,64 @@ jobs:
           p = Path('src/utils/gemini.js')
           s = p.read_text()
 
-          s = s.replace(
-              "const GROQ_MAX_COMPLETION_TOKENS = 768;",
-              "const GROQ_MAX_COMPLETION_TOKENS = 2048;"
-          )
+          # Current Groq output budget.
+          s = s.replace('const GROQ_MAX_COMPLETION_TOKENS = 768;', 'const GROQ_MAX_COMPLETION_TOKENS = 2048;')
 
-          s = s.replace(
-              "let currentSystemPrompt = null;",
-              "let currentSystemPrompt = null;\nlet geminiSessionResumptionHandle = null;\nlet groqRateLimitSnapshot = null;"
-          )
+          # Track actual provider rate-limit state rather than enforcing guessed quotas.
+          if 'let groqRateLimitSnapshot = null;' not in s:
+              s = s.replace('let currentSystemPrompt = null;', 'let currentSystemPrompt = null;\nlet geminiSessionResumptionHandle = null;\nlet groqRateLimitSnapshot = null;', 1)
 
-          old = '''function formatGroqError(status, body, headers) {
-              if (status === 429) {
-                  const retryAfter = headers?.get?.('retry-after');
-                  const reset = headers?.get?.('x-ratelimit-reset-tokens') || headers?.get?.('x-ratelimit-reset-requests');
-                  const detail = compactGroqErrorBody(body);
-                  return retryAfter ? `Groq rate limit reached. Retry in ${retryAfter}s.` : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}${detail ? `: ${detail.slice(0, 180)}` : '.'}`;
-              }
-              if (status === 401) return 'Groq authentication failed. Check the API key.';
-              if (status === 403) return 'Groq request is not permitted for this key/model.';
-              if (status === 413) return 'Groq request is too large. Reduce context.';
-              return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
-          }'''
+          if 'function parseGroqRateLimitHeaders(headers)' not in s:
+              marker = 'function formatGroqError(status, body, headers) {'
+              helper = '''function parseGroqRateLimitHeaders(headers) {
+    if (!headers?.get) return null;
+    const read = name => headers.get(name);
+    const snapshot = {
+        limitRequests: read('x-ratelimit-limit-requests'),
+        remainingRequests: read('x-ratelimit-remaining-requests'),
+        resetRequests: read('x-ratelimit-reset-requests'),
+        limitTokens: read('x-ratelimit-limit-tokens'),
+        remainingTokens: read('x-ratelimit-remaining-tokens'),
+        resetTokens: read('x-ratelimit-reset-tokens'),
+        retryAfter: read('retry-after'),
+    };
+    return Object.values(snapshot).some(Boolean) ? snapshot : null;
+}
 
-          new = '''function parseGroqRateLimitHeaders(headers) {
-              if (!headers?.get) return null;
-              const read = name => headers.get(name);
-              const snapshot = {
-                  limitRequests: read('x-ratelimit-limit-requests'),
-                  remainingRequests: read('x-ratelimit-remaining-requests'),
-                  resetRequests: read('x-ratelimit-reset-requests'),
-                  limitTokens: read('x-ratelimit-limit-tokens'),
-                  remainingTokens: read('x-ratelimit-remaining-tokens'),
-                  resetTokens: read('x-ratelimit-reset-tokens'),
-                  retryAfter: read('retry-after'),
-              };
-              return Object.values(snapshot).some(Boolean) ? snapshot : null;
-          }
+function sendGroqRateLimitStatus(headers) {
+    const snapshot = parseGroqRateLimitHeaders(headers);
+    if (!snapshot) return;
+    groqRateLimitSnapshot = snapshot;
+    logTransportEvent('groq.rate_limits', snapshot);
+    sendToRenderer('groq-rate-limits', snapshot);
+}
 
-          function sendGroqRateLimitStatus(headers) {
-              const snapshot = parseGroqRateLimitHeaders(headers);
-              if (!snapshot) return;
-              groqRateLimitSnapshot = snapshot;
-              logTransportEvent('groq.rate_limits', snapshot);
-              if (snapshot.remainingTokens || snapshot.remainingRequests) {
-                  const parts = [];
-                  if (snapshot.remainingTokens) parts.push(`tokens ${snapshot.remainingTokens}`);
-                  if (snapshot.remainingRequests) parts.push(`requests ${snapshot.remainingRequests}`);
-                  sendToRenderer('groq-rate-limits', snapshot);
-                  sendToRenderer('update-status', `Groq ready (${parts.join(', ')} remaining)`);
-              }
-          }
-
-          function formatGroqError(status, body, headers) {
-              const snapshot = parseGroqRateLimitHeaders(headers);
-              if (status === 429) {
-                  const retryAfter = snapshot?.retryAfter;
-                  const reset = snapshot?.resetTokens || snapshot?.resetRequests;
-                  const detail = compactGroqErrorBody(body);
-                  return retryAfter
-                      ? `Groq rate limit reached. Retry in ${retryAfter}s.`
-                      : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}${detail ? `: ${detail.slice(0, 180)}` : '.'}`;
-              }
-              if (status === 401) return 'Groq authentication failed. Check the API key.';
-              if (status === 403) return 'Groq request is not permitted for this key/model.';
-              if (status === 413) return 'Groq request is too large. Reduce context or image size.';
-              if (status === 404) return 'Groq model or endpoint was not found. Check the selected model.';
-              return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
-          }'''
-          if old not in s:
-              raise SystemExit('formatGroqError block not found')
-          s = s.replace(old, new)
-
-          s = s.replace(
-              "    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {",
-              "    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {",
-              2,
-          )
-
-          old_loop = '''        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        let isFirst = true;
-        let finishReason = null;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.text.stream_chunk', { chunk });
-            const lines = chunk.split('\\n').filter(line => line.trim() !== '');
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
-
-                    try {
-                        const json = JSON.parse(data);
-                        logTransportEvent('groq.text.stream_event', json);
-                        finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                        const token = json.choices?.[0]?.delta?.content || '';
-                        if (token) {
-                            fullText += token;
-                            const displayText = stripThinkingTags(fullText);
-                            if (displayText) {
-                                sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                                isFirst = false;
-                            }
-                        }
-                    } catch (parseError) {
-                        logTransportEvent('groq.text.stream_parse_error', {
-                            data,
-                            error: parseError.message,
-                        });
-                    }
-                }
-            }
-        }
 '''
-          new_loop = '''        sendGroqRateLimitStatus(response.headers);
+              s = s.replace(marker, helper + marker, 1)
+
+          # Improve Groq diagnostics.
+          s = s.replace("    if (status === 413) return 'Groq request is too large. Reduce context.';", "    if (status === 413) return 'Groq request is too large. Reduce context or image size.';\n    if (status === 404) return 'Groq model or endpoint was not found. Check the selected model.';")
+
+          # Never run arbitrary renderer JavaScript just to read a setting.
+          if 'function getStoredSetting(key, defaultValue)' in s and 'return defaultValue;\n}\n\n// helper to check if groq has been configured' in s:
+              start = s.index('async function getStoredSetting(key, defaultValue) {')
+              end = s.index('// helper to check if groq has been configured', start)
+              replacement = '''async function getStoredSetting(key, defaultValue) {
+    try {
+        const value = await getConfig()?.preferences?.[key];
+        return value == null ? defaultValue : String(value);
+    } catch (error) {
+        console.error('Error getting stored setting for', key, ':', error.message);
+        return defaultValue;
+    }
+}
+
+'''
+              s = s[:start] + replacement + s[end:]
+
+          # Persistent SSE buffer for both text and image streams.
+          text_pattern = re.compile(r"const reader = response\.body\.getReader\(\);\n        const decoder = new TextDecoder\(\);\n        let fullText = '';\n        let isFirst = true;\n        let finishReason = null;\n\n        while \(true\) \{.*?\n        \}\n\n        const cleanedResponse", re.S)
+          text_repl = '''sendGroqRateLimitStatus(response.headers);
         const reader = response.body?.getReader();
         if (!reader) throw new Error('Groq returned no response body for streaming completion.');
         const decoder = new TextDecoder();
@@ -157,110 +92,23 @@ jobs:
         let finishReason = null;
         let sseBuffer = '';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            sseBuffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-            const events = sseBuffer.split(/\\r?\\n\\r?\\n/);
-            sseBuffer = events.pop() || '';
-
-            for (const event of events) {
-                const dataLines = event.split(/\\r?\\n/)
-                    .filter(line => line.startsWith('data:'))
-                    .map(line => line.slice(5).trimStart());
-                if (!dataLines.length) continue;
-                const data = dataLines.join('\\n').trim();
-                if (!data || data === '[DONE]') continue;
-
-                try {
-                    const json = JSON.parse(data);
-                    logTransportEvent('groq.text.stream_event', json);
-                    finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (token) {
-                        fullText += token;
-                        const displayText = stripThinkingTags(fullText);
-                        if (displayText) {
-                            sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                            isFirst = false;
-                        }
-                    }
-                } catch (parseError) {
-                    logTransportEvent('groq.text.stream_parse_error', { data, error: parseError.message });
+        const processEvent = data => {
+            if (!data || data === '[DONE]') return;
+            try {
+                const json = JSON.parse(data);
+                finishReason = json.choices?.[0]?.finish_reason || finishReason;
+                const token = json.choices?.[0]?.delta?.content || '';
+                if (!token) return;
+                fullText += token;
+                const displayText = stripThinkingTags(fullText);
+                if (displayText) {
+                    sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
+                    isFirst = false;
                 }
+            } catch (parseError) {
+                logTransportEvent('groq.text.stream_parse_error', { data, error: parseError.message });
             }
-
-            if (done) break;
-        }
-        if (sseBuffer.trim()) {
-            for (const line of sseBuffer.split(/\\r?\\n/)) {
-                if (!line.startsWith('data:')) continue;
-                const data = line.slice(5).trimStart();
-                if (!data || data === '[DONE]') continue;
-                try {
-                    const json = JSON.parse(data);
-                    finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (token) fullText += token;
-                } catch (parseError) {
-                    logTransportEvent('groq.text.stream_tail_parse_error', { data, error: parseError.message });
-                }
-            }
-        }
-'''
-          if old_loop not in s:
-              raise SystemExit('Groq text streaming loop not found')
-          s = s.replace(old_loop, new_loop, 1)
-
-          old_image_loop = '''        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        let isFirst = true;
-        let finishReason = null;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.image.stream_chunk', { chunk });
-            const lines = chunk.split('\\n').filter(line => line.trim() !== '');
-
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-
-                try {
-                    const json = JSON.parse(data);
-                    logTransportEvent('groq.image.stream_event', json);
-                    finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (!token) continue;
-
-                    fullText += token;
-                    const displayText = stripThinkingTags(fullText);
-                    if (displayText) {
-                        sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                        isFirst = false;
-                    }
-                } catch (parseError) {
-                    logTransportEvent('groq.image.stream_parse_error', {
-                        data,
-                        error: parseError.message,
-                    });
-                }
-            }
-        }
-'''
-          new_image_loop = '''        sendGroqRateLimitStatus(response.headers);
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('Groq returned no response body for image streaming.');
-        const decoder = new TextDecoder();
-        let fullText = '';
-        let isFirst = true;
-        let finishReason = null;
-        let sseBuffer = '';
+        };
 
         while (true) {
             const { done, value } = await reader.read();
@@ -268,180 +116,73 @@ jobs:
             const events = sseBuffer.split(/\\r?\\n\\r?\\n/);
             sseBuffer = events.pop() || '';
             for (const event of events) {
-                const dataLines = event.split(/\\r?\\n/)
+                const data = event.split(/\\r?\\n/)
                     .filter(line => line.startsWith('data:'))
-                    .map(line => line.slice(5).trimStart());
-                if (!dataLines.length) continue;
-                const data = dataLines.join('\\n').trim();
-                if (!data || data === '[DONE]') continue;
-                try {
-                    const json = JSON.parse(data);
-                    logTransportEvent('groq.image.stream_event', json);
-                    finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (!token) continue;
-                    fullText += token;
-                    const displayText = stripThinkingTags(fullText);
-                    if (displayText) {
-                        sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                        isFirst = false;
-                    }
-                } catch (parseError) {
-                    logTransportEvent('groq.image.stream_parse_error', { data, error: parseError.message });
-                }
+                    .map(line => line.slice(5).trimStart())
+                    .join('\\n')
+                    .trim();
+                processEvent(data);
             }
             if (done) break;
         }
         if (sseBuffer.trim()) {
             for (const line of sseBuffer.split(/\\r?\\n/)) {
-                if (!line.startsWith('data:')) continue;
-                const data = line.slice(5).trimStart();
-                if (!data || data === '[DONE]') continue;
-                try {
-                    const json = JSON.parse(data);
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (token) fullText += token;
-                } catch (parseError) {
-                    logTransportEvent('groq.image.stream_tail_parse_error', { data, error: parseError.message });
-                }
+                if (line.startsWith('data:')) processEvent(line.slice(5).trimStart());
             }
         }
-'''
-          if old_image_loop not in s:
-              raise SystemExit('Groq image streaming loop not found')
-          s = s.replace(old_image_loop, new_image_loop, 1)
 
-          s = s.replace(
-              "    logTransportEvent('groq.text.request', {\n        model: modelToUse,\n        transcription,\n    });",
-              "    logTransportEvent('groq.text.request', { model: modelToUse, transcription: transcription.slice(0, 4000) });"
-          )
-          s = s.replace(
-              "    logTransportEvent('groq.image.request', {\n        model,\n        prompt,\n        imageBytes: Buffer.byteLength(base64Data, 'base64'),\n    });",
-              "    logTransportEvent('groq.image.request', { model, prompt: String(prompt || '').slice(0, 4000), imageBytes: Buffer.byteLength(base64Data, 'base64') });"
-          )
+        const cleanedResponse'''
+          s, n = text_pattern.subn(text_repl, s, count=1)
+          print('patched text SSE blocks:', n)
 
-          s = s.replace(
-              "function initializeNewSession(profile = null, customPrompt = null) {\n    currentSessionId = Date.now().toString();",
-              "function initializeNewSession(profile = null, customPrompt = null) {\n    geminiSessionResumptionHandle = null;\n    currentSessionId = Date.now().toString();"
-          )
+          # Image stream: replace the next old chunk parser if still present.
+          image_pattern = re.compile(r"const reader = response\.body\.getReader\(\);\n        const decoder = new TextDecoder\(\);\n        let fullText = '';\n        let isFirst = true;\n        let finishReason = null;\n\n        while \(true\) \{.*?\n        \}\n\n        const cleanedResponse", re.S)
+          image_repl = text_repl.replace("Groq returned no response body for streaming completion.", "Groq returned no response body for image streaming.")
+          image_repl = image_repl.replace("groq.text.stream_parse_error", "groq.image.stream_parse_error")
+          s, n = image_pattern.subn(image_repl, s, count=1)
+          print('patched image SSE blocks:', n)
 
-          old_msg = '''                    console.log('----------------', message);
-                    logTransportEvent('gemini.live.message', message);
+          # Gemini Live multi-part output and session-resumption handle support.
+          if 'message.sessionResumptionUpdate' not in s:
+              anchor = "logTransportEvent('gemini.live.message', message);"
+              if anchor in s:
+                  s = s.replace(anchor, anchor + "\n\n                    if (message.sessionResumptionUpdate?.token) geminiSessionResumptionHandle = message.sessionResumptionUpdate.token;\n                    if (message.sessionResumptionUpdate?.newHandle) geminiSessionResumptionHandle = message.sessionResumptionUpdate.newHandle;", 1)
 
-                    // Handle input transcription (what was spoken)'''
-          new_msg = '''                    logTransportEvent('gemini.live.message', message);
-
-                    if (message.sessionResumptionUpdate?.token) {
-                        geminiSessionResumptionHandle = message.sessionResumptionUpdate.token;
-                        logTransportEvent('gemini.live.resumption_handle_updated', { hasHandle: true });
-                    } else if (message.sessionResumptionUpdate?.newHandle) {
-                        geminiSessionResumptionHandle = message.sessionResumptionUpdate.newHandle;
-                        logTransportEvent('gemini.live.resumption_handle_updated', { hasHandle: true });
-                    }
-
-                    // Handle input transcription (what was spoken)'''
-          if old_msg not in s:
-              raise SystemExit('Gemini message header not found')
-          s = s.replace(old_msg, new_msg, 1)
-
-          old_output = '''                    if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
-                        const isFirstChunk = messageBuffer === '';
-                        messageBuffer += message.serverContent.outputTranscription.text;
-                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
-                    }
-'''
-          new_output = '''                    if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
-                        const isFirstChunk = messageBuffer === '';
-                        messageBuffer += message.serverContent.outputTranscription.text;
-                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
-                    }
-
-                    for (const part of message.serverContent?.modelTurn?.parts || []) {
-                        if (!part?.text) continue;
+          if 'modelTurn?.parts' not in s:
+              needle = "                    // Handle generation complete"
+              block = '''                    for (const part of message.serverContent?.modelTurn?.parts || []) {
+                        if (!part?.text || currentProviderMode === 'groq') continue;
                         const isFirstChunk = messageBuffer === '';
                         messageBuffer += part.text;
-                        if (currentProviderMode !== 'groq') {
-                            sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
-                        }
+                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
                     }
+
 '''
-          if old_output not in s:
-              raise SystemExit('Gemini output transcription block not found')
-          s = s.replace(old_output, new_output, 1)
+              if needle in s:
+                  s = s.replace(needle, block + needle, 1)
 
-          old_config = '''                tools: enabledTools,
-                thinkingConfig: { thinkingLevel: 'minimal' },
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }],
-                },'''
-          new_config = '''                tools: enabledTools,
-                thinkingConfig: { thinkingLevel: 'minimal' },
-                sessionResumption: geminiSessionResumptionHandle ? { handle: geminiSessionResumptionHandle } : {},
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }],
-                },'''
-          if old_config not in s:
-              raise SystemExit('Gemini session config block not found')
-          s = s.replace(old_config, new_config, 1)
+          if 'sessionResumption:' not in s:
+              marker = "                systemInstruction: {"
+              if marker in s:
+                  s = s.replace(marker, "                sessionResumption: geminiSessionResumptionHandle ? { handle: geminiSessionResumptionHandle } : {},\n" + marker, 1)
 
-          old_reconnect = '''        const session = await initializeGeminiSession(
-            sessionParams.apiKey,
-            sessionParams.customPrompt,
-            sessionParams.profile,
-            sessionParams.language,
-            true // isReconnect
-        );'''
-          new_reconnect = '''        const session = await initializeGeminiSession(
-            sessionParams.apiKey,
-            sessionParams.customPrompt,
-            sessionParams.profile,
-            sessionParams.language,
-            true // isReconnect
-        );'''
-          if old_reconnect not in s:
-              raise SystemExit('Reconnect call not found')
-          s = s.replace(old_reconnect, new_reconnect, 1)
-
-          old_fail = '''    // If we still have attempts left, try again
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {'''
-          new_fail = '''    // If resume failed, discard a potentially poisoned resumption handle before the next attempt.
-    if (geminiSessionResumptionHandle) {
-        geminiSessionResumptionHandle = null;
-    }
-
-    // If we still have attempts left, try again
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {'''
-          if old_fail not in s:
-              raise SystemExit('Reconnect fallback block not found')
-          s = s.replace(old_fail, new_fail, 1)
-
-          s = s.replace(
-              "            currentProviderMode = 'groq';\n            geminiSessionRef.current = null;",
-              "            if (geminiSessionRef.current) { try { await geminiSessionRef.current.close(); } catch {} }\n            geminiSessionRef.current = null;\n            currentProviderMode = 'groq';"
-          )
-          s = s.replace(
-              "            groqSystemAudioBuffer = Buffer.alloc(0);\n            sendToRenderer('update-status', 'Groq ready');",
-              "            groqSystemAudioBuffer = Buffer.alloc(0);\n            groqRequestStartedForTurn = false;\n            sendToRenderer('update-status', 'Groq ready');"
-          )
-          s = s.replace(
-              "                currentProviderMode = 'byok';\n                closeTransportLog();\n                sendToRenderer('update-status', 'Session closed');",
-              "                currentProviderMode = 'byok';\n                sessionParams = null;\n                geminiSessionResumptionHandle = null;\n                closeTransportLog();\n                sendToRenderer('update-status', 'Session closed');"
-          )
+          # Reset stale state at new session and close.
+          s = s.replace('function initializeNewSession(profile = null, customPrompt = null) {\n    currentSessionId', 'function initializeNewSession(profile = null, customPrompt = null) {\n    geminiSessionResumptionHandle = null;\n    currentSessionId', 1)
+          s = s.replace("                currentProviderMode = 'byok';\n                closeTransportLog();", "                currentProviderMode = 'byok';\n                sessionParams = null;\n                geminiSessionResumptionHandle = null;\n                closeTransportLog();", 1)
 
           p.write_text(s)
           PY
-
           node --check src/utils/gemini.js
 
-      - name: Commit provider fixes
+      - name: Commit fixes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
-            echo "No provider changes were necessary."
-            exit 0
-          fi
           git add src/utils/gemini.js
-          git commit -m "phase1: apply provider fixes"
-          git push origin HEAD:phase-1-complete-fixes
+          if git diff --cached --quiet; then
+            echo "No provider changes required."
+          else
+            git commit -m "phase1: harden Groq and Gemini provider runtime"
+            git push origin HEAD:phase-1-complete-fixes
+          fi
