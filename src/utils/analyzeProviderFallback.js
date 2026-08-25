@@ -84,6 +84,7 @@ function installAnalyzeProviderFallback() {
                 const requestedModel = params?.model || 'gemini-3.7-flash';
                 const modelChain = [...new Set([requestedModel, FALLBACK_MODEL])];
                 let lastError = null;
+                global.__lastAnalyzeActualModel = null;
 
                 for (let index = 0; index < modelChain.length; index++) {
                     const model = modelChain[index];
@@ -111,6 +112,7 @@ function installAnalyzeProviderFallback() {
                         const text = response?.text?.trim();
                         if (!text) throw new Error('Empty Analyze Screen response');
 
+                        global.__lastAnalyzeActualModel = model;
                         if (model !== requestedModel) {
                             console.warn(`Analyze Screen recovered with fallback model ${model}`);
                         }

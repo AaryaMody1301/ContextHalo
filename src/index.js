@@ -5,8 +5,22 @@ if (require('electron-squirrel-startup')) {
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
 const { installAnalyzeProviderFallback } = require('./utils/analyzeProviderFallback');
+const {
+    installWindowsProviderTransport,
+    abortProviderSession,
+} = require('./utils/windowsProviderTransport');
+const {
+    installWindowsIpcHardening,
+    setupWindowsWindowHardening,
+} = require('./utils/windowsRuntimeMain');
+const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 
-// Patch provider construction before gemini.js destructures @google/genai.
+const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
+
+// Provider networking, Local AI compatibility and SDK wrappers must be installed
+// before gemini.js/localai.js capture their dependencies.
+installWindowsProviderTransport();
+installWindowsLocalAiRuntime();
 installProviderRuntimeHardening();
 installAnalyzeProviderFallback();
 
@@ -17,9 +31,55 @@ const storage = require('./storage');
 const geminiSessionRef = { current: null };
 let mainWindow = null;
 
+function installWindowsSmokeCheck(window) {
+    if (!WINDOWS_SMOKE_MODE) return;
+
+    let finished = false;
+    const finish = (success, detail) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
+        console.log(success ? `[Windows smoke] PASS: ${detail}` : `[Windows smoke] FAIL: ${detail}`);
+        setTimeout(() => app.exit(success ? 0 : 1), 50);
+    };
+
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 20 seconds'), 20000);
+
+    window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+        finish(false, `load failed (${errorCode}): ${errorDescription}`);
+    });
+    window.webContents.once('render-process-gone', (_event, details) => {
+        finish(false, `renderer process exited: ${details.reason}`);
+    });
+    window.webContents.once('did-finish-load', async () => {
+        try {
+            const result = await window.webContents.executeJavaScript(`
+                (async () => {
+                    await customElements.whenDefined('cheating-daddy-app');
+                    await customElements.whenDefined('main-view');
+                    await customElements.whenDefined('assistant-view');
+                    return {
+                        bridge: Boolean(window.electronAPI && window.require),
+                        platform: window.process?.platform,
+                        arch: window.process?.arch,
+                        app: Boolean(document.querySelector('cheating-daddy-app')),
+                    };
+                })()
+            `, true);
+
+            const ready = result?.bridge === true && result?.platform === 'win32' && result?.arch === 'x64' && result?.app === true;
+            finish(ready, ready ? 'sandboxed preload and renderer loaded' : `unexpected renderer state ${JSON.stringify(result)}`);
+        } catch (error) {
+            finish(false, error.message);
+        }
+    });
+}
+
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
     setupRuntimeWindowHardening(mainWindow);
+    setupWindowsWindowHardening(mainWindow);
+    installWindowsSmokeCheck(mainWindow);
     return mainWindow;
 }
 
@@ -37,19 +97,19 @@ function validateObject(value) {
 
 app.whenReady().then(async () => {
     storage.initializeStorage();
-    if (process.platform === 'darwin') {
-        const { desktopCapturer } = require('electron');
-        desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
-    }
     createMainWindow();
 
-    // Wrap provider IPC registration once. The registered handlers retain the
-    // hardening wrappers after ipcMain.handle itself is restored.
+    // Install the Windows wrapper first, then the shared runtime wrapper. The
+    // resulting registered handler is Windows -> shared hardening -> provider,
+    // which gives the Windows layer authority to impose a single overall request
+    // deadline and to mix loopback/microphone PCM before provider routing.
+    const restoreWindowsIpc = installWindowsIpcHardening();
     const restoreIpcHandle = installIpcHandlerHardening();
     try {
         setupGeminiIpcHandlers(geminiSessionRef);
     } finally {
         restoreIpcHandle();
+        restoreWindowsIpc();
     }
 
     setupStorageIpcHandlers();
@@ -58,16 +118,13 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
     stopMacOSAudioCapture();
-    if (process.platform !== 'darwin') app.quit();
+    app.quit();
 });
 
 app.on('before-quit', () => {
+    abortProviderSession('Application is closing');
     stopMacOSAudioCapture();
     require('./utils/localai').closeLocalSession();
-});
-
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
 });
 
 function setupStorageIpcHandlers() {

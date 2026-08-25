@@ -45,6 +45,14 @@ jobs:
         shell: pwsh
         run: npm test --if-present
 
+      - name: Run Electron renderer smoke test
+        shell: pwsh
+        run: |
+          & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Electron renderer smoke test failed with exit code $LASTEXITCODE"
+          }
+
       - name: Build portable Windows EXE
         shell: pwsh
         run: npm run build:portable -- --publish never
