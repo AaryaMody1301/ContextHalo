@@ -5,6 +5,7 @@ on:
     branches: [phase-1-complete-fixes]
     paths:
       - 'scripts/apply-provider-reliability-fixes.js'
+      - 'scripts/final-provider-corrections.js'
       - 'src/utils/gemini.js'
       - '.github/workflows/apply-provider-fixes.yml'
 
@@ -24,7 +25,9 @@ jobs:
           node-version: '24'
 
       - name: Apply deterministic provider fixes
-        run: node scripts/apply-provider-reliability-fixes.js
+        run: |
+          node scripts/apply-provider-reliability-fixes.js
+          node scripts/final-provider-corrections.js
 
       - name: Validate patched provider module
         run: node --check src/utils/gemini.js
@@ -38,5 +41,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/utils/gemini.js
-          git commit -m 'fix: apply provider reliability improvements'
+          git commit -m 'fix: apply final provider reliability improvements'
           git push
