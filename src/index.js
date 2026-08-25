@@ -15,16 +15,24 @@ function createMainWindow() {
     return mainWindow;
 }
 
-app.whenReady().then(async () => {
-    // Initialize storage (checks version, resets if needed)
-    storage.initializeStorage();
+function isTrustedEvent(event) {
+    return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
+}
 
-    // Trigger screen recording permission prompt on macOS if not already granted
+function validateString(value, maxLength = 200000) {
+    return typeof value === 'string' && value.length <= maxLength;
+}
+
+function validateObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+app.whenReady().then(async () => {
+    storage.initializeStorage();
     if (process.platform === 'darwin') {
         const { desktopCapturer } = require('electron');
         desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
     }
-
     createMainWindow();
     setupGeminiIpcHandlers(geminiSessionRef);
     setupStorageIpcHandlers();
@@ -33,9 +41,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
     stopMacOSAudioCapture();
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
@@ -44,257 +50,92 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
 });
 
 function setupStorageIpcHandlers() {
-    // ============ CONFIG ============
-    ipcMain.handle('storage:get-config', async () => {
-        try {
-            return { success: true, data: storage.getConfig() };
-        } catch (error) {
-            console.error('Error getting config:', error);
-            return { success: false, error: error.message };
-        }
+    const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
+        if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        try { return await handler(...args); } catch (error) { console.error(`${channel} failed:`, error); return { success: false, error: error.message }; }
     });
 
-    ipcMain.handle('storage:set-config', async (event, config) => {
-        try {
-            storage.setConfig(config);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting config:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:get-config', () => ({ success: true, data: storage.getConfig() }));
+    handle('storage:set-config', config => {
+        if (!validateObject(config)) throw new Error('Invalid config');
+        storage.setConfig(config); return { success: true };
+    });
+    handle('storage:update-config', (key, value) => {
+        if (!validateString(key, 100)) throw new Error('Invalid config key');
+        storage.updateConfig(key, value); return { success: true };
     });
 
-    ipcMain.handle('storage:update-config', async (event, key, value) => {
-        try {
-            storage.updateConfig(key, value);
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating config:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:get-credentials', () => ({ success: true, data: storage.getCredentials() }));
+    handle('storage:set-credentials', credentials => {
+        if (!validateObject(credentials)) throw new Error('Invalid credentials');
+        storage.setCredentials(credentials); return { success: true };
+    });
+    handle('storage:get-api-key', () => ({ success: true, data: storage.getApiKey() }));
+    handle('storage:set-api-key', apiKey => {
+        if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
+        storage.setApiKey(apiKey); return { success: true };
+    });
+    handle('storage:get-groq-api-key', () => ({ success: true, data: storage.getGroqApiKey() }));
+    handle('storage:set-groq-api-key', groqApiKey => {
+        if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
+        storage.setGroqApiKey(groqApiKey); return { success: true };
     });
 
-    // ============ CREDENTIALS ============
-    ipcMain.handle('storage:get-credentials', async () => {
-        try {
-            return { success: true, data: storage.getCredentials() };
-        } catch (error) {
-            console.error('Error getting credentials:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
+    handle('storage:set-preferences', preferences => {
+        if (!validateObject(preferences)) throw new Error('Invalid preferences');
+        storage.setPreferences(preferences); return { success: true };
+    });
+    handle('storage:update-preference', (key, value) => {
+        if (!validateString(key, 100)) throw new Error('Invalid preference key');
+        storage.updatePreference(key, value); return { success: true };
     });
 
-    ipcMain.handle('storage:set-credentials', async (event, credentials) => {
-        try {
-            storage.setCredentials(credentials);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting credentials:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:get-keybinds', () => ({ success: true, data: storage.getKeybinds() }));
+    handle('storage:set-keybinds', keybinds => {
+        if (!validateObject(keybinds)) throw new Error('Invalid keybinds');
+        storage.setKeybinds(keybinds); return { success: true };
     });
 
-    ipcMain.handle('storage:get-api-key', async () => {
-        try {
-            return { success: true, data: storage.getApiKey() };
-        } catch (error) {
-            console.error('Error getting API key:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:get-all-sessions', () => ({ success: true, data: storage.getAllSessions() }));
+    handle('storage:get-session', sessionId => {
+        if (!validateString(sessionId, 100) || !/^\d+$/.test(sessionId)) throw new Error('Invalid session ID');
+        return { success: true, data: storage.getSession(sessionId) };
     });
-
-    ipcMain.handle('storage:set-api-key', async (event, apiKey) => {
-        try {
-            storage.setApiKey(apiKey);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting API key:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:save-session', (sessionId, data) => {
+        if (!validateString(sessionId, 100) || !/^\d+$/.test(sessionId) || !validateObject(data)) throw new Error('Invalid session data');
+        storage.saveSession(sessionId, data); return { success: true };
     });
-
-    ipcMain.handle('storage:get-groq-api-key', async () => {
-        try {
-            return { success: true, data: storage.getGroqApiKey() };
-        } catch (error) {
-            console.error('Error getting Groq API key:', error);
-            return { success: false, error: error.message };
-        }
+    handle('storage:delete-session', sessionId => {
+        if (!validateString(sessionId, 100) || !/^\d+$/.test(sessionId)) throw new Error('Invalid session ID');
+        storage.deleteSession(sessionId); return { success: true };
     });
-
-    ipcMain.handle('storage:set-groq-api-key', async (event, groqApiKey) => {
-        try {
-            storage.setGroqApiKey(groqApiKey);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting Groq API key:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    // ============ PREFERENCES ============
-    ipcMain.handle('storage:get-preferences', async () => {
-        try {
-            return { success: true, data: storage.getPreferences() };
-        } catch (error) {
-            console.error('Error getting preferences:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:set-preferences', async (event, preferences) => {
-        try {
-            storage.setPreferences(preferences);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting preferences:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:update-preference', async (event, key, value) => {
-        try {
-            storage.updatePreference(key, value);
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating preference:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    // ============ KEYBINDS ============
-    ipcMain.handle('storage:get-keybinds', async () => {
-        try {
-            return { success: true, data: storage.getKeybinds() };
-        } catch (error) {
-            console.error('Error getting keybinds:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:set-keybinds', async (event, keybinds) => {
-        try {
-            storage.setKeybinds(keybinds);
-            return { success: true };
-        } catch (error) {
-            console.error('Error setting keybinds:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    // ============ HISTORY ============
-    ipcMain.handle('storage:get-all-sessions', async () => {
-        try {
-            return { success: true, data: storage.getAllSessions() };
-        } catch (error) {
-            console.error('Error getting sessions:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:get-session', async (event, sessionId) => {
-        try {
-            return { success: true, data: storage.getSession(sessionId) };
-        } catch (error) {
-            console.error('Error getting session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:save-session', async (event, sessionId, data) => {
-        try {
-            storage.saveSession(sessionId, data);
-            return { success: true };
-        } catch (error) {
-            console.error('Error saving session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:delete-session', async (event, sessionId) => {
-        try {
-            storage.deleteSession(sessionId);
-            return { success: true };
-        } catch (error) {
-            console.error('Error deleting session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('storage:delete-all-sessions', async () => {
-        try {
-            storage.deleteAllSessions();
-            return { success: true };
-        } catch (error) {
-            console.error('Error deleting all sessions:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    // ============ LIMITS ============
-    ipcMain.handle('storage:get-today-limits', async () => {
-        try {
-            return { success: true, data: storage.getTodayLimits() };
-        } catch (error) {
-            console.error('Error getting today limits:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    // ============ CLEAR ALL ============
-    ipcMain.handle('storage:clear-all', async () => {
-        try {
-            storage.clearAllData();
-            return { success: true };
-        } catch (error) {
-            console.error('Error clearing all data:', error);
-            return { success: false, error: error.message };
-        }
-    });
+    handle('storage:delete-all-sessions', () => ({ success: storage.deleteAllSessions() }));
+    handle('storage:get-today-limits', () => ({ success: true, data: storage.getTodayLimits() }));
+    handle('storage:clear-all', () => ({ success: storage.clearAllData() }));
 }
 
 function setupGeneralIpcHandlers() {
-    ipcMain.handle('get-app-version', async () => {
-        return app.getVersion();
+    ipcMain.handle('get-app-version', event => {
+        if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        return { success: true, data: app.getVersion() };
     });
 
-    ipcMain.handle('quit-application', async event => {
-        try {
-            stopMacOSAudioCapture();
-            app.quit();
-            return { success: true };
-        } catch (error) {
-            console.error('Error quitting application:', error);
-            return { success: false, error: error.message };
-        }
+    ipcMain.handle('quit-application', event => {
+        if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        app.quit(); return { success: true };
     });
 
-    ipcMain.handle('open-external', async (event, url) => {
-        try {
-            await shell.openExternal(url);
-            return { success: true };
-        } catch (error) {
-            console.error('Error opening external URL:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.on('update-keybinds', (event, newKeybinds) => {
-        if (mainWindow) {
-            // Also save to storage
-            storage.setKeybinds(newKeybinds);
-            updateGlobalShortcuts(newKeybinds, mainWindow, sendToRenderer, geminiSessionRef);
-        }
-    });
-
-    // Debug logging from renderer
-    ipcMain.on('log-message', (event, msg) => {
-        console.log(msg);
+    ipcMain.handle('open-external', async (event, rawUrl) => {
+        if (!isTrustedEvent(event) || !validateString(rawUrl, 4096)) return { success: false, error: 'Invalid URL' };
+        let parsed;
+        try { parsed = new URL(rawUrl); } catch { return { success: false, error: 'Invalid URL' }; }
+        if (!['https:', 'http:'].includes(parsed.protocol)) return { success: false, error: 'Unsupported URL protocol' };
+        await shell.openExternal(parsed.toString());
+        return { success: true };
     });
 }
