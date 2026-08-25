@@ -271,6 +271,15 @@ function shouldForwardAudioChannel(channel) {
     return channel === 'send-audio-content';
 }
 
+function sendScreenAnalysisCompletion(event, result) {
+    if (!event?.sender || event.sender.isDestroyed?.()) return;
+    try {
+        event.sender.send('screen-analysis-complete', result);
+    } catch (error) {
+        console.warn('Could not report Analyze Screen completion:', error.message);
+    }
+}
+
 function wrapIpcHandler(channel, handler) {
     registeredHandlers.set(channel, handler);
 
@@ -314,7 +323,18 @@ function wrapIpcHandler(channel, handler) {
         return (event, ...args) => {
             const queued = imageRequestQueue.then(() => callWithProviderRetry(() => handler(event, ...args)));
             imageRequestQueue = queued.catch(() => {});
-            return queued;
+
+            return queued.then(
+                result => {
+                    sendScreenAnalysisCompletion(event, result);
+                    return result;
+                },
+                error => {
+                    const result = { success: false, error: error?.message || String(error) };
+                    sendScreenAnalysisCompletion(event, result);
+                    throw error;
+                }
+            );
         };
     }
 
