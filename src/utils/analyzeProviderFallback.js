@@ -77,7 +77,7 @@ function installAnalyzeProviderFallback() {
             // Analyze Screen is the only current caller of generateContentStream.
             // Use a bounded non-streaming request instead, then adapt the response
             // to the existing async-iterator contract. This avoids a stream that can
-            // hang while still preserving the renderer's current response handling.
+            // hang while preserving the renderer's current response handling.
             models.generateContentStream = async params => {
                 const requestedModel = params?.model || 'gemini-3.7-flash';
                 const modelChain = [...new Set([requestedModel, FALLBACK_MODEL])];
@@ -115,10 +115,11 @@ function installAnalyzeProviderFallback() {
                         return toSingleChunkStream(response);
                     } catch (error) {
                         lastError = error;
+                        const retryable = isRetryableAnalyzeError(error);
                         const hasFallback = index < modelChain.length - 1;
-                        if (!hasFallback || !isRetryableAnalyzeError(error)) {
-                            throw error;
-                        }
+
+                        if (!retryable) throw error;
+                        if (!hasFallback) break;
 
                         console.warn(
                             `Analyze Screen model ${model} failed (${getErrorText(error).slice(0, 180)}); trying ${modelChain[index + 1]}`
