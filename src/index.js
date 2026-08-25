@@ -3,6 +3,11 @@ if (require('electron-squirrel-startup')) {
 }
 
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
+
+// Patch provider construction before gemini.js destructures @google/genai.
+installProviderRuntimeHardening();
+
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
@@ -12,6 +17,7 @@ let mainWindow = null;
 
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
+    setupRuntimeWindowHardening(mainWindow);
     return mainWindow;
 }
 
@@ -34,7 +40,16 @@ app.whenReady().then(async () => {
         desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
     }
     createMainWindow();
-    setupGeminiIpcHandlers(geminiSessionRef);
+
+    // Wrap provider IPC registration once. The registered handlers retain the
+    // hardening wrappers after ipcMain.handle itself is restored.
+    const restoreIpcHandle = installIpcHandlerHardening();
+    try {
+        setupGeminiIpcHandlers(geminiSessionRef);
+    } finally {
+        restoreIpcHandle();
+    }
+
     setupStorageIpcHandlers();
     setupGeneralIpcHandlers();
 });
@@ -97,7 +112,7 @@ function setupStorageIpcHandlers() {
 
     handle('storage:get-keybinds', () => ({ success: true, data: storage.getKeybinds() }));
     handle('storage:set-keybinds', keybinds => {
-        if (!validateObject(keybinds)) throw new Error('Invalid keybinds');
+        if (keybinds !== null && !validateObject(keybinds)) throw new Error('Invalid keybinds');
         storage.setKeybinds(keybinds); return { success: true };
     });
 
