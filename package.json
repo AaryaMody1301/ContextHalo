@@ -58,6 +58,7 @@
             "output": "dist"
         },
         "win": {
+            "icon": "src/assets/logo.ico",
             "target": [
                 {
                     "target": "portable",
