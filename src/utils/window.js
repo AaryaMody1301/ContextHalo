@@ -21,14 +21,14 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         frame: false,
         transparent: true,
         hasShadow: false,
-        alwaysOnTop: process.platform === 'win32',
+        alwaysOnTop: true,
+        icon: path.join(__dirname, '../assets/logo.ico'),
         webPreferences: {
             preload: path.join(__dirname, '../../preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: false,
+            sandbox: true,
             backgroundThrottling: false,
-            enableBlinkFeatures: 'GetDisplayMedia',
             webSecurity: true,
             allowRunningInsecureContent: false,
         },
@@ -45,15 +45,9 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     );
 
     mainWindow.setContentProtection(true);
-    if (process.platform === 'win32') {
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-        try { mainWindow.setSkipTaskbar(true); } catch (error) { console.warn('Could not hide from taskbar:', error.message); }
-    }
-
-    if (process.platform === 'darwin') {
-        try { mainWindow.setHiddenInMissionControl(true); } catch (error) { console.warn('Could not hide from Mission Control:', error.message); }
-    }
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    try { mainWindow.setSkipTaskbar(true); } catch (error) { console.warn('Could not hide from taskbar:', error.message); }
 
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('will-navigate', event => event.preventDefault());
@@ -72,14 +66,13 @@ function createWindow(sendToRenderer, geminiSessionRef) {
 }
 
 function getDefaultKeybinds() {
-    const isMac = process.platform === 'darwin';
     return {
-        moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up', moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
-        moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left', moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
-        toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\', toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
-        nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter', previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
-        nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]', scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
-        scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down', emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
+        moveUp: 'Ctrl+Up', moveDown: 'Ctrl+Down',
+        moveLeft: 'Ctrl+Left', moveRight: 'Ctrl+Right',
+        toggleVisibility: 'Ctrl+\\', toggleClickThrough: 'Ctrl+M',
+        nextStep: 'Ctrl+Enter', previousResponse: 'Ctrl+[',
+        nextResponse: 'Ctrl+]', scrollUp: 'Ctrl+Shift+Up',
+        scrollDown: 'Ctrl+Shift+Down', emergencyErase: 'Ctrl+Shift+E',
     };
 }
 
@@ -107,7 +100,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         mainWindow.setIgnoreMouseEvents(mouseEventsIgnored, mouseEventsIgnored ? { forward: true } : undefined);
         mainWindow.webContents.send('click-through-toggled', mouseEventsIgnored);
     });
-    register('nextStep', () => mainWindow.webContents.send('shortcut', process.platform === 'darwin' ? 'cmd+enter' : 'ctrl+enter'));
+    register('nextStep', () => mainWindow.webContents.send('shortcut', 'ctrl+enter'));
     register('previousResponse', () => sendToRenderer('navigate-previous-response'));
     register('nextResponse', () => sendToRenderer('navigate-next-response'));
     register('scrollUp', () => sendToRenderer('scroll-response-up'));
@@ -125,10 +118,6 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
     ipcMain.on('view-changed', (event, view) => {
         if (!isTrustedEvent(event, mainWindow) || typeof view !== 'string' || mainWindow.isDestroyed()) return;
         const isLiveMode = view === 'assistant';
-        if (process.platform !== 'win32') {
-            mainWindow.setAlwaysOnTop(isLiveMode);
-            mainWindow.setVisibleOnAllWorkspaces(isLiveMode, { visibleOnFullScreen: isLiveMode });
-        }
         if (!isLiveMode) mainWindow.setIgnoreMouseEvents(false);
     });
 
