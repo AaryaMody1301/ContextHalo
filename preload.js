@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('require', moduleName => {
 
 contextBridge.exposeInMainWorld('process', {
     platform: process.platform,
+    arch: process.arch,
     env: {
         NODE_ENV: process.env.NODE_ENV || 'production',
     },
