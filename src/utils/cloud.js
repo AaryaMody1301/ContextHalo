@@ -21,7 +21,6 @@ function setOnTurnComplete(callback) {
 }
 
 function connectCloud(token, profile, userContext) {
-    // Close existing connection
     if (cloudWs) {
         try { cloudWs.close(); } catch (e) {}
         cloudWs = null;
@@ -32,7 +31,8 @@ function connectCloud(token, profile, userContext) {
 
     return new Promise((resolve, reject) => {
         const url = `wss://api.cheatingdaddy.com/ws?token=${encodeURIComponent(token)}`;
-        console.log('[Cloud] Connecting to', url);
+        // Never log the URL: it contains the bearer credential in its query string.
+        console.log('[Cloud] Connecting to secure cloud endpoint');
 
         cloudWs = new WebSocket(url);
 
@@ -48,7 +48,6 @@ function connectCloud(token, profile, userContext) {
             isCloudConnected = true;
             clearTimeout(timeout);
 
-            // Send config immediately after open
             const config = JSON.stringify({
                 type: 'set_config',
                 profile: profile || 'interview',
@@ -61,7 +60,7 @@ function connectCloud(token, profile, userContext) {
             resolve(true);
         });
 
-        cloudWs.on('message', (data) => {
+        cloudWs.on('message', data => {
             try {
                 const msg = JSON.parse(data.toString());
                 handleMessage(msg);
@@ -77,7 +76,7 @@ function connectCloud(token, profile, userContext) {
             clearTimeout(timeout);
         });
 
-        cloudWs.on('error', (err) => {
+        cloudWs.on('error', err => {
             console.error('[Cloud] WebSocket error:', err.message);
             isCloudConnected = false;
             clearTimeout(timeout);
@@ -91,24 +90,20 @@ function handleMessage(msg) {
         case 'connected':
             console.log('[Cloud] Server confirmed connected');
             break;
-
         case 'transcription':
             console.log('[Cloud] Transcription:', msg.text);
             currentTranscription = msg.text || '';
             sendToRenderer('update-status', 'Generating response...');
             break;
-
         case 'response_start':
             currentCloudResponse = '';
             isFirstChunk = true;
             break;
-
         case 'response_chunk':
             currentCloudResponse += msg.text;
             sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', currentCloudResponse);
             isFirstChunk = false;
             break;
-
         case 'response_end':
             if (onTurnComplete && currentCloudResponse.trim()) {
                 onTurnComplete(currentTranscription, currentCloudResponse);
@@ -116,31 +111,24 @@ function handleMessage(msg) {
             currentTranscription = '';
             sendToRenderer('update-status', 'Listening...');
             break;
-
         case 'session_end':
             console.log('[Cloud] Session ended by server');
             isCloudConnected = false;
             break;
-
         case 'error':
             console.error('[Cloud] Server error:', msg.message);
             sendToRenderer('update-status', 'Cloud error: ' + msg.message);
             break;
-
         default:
             console.log('[Cloud] Event:', msg.type);
     }
 }
 
 function sendCloudAudio(pcmBuffer) {
-    if (!cloudWs || !isCloudConnected || cloudWs.readyState !== WebSocket.OPEN) {
-        return;
-    }
+    if (!cloudWs || !isCloudConnected || cloudWs.readyState !== WebSocket.OPEN) return;
 
-    cloudWs.send(pcmBuffer, { binary: true }, (err) => {
-        if (err) {
-            console.error('[Cloud] Audio send error:', err.message);
-        }
+    cloudWs.send(pcmBuffer, { binary: true }, err => {
+        if (err) console.error('[Cloud] Audio send error:', err.message);
     });
 
     audioChunkCount++;
@@ -149,21 +137,13 @@ function sendCloudAudio(pcmBuffer) {
 
 function sendCloudText(text) {
     if (cloudWs && isCloudConnected && cloudWs.readyState === WebSocket.OPEN) {
-        cloudWs.send(JSON.stringify({
-            type: 'test_text',
-            text: text
-        }));
+        cloudWs.send(JSON.stringify({ type: 'test_text', text }));
     }
 }
 
 function sendCloudImage(base64Data) {
-    if (!cloudWs || !isCloudConnected || cloudWs.readyState !== WebSocket.OPEN) {
-        return false;
-    }
-    cloudWs.send(JSON.stringify({
-        type: 'image',
-        image: base64Data
-    }));
+    if (!cloudWs || !isCloudConnected || cloudWs.readyState !== WebSocket.OPEN) return false;
+    cloudWs.send(JSON.stringify({ type: 'image', image: base64Data }));
     return true;
 }
 
