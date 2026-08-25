@@ -147,20 +147,8 @@ async function patchMainView() {
                         <input type="text" .value=${this._groqImageModel} @input=${event => this._saveGroqImageModel(event.target.value)} />
                     </div>
 
-                    <label class="config-checkbox">
-                        <input
-                            type="checkbox"
-                            .checked=${this._disableGroqThinking}
-                            @change=${event => this._saveDisableGroqThinking(event.target.checked)}
-                        />
-                        <span class="config-checkbox-text">
-                            <span class="config-summary-title">Disable extra thinking</span>
-                            <span class="config-summary-description">Use lower latency when the selected model supports it</span>
-                        </span>
-                    </label>
-
                     <div class="config-note">
-                        Audio transcription uses whisper-large-v3-turbo. This mode does not require a Gemini key or consume Gemini quota.
+                        Audio transcription uses whisper-large-v3-turbo. GPT-OSS reasoning output is hidden; Qwen vision uses the saved reasoning preference. This mode does not require a Gemini key or consume Gemini quota.
                     </div>
                 </div>
             </details>
