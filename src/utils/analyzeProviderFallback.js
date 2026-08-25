@@ -1,5 +1,3 @@
-const genai = require('@google/genai');
-
 const REQUEST_TIMEOUT_MS = 27000;
 const FALLBACK_MODEL = 'gemini-3.6-flash';
 const MAX_OUTPUT_TOKENS = 4096;
@@ -38,12 +36,12 @@ function isRetryableAnalyzeError(error) {
     return RETRYABLE_ANALYZE_PATTERNS.some(pattern => pattern.test(text));
 }
 
-function replaceGoogleGenAiExport(HardenedGoogleGenAI) {
+function replaceGoogleGenAiExport(genai, HardenedGoogleGenAI) {
     try {
         genai.GoogleGenAI = HardenedGoogleGenAI;
     } catch {}
 
-    if (genai.GoogleGenAI === HardenedGoogleGenAI) return true;
+    if (require('@google/genai').GoogleGenAI === HardenedGoogleGenAI) return true;
 
     try {
         const modulePath = require.resolve('@google/genai');
@@ -63,7 +61,11 @@ function toSingleChunkStream(response) {
 }
 
 function installAnalyzeProviderFallback() {
-    const OriginalGoogleGenAI = require('@google/genai').GoogleGenAI;
+    // Resolve the SDK only when installing. runtimeHardeningMain wraps the SDK
+    // immediately before this function, so capturing it at module-load time can
+    // leave us patching a stale exports object instead of the class gemini.js uses.
+    const genai = require('@google/genai');
+    const OriginalGoogleGenAI = genai.GoogleGenAI;
     if (!OriginalGoogleGenAI || OriginalGoogleGenAI.__analyzeFallbackInstalled) return;
 
     class AnalyzeFallbackGoogleGenAI extends OriginalGoogleGenAI {
@@ -138,7 +140,7 @@ function installAnalyzeProviderFallback() {
     }
 
     Object.defineProperty(AnalyzeFallbackGoogleGenAI, '__analyzeFallbackInstalled', { value: true });
-    if (!replaceGoogleGenAiExport(AnalyzeFallbackGoogleGenAI)) {
+    if (!replaceGoogleGenAiExport(genai, AnalyzeFallbackGoogleGenAI)) {
         throw new Error('Could not install Analyze Screen Gemini fallback');
     }
 }
