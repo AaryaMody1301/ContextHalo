@@ -10,8 +10,12 @@
         "make": "electron-forge make",
         "build:portable": "electron-builder --win portable --x64",
         "publish": "electron-forge publish",
-        "lint": "node -e \"console.log('Linting is not configured yet; run npm run check instead.')\"",
-        "check": "node --check src/index.js && node --check preload.js && node --check src/utils/gemini.js && node --check src/storage.js"
+        "check": "node scripts/check-source.js",
+        "lint": "npm run check"
+    },
+    "engines": {
+        "node": ">=22",
+        "npm": ">=10"
     },
     "keywords": [
         "electron",
