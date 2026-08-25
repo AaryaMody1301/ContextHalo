@@ -1,60 +1,74 @@
-<img width="1299" height="424" alt="cd (1)" src="https://github.com/user-attachments/assets/b25fff4d-043d-4f38-9985-f832ae0d0f6e" />
+# Cheating Daddy
 
-## Recall.ai - API for desktop recording
+A desktop AI assistant for real-time interview, meeting, presentation, and screen-based assistance. The application combines live audio, screen context, and text input with Gemini, Groq, cloud, and local provider options.
 
-If you’re looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk/?utm_source=github&utm_medium=sponsorship&utm_campaign=sohzm-cheating-daddy), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
-
-This project is sponsored by Recall.ai.
-
----
-
-> [!NOTE]  
-> Use latest MacOS and Windows version, older versions have limited support
-
-> [!NOTE]  
-> During testing it wont answer if you ask something, you need to simulate interviewer asking question, which it will answer
-
-A real-time AI assistant that provides contextual help during video calls, interviews, presentations, and meetings using screen capture and audio analysis.
+> **Status:** Active development. Windows is the primary supported build target.
 
 ## Features
 
-- **Live AI Assistance**: Real-time help powered by Google Gemini 2.0 Flash Live
-- **Screen & Audio Capture**: Analyzes what you see and hear for contextual responses
-- **Multiple Profiles**: Interview, Sales Call, Business Meeting, Presentation, Negotiation
-- **Transparent Overlay**: Always-on-top window that can be positioned anywhere
-- **Click-through Mode**: Make window transparent to clicks when needed
-- **Cross-platform**: Works on macOS, Windows, and Linux (kinda, dont use, just for testing rn)
-
-## Setup
-
-1. **Get a Gemini API Key**: Visit [Google AI Studio](https://aistudio.google.com/apikey)
-2. **Install Dependencies**: `npm install`
-3. **Run the App**: `npm start`
-
-## Usage
-
-1. Enter your Gemini API key in the main window
-2. Choose your profile and language in settings
-3. Click "Start Session" to begin
-4. Position the window using keyboard shortcuts
-5. The AI will provide real-time assistance based on your screen and what interview asks
-
-## Keyboard Shortcuts
-
-- **Window Movement**: `Ctrl/Cmd + Arrow Keys` - Move window
-- **Click-through**: `Ctrl/Cmd + M` - Toggle mouse events
-- **Close/Back**: `Ctrl/Cmd + \` - Close window or go back
-- **Send Message**: `Enter` - Send text to AI
-
-## Audio Capture
-
-- **macOS**: [SystemAudioDump](https://github.com/Mohammed-Yasin-Mulla/Sound) for system audio
-- **Windows**: Loopback audio capture
-- **Linux**: Microphone input
+- Real-time AI assistance with configurable provider modes
+- Screen capture and image analysis
+- System-audio and microphone workflows
+- Gemini Live and Groq integrations
+- Conversation history and multiple profiles
+- Always-on-top transparent overlay with click-through mode
+- Configurable keyboard shortcuts
+- Windows portable build and cross-platform Electron packaging
 
 ## Requirements
 
-- Electron-compatible OS (macOS, Windows, Linux)
-- Gemini API key
-- Screen recording permissions
-- Microphone/audio permissions
+- Node.js 22+
+- npm 10+
+- Windows, macOS, or Linux with Electron support
+- A valid API key for the provider you choose
+- Required screen/audio permissions for your operating system
+
+## Quick start
+
+```bash
+npm install
+npm start
+```
+
+For a production-style Windows portable build:
+
+```bash
+npm run build:portable
+```
+
+## Development commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm start` | Run the app locally |
+| `npm run package` | Package the Electron application |
+| `npm run make` | Build platform installers through Electron Forge |
+| `npm run build:portable` | Build the Windows x64 portable executable |
+
+## Project structure
+
+```text
+src/
+├── index.js           # Electron main process and IPC
+├── utils/             # Providers, window, storage and platform utilities
+├── renderer/          # Application UI
+├── assets/            # Application assets
+└── preload.js         # Isolated renderer-to-main IPC bridge
+
+.github/workflows/     # CI and release automation
+```
+
+## Security and privacy
+
+- API credentials are stored locally and are never committed to the repository.
+- Keep API keys out of source code, screenshots, issues, and logs.
+- Use `.env` or local configuration for development secrets.
+- Report security issues privately; see [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Keep changes focused, avoid unrelated formatting churn, and ensure the relevant build checks pass.
+
+## License
+
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
