@@ -1,0 +1,45 @@
+name: Apply Provider Reliability Fixes
+
+on:
+  push:
+    branches: [phase-1-complete-fixes]
+    paths:
+      - 'scripts/apply-provider-reliability-fixes.js'
+      - 'scripts/final-provider-corrections.js'
+      - 'src/utils/gemini.js'
+      - '.github/workflows/apply-provider-fixes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Apply deterministic provider fixes
+        run: |
+          node scripts/apply-provider-reliability-fixes.js
+          node scripts/final-provider-corrections.js
+
+      - name: Validate patched provider module
+        run: node --check src/utils/gemini.js
+
+      - name: Commit generated source changes
+        run: |
+          if git diff --quiet; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/utils/gemini.js
+          git commit -m 'fix: apply final provider reliability improvements'
+          git push

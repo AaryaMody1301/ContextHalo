@@ -48,13 +48,15 @@ let systemAudioProc = null;
 let messageBuffer = '';
 let groqRequestStartedForTurn = false;
 
-const GROQ_MAX_COMPLETION_TOKENS = 768;
+const GROQ_MAX_COMPLETION_TOKENS = 2048;
 const GROQ_MAX_HISTORY_MESSAGES = 8;
 const GROQ_MAX_HISTORY_CHARS = 12000;
 const GROQ_MAX_SYSTEM_PROMPT_CHARS = 6000;
 const GROQ_AUDIO_CHUNK_SECONDS = 8;
 let groqSystemAudioBuffer = Buffer.alloc(0);
 let groqTranscriptionInFlight = false;
+let groqRateLimitState = null;
+let geminiSessionResumptionHandle = null;
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
 
@@ -302,6 +304,22 @@ function compactGroqErrorBody(body) {
     }
 }
 
+function captureGroqRateLimitHeaders(headers) {
+    if (!headers || typeof headers.get !== 'function') return;
+    const read = name => headers.get(name) || null;
+    groqRateLimitState = {
+        limitRequests: read('x-ratelimit-limit-requests'),
+        remainingRequests: read('x-ratelimit-remaining-requests'),
+        resetRequests: read('x-ratelimit-reset-requests'),
+        limitTokens: read('x-ratelimit-limit-tokens'),
+        remainingTokens: read('x-ratelimit-remaining-tokens'),
+        resetTokens: read('x-ratelimit-reset-tokens'),
+        retryAfter: read('retry-after'),
+        updatedAt: Date.now(),
+    };
+    sendToRenderer('groq-rate-limit', groqRateLimitState);
+}
+
 function formatGroqError(status, body, headers) {
     if (status === 429) {
         const retryAfter = headers?.get?.('retry-after');
@@ -379,6 +397,7 @@ async function processGroqAudioQueue(sampleRate, language) {
             body: form,
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         const body = await response.text();
         if (!response.ok) {
             const message = formatGroqError(response.status, body, response.headers);
@@ -458,6 +477,7 @@ async function sendToGroq(transcription) {
             }),
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Groq API error:', response.status, errorText);
@@ -478,6 +498,7 @@ async function sendToGroq(transcription) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
@@ -487,10 +508,13 @@ async function sendToGroq(transcription) {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.text.stream_chunk', { chunk });
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            logTransportEvent('groq.text.stream_chunk', { chunkLength: chunk.length });
+            sseBuffer += chunk;
+            const lines = sseBuffer.split(/\r?\n/);
+            sseBuffer = lines.pop() || '';
+            const completeLines = lines.filter(line => line.trim() !== '');
 
-            for (const line of lines) {
+            for (const line of completeLines) {
                 if (line.startsWith('data: ')) {
                     const data = line.slice(6);
                     if (data === '[DONE]') continue;
@@ -609,6 +633,7 @@ async function sendImageToGroq(base64Data, prompt) {
             }),
         });
 
+        captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Groq image API error:', response.status, errorText);
@@ -625,6 +650,7 @@ async function sendImageToGroq(base64Data, prompt) {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
@@ -634,10 +660,13 @@ async function sendImageToGroq(base64Data, prompt) {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.image.stream_chunk', { chunk });
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            logTransportEvent('groq.image.stream_chunk', { chunkLength: chunk.length });
+            sseBuffer += chunk;
+            const lines = sseBuffer.split(/\r?\n/);
+            sseBuffer = lines.pop() || '';
+            const completeLines = lines.filter(line => line.trim() !== '');
 
-            for (const line of lines) {
+            for (const line of completeLines) {
                 if (!line.startsWith('data: ')) continue;
 
                 const data = line.slice(6);
@@ -831,6 +860,19 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         }
                     }
 
+                    const modelParts = message.serverContent?.modelTurn?.parts || [];
+                    for (const part of modelParts) {
+                        if (part?.text && currentProviderMode !== 'groq') {
+                            const isFirstChunk = messageBuffer === '';
+                            messageBuffer += part.text;
+                            sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
+                        }
+                    }
+
+                    const resumeHandle = message.sessionResumptionUpdate?.newHandle
+                        || message.serverContent?.sessionResumptionUpdate?.newHandle;
+                    if (resumeHandle) geminiSessionResumptionHandle = resumeHandle;
+
                     if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
                         const isFirstChunk = messageBuffer === '';
                         messageBuffer += message.serverContent.outputTranscription.text;
@@ -891,6 +933,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 // transcription settings and can cause an invalid setup request.
                 inputAudioTranscription: {},
                 outputAudioTranscription: {},
+                sessionResumption: geminiSessionResumptionHandle
+                    ? { handle: geminiSessionResumptionHandle }
+                    : {},
                 tools: enabledTools,
                 thinkingConfig: { thinkingLevel: 'minimal' },
                 systemInstruction: {
@@ -969,6 +1014,11 @@ async function attemptReconnect() {
     // If we still have attempts left, try again
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         return attemptReconnect();
+    }
+
+    if (geminiSessionResumptionHandle) {
+        console.warn('Discarding stale Gemini session resumption handle after repeated failures');
+        geminiSessionResumptionHandle = null;
     }
 
     // Max attempts reached - notify frontend
