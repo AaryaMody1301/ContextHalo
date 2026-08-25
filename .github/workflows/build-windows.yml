@@ -79,7 +79,7 @@ jobs:
 
     steps:
       - name: Download portable EXE
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: Cheating-Daddy-Windows-x64-Portable
           path: release
