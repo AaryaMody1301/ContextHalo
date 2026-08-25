@@ -62,6 +62,22 @@ function classifyProviderRequest(input, init = {}) {
     return null;
 }
 
+function tuneProviderRequest(kind, init) {
+    if (kind !== 'groq-text' || typeof init.body !== 'string') return init;
+
+    try {
+        const body = JSON.parse(init.body);
+        if (!String(body.model || '').startsWith('openai/gpt-oss-')) return init;
+
+        body.reasoning_effort = 'low';
+        body.include_reasoning = false;
+        body.max_completion_tokens = Math.max(Number(body.max_completion_tokens) || 0, 4096);
+        return { ...init, body: JSON.stringify(body) };
+    } catch {
+        return init;
+    }
+}
+
 function parseRetryAfterMs(headers) {
     const value = headers?.get?.('retry-after');
     if (!value) return null;
@@ -173,6 +189,7 @@ async function boundedFetch(input, init = {}) {
     const kind = classifyProviderRequest(input, init);
     if (!kind || !POLICIES[kind] || !originalFetch) return originalFetch(input, init);
 
+    const requestInit = tuneProviderRequest(kind, init);
     const policy = POLICIES[kind];
     const startedAt = Date.now();
     let lastError = null;
@@ -193,11 +210,11 @@ async function boundedFetch(input, init = {}) {
         }, availableMs);
 
         const scopeSignal = providerScope.getStore()?.signal || null;
-        const signals = [sessionController.signal, scopeSignal, init.signal].filter(Boolean);
+        const signals = [sessionController.signal, scopeSignal, requestInit.signal].filter(Boolean);
         const signal = makeSignal(controller, signals);
 
         try {
-            const response = await originalFetch(input, { ...init, signal });
+            const response = await originalFetch(input, { ...requestInit, signal });
             const retryableStatus = RETRYABLE_STATUS_CODES.has(response.status);
 
             if (retryableStatus && attempt < policy.attempts - 1) {
@@ -229,7 +246,7 @@ async function boundedFetch(input, init = {}) {
             lastError = error;
 
             const scopeAborted = providerScope.getStore()?.signal?.aborted;
-            if (sessionController.signal.aborted || scopeAborted || init.signal?.aborted) throw error;
+            if (sessionController.signal.aborted || scopeAborted || requestInit.signal?.aborted) throw error;
             if (!isRetryableFetchError(error) || attempt >= policy.attempts - 1) throw error;
 
             const backoff = 500 * 2 ** attempt + Math.floor(Math.random() * 250);
@@ -288,5 +305,6 @@ module.exports = {
     resetProviderSession,
     classifyProviderRequest,
     parseRetryAfterMs,
+    tuneProviderRequest,
     POLICIES,
 };
