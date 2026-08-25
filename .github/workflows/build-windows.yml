@@ -37,13 +37,9 @@ jobs:
         shell: pwsh
         run: npm ci --no-audit --no-fund
 
-      - name: Verify application syntax
+      - name: Run source validation
         shell: pwsh
-        run: |
-          $files = Get-ChildItem -Path src -Recurse -Filter *.js
-          foreach ($file in $files) {
-            node --check $file.FullName
-          }
+        run: npm run check
 
       - name: Run tests
         shell: pwsh
