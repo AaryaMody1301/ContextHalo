@@ -9,15 +9,23 @@ function encodePathParts(value) {
 }
 
 function parseModelReference(modelReference) {
-    const separatorIndex = String(modelReference || '').lastIndexOf(':');
-    if (separatorIndex <= 0 || separatorIndex === modelReference.length - 1) {
+    const value = String(modelReference || '');
+    const separatorIndex = value.lastIndexOf(':');
+    if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
         throw new Error('Language model must use the format owner/repository:quant');
     }
 
-    const repository = modelReference.slice(0, separatorIndex);
-    const quant = modelReference.slice(separatorIndex + 1);
-    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repository) || !/^[A-Za-z0-9._-]+$/.test(quant)) {
-        throw new Error('Language model reference contains unsupported characters');
+    const repository = value.slice(0, separatorIndex);
+    const quant = value.slice(separatorIndex + 1);
+    const repositoryParts = repository.split('/');
+    const safePart = part => /^[A-Za-z0-9._-]+$/.test(part) && part !== '.' && part !== '..';
+
+    if (
+        repositoryParts.length !== 2 ||
+        repositoryParts.some(part => !safePart(part)) ||
+        !safePart(quant)
+    ) {
+        throw new Error('Language model reference contains unsupported or unsafe path components');
     }
     return { repository, quant };
 }
@@ -153,6 +161,9 @@ function installWindowsLocalAiRuntime() {
     const originalEnsureLlamaModel = runtime.ensureLlamaModel.bind(runtime);
 
     runtime.ensureLlamaModel = async (...args) => {
+        const modelReference = args[0];
+        if (!path.isAbsolute(modelReference)) parseModelReference(modelReference);
+
         try {
             return await originalEnsureLlamaModel(...args);
         } catch (error) {
