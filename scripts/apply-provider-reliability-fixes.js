@@ -123,3 +123,5 @@ if (changes === 0) {
     fs.writeFileSync(file, source);
     console.log(`Provider reliability fixes applied: ${changes}`);
 }
+
+// Validation trigger: this file intentionally remains deterministic and idempotent.
