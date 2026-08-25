@@ -13,7 +13,7 @@ A desktop AI assistant for real-time interview, meeting, presentation, and scree
 - Conversation history and multiple profiles
 - Always-on-top transparent overlay with click-through mode
 - Configurable keyboard shortcuts
-- Windows portable build and cross-platform Electron packaging
+- Windows portable builds and cross-platform Electron packaging
 
 ## Requirements
 
@@ -41,6 +41,7 @@ npm run build:portable
 | Command | Purpose |
 | --- | --- |
 | `npm start` | Run the app locally |
+| `npm run check` | Run JavaScript syntax checks |
 | `npm run package` | Package the Electron application |
 | `npm run make` | Build platform installers through Electron Forge |
 | `npm run build:portable` | Build the Windows x64 portable executable |
@@ -48,21 +49,25 @@ npm run build:portable
 ## Project structure
 
 ```text
-src/
-├── index.js           # Electron main process and IPC
-├── utils/             # Providers, window, storage and platform utilities
-├── renderer/          # Application UI
-├── assets/            # Application assets
-└── preload.js         # Isolated renderer-to-main IPC bridge
+.github/
+├── dependabot.yml      # Dependency update automation
+└── workflows/          # CI and release automation
 
-.github/workflows/     # CI and release automation
+scripts/                # Repository maintenance utilities
+src/
+├── index.js            # Electron main process and IPC
+├── renderer/           # Application UI
+├── utils/              # Providers, storage, window and platform utilities
+└── assets/             # Application assets
+
+preload.js              # Isolated renderer-to-main IPC bridge
 ```
 
 ## Security and privacy
 
 - API credentials are stored locally and are never committed to the repository.
 - Keep API keys out of source code, screenshots, issues, and logs.
-- Use `.env` or local configuration for development secrets.
+- Copy `.env.example` to `.env` only for local development workflows that need environment variables.
 - Report security issues privately; see [SECURITY.md](SECURITY.md).
 
 ## Contributing
