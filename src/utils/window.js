@@ -6,6 +6,7 @@ let mouseEventsIgnored = false;
 
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1100, height: 800 };
 const MIN_WINDOW_SIZE = { width: 700, height: 320 };
+const WINDOWS_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 function isTrustedEvent(event, mainWindow) {
     return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
@@ -35,13 +36,36 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         backgroundColor: '#00000000',
     });
 
-    session.defaultSession.setDisplayMediaRequestHandler(
+    const appSession = session.defaultSession;
+
+    appSession.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = { ...(details.responseHeaders || {}) };
+        if (details.url.startsWith('file://')) {
+            responseHeaders['Content-Security-Policy'] = [WINDOWS_CSP];
+        }
+        callback({ responseHeaders });
+    });
+
+    const isTrustedMainFramePermission = (webContents, permission, details = {}) => {
+        if (!webContents || webContents.id !== mainWindow.webContents.id) return false;
+        if (details.isMainFrame === false) return false;
+        return permission === 'media' || permission === 'display-capture';
+    };
+
+    appSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+        callback(isTrustedMainFramePermission(webContents, permission, details));
+    });
+    appSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+        return isTrustedMainFramePermission(webContents, permission, details);
+    });
+
+    appSession.setDisplayMediaRequestHandler(
         (request, callback) => {
             desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
                 callback({ video: sources[0], audio: 'loopback' });
             }).catch(() => callback({}));
         },
-        { useSystemPicker: true }
+        { useSystemPicker: false }
     );
 
     mainWindow.setContentProtection(true);
