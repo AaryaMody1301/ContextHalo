@@ -15,7 +15,11 @@ const RETRYABLE_PROVIDER_PATTERNS = [
     /\b504\b/i,
     /internal/i,
     /unavailable/i,
+    /empty provider response/i,
+    /stream timed out/i,
 ];
+
+const PROVIDER_STREAM_TIMEOUT_MS = 30000;
 
 let runtimeProviderMode = 'byok';
 let imageRequestQueue = Promise.resolve();
@@ -23,6 +27,8 @@ let groqUtteranceQueue = Promise.resolve();
 let originalIpcHandle = null;
 let googleGenAiPatched = false;
 let runtimeMacAudioProc = null;
+let rejectedGeminiResumptionHandle = null;
+let beforeQuitCleanupInstalled = false;
 const registeredHandlers = new Map();
 
 const GROQ_VAD = {
@@ -53,6 +59,22 @@ function resetGroqVad() {
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, timeoutMs, message) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+        Promise.resolve(promise).then(
+            value => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            error => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
 }
 
 function getErrorText(value) {
@@ -94,6 +116,52 @@ async function callWithProviderRetry(fn, attempts = 4) {
     return lastResult;
 }
 
+function wrapGenerateContentStream(stream) {
+    if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return stream;
+
+    return {
+        [Symbol.asyncIterator]() {
+            const iterator = stream[Symbol.asyncIterator]();
+            let sawText = false;
+
+            return {
+                async next() {
+                    const result = await withTimeout(iterator.next(), PROVIDER_STREAM_TIMEOUT_MS, '503 Provider stream timed out');
+                    if (!result.done && result.value?.text) sawText = true;
+                    if (result.done && !sawText) throw new Error('503 Empty provider response');
+                    return result;
+                },
+                async return(value) {
+                    if (typeof iterator.return === 'function') return iterator.return(value);
+                    return { done: true, value };
+                },
+                async throw(error) {
+                    if (typeof iterator.throw === 'function') return iterator.throw(error);
+                    throw error;
+                },
+            };
+        },
+    };
+}
+
+function replaceGoogleGenAiExport(genai, HardenedGoogleGenAI) {
+    try {
+        genai.GoogleGenAI = HardenedGoogleGenAI;
+    } catch {}
+
+    if (genai.GoogleGenAI === HardenedGoogleGenAI) return true;
+
+    try {
+        const modulePath = require.resolve('@google/genai');
+        const cachedModule = require.cache[modulePath];
+        if (!cachedModule) return false;
+        cachedModule.exports = { ...genai, GoogleGenAI: HardenedGoogleGenAI };
+        return require('@google/genai').GoogleGenAI === HardenedGoogleGenAI;
+    } catch {
+        return false;
+    }
+}
+
 function installProviderRuntimeHardening() {
     if (googleGenAiPatched) return;
 
@@ -108,12 +176,25 @@ function installProviderRuntimeHardening() {
         class HardenedGoogleGenAI extends OriginalGoogleGenAI {
             constructor(options) {
                 super(options);
+
                 const live = this.live;
                 const originalConnect = live?.connect?.bind(live);
                 if (originalConnect) {
                     live.connect = async params => {
+                        const handle = params?.config?.sessionResumption?.handle || null;
+                        let stripHandle = false;
+
+                        if (global.__runtimeFreshGeminiSession === true) {
+                            if (handle) rejectedGeminiResumptionHandle = handle;
+                            stripHandle = Boolean(handle);
+                        } else if (handle && rejectedGeminiResumptionHandle && handle === rejectedGeminiResumptionHandle) {
+                            stripHandle = true;
+                        } else if (handle && rejectedGeminiResumptionHandle && handle !== rejectedGeminiResumptionHandle) {
+                            rejectedGeminiResumptionHandle = null;
+                        }
+
                         let nextParams = params;
-                        if (global.__runtimeFreshGeminiSession === true && params?.config?.sessionResumption?.handle) {
+                        if (stripHandle) {
                             nextParams = {
                                 ...params,
                                 config: {
@@ -122,18 +203,40 @@ function installProviderRuntimeHardening() {
                                 },
                             };
                         }
+
                         global.__runtimeFreshGeminiSession = false;
                         return originalConnect(nextParams);
+                    };
+                }
+
+                const models = this.models;
+                const originalGenerateContentStream = models?.generateContentStream?.bind(models);
+                if (originalGenerateContentStream) {
+                    models.generateContentStream = async params => {
+                        const stream = await withTimeout(
+                            originalGenerateContentStream(params),
+                            PROVIDER_STREAM_TIMEOUT_MS,
+                            '503 Provider stream timed out'
+                        );
+                        return wrapGenerateContentStream(stream);
                     };
                 }
             }
         }
 
         Object.defineProperty(HardenedGoogleGenAI, '__runtimeHardened', { value: true });
-        genai.GoogleGenAI = HardenedGoogleGenAI;
+        if (!replaceGoogleGenAiExport(genai, HardenedGoogleGenAI)) {
+            throw new Error('The @google/genai CommonJS export could not be wrapped');
+        }
+
+        if (!beforeQuitCleanupInstalled) {
+            app.on('before-quit', stopRuntimeMacAudio);
+            beforeQuitCleanupInstalled = true;
+        }
+
         googleGenAiPatched = true;
     } catch (error) {
-        console.warn('Could not install Gemini fresh-session guard:', error.message);
+        console.warn('Could not install Gemini runtime hardening:', error.message);
     }
 }
 
@@ -179,31 +282,43 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
     const apiKey = storage.getGroqApiKey();
     if (!apiKey) throw new Error('No Groq API key configured');
 
-    const form = new FormData();
-    form.append('model', 'whisper-large-v3-turbo');
-    form.append('response_format', 'json');
-    form.append('file', new Blob([pcmToWavBuffer(pcm, sampleRate)], { type: 'audio/wav' }), 'utterance.wav');
-
     const preferences = storage.getPreferences();
     const language = String(preferences.selectedLanguage || 'en-US').split('-')[0];
-    if (language) form.append('language', language);
 
-    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
+    const result = await callWithProviderRetry(async () => {
+        const form = new FormData();
+        form.append('model', 'whisper-large-v3-turbo');
+        form.append('response_format', 'json');
+        form.append('file', new Blob([pcmToWavBuffer(pcm, sampleRate)], { type: 'audio/wav' }), 'utterance.wav');
+        if (language) form.append('language', language);
+
+        try {
+            const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: form,
+            });
+
+            const body = await response.text();
+            if (!response.ok) {
+                let detail = body;
+                try {
+                    detail = JSON.parse(body)?.error?.message || body;
+                } catch {}
+                return {
+                    success: false,
+                    error: `Groq transcription HTTP ${response.status}: ${String(detail).slice(0, 240)}`,
+                };
+            }
+
+            return { success: true, text: JSON.parse(body)?.text?.trim() || '' };
+        } catch (error) {
+            return { success: false, error: error?.message || String(error) };
+        }
     });
 
-    const body = await response.text();
-    if (!response.ok) {
-        let detail = body;
-        try {
-            detail = JSON.parse(body)?.error?.message || body;
-        } catch {}
-        throw new Error(`Groq transcription HTTP ${response.status}: ${String(detail).slice(0, 240)}`);
-    }
-
-    return JSON.parse(body)?.text?.trim() || '';
+    if (!result?.success) throw new Error(result?.error || 'Groq transcription failed');
+    return result.text || '';
 }
 
 function queueGroqUtterance(event, pcm, sampleRate) {
@@ -215,7 +330,8 @@ function queueGroqUtterance(event, pcm, sampleRate) {
             if (!transcript) return;
             const textHandler = registeredHandlers.get('send-text-message');
             if (!textHandler) throw new Error('Groq text handler is not ready');
-            await textHandler(event, transcript);
+            const result = await textHandler(event, transcript);
+            if (result?.success === false) throw new Error(result.error || 'Groq response failed');
         })
         .catch(error => {
             console.error('Groq utterance processing failed:', error);
@@ -279,7 +395,9 @@ function convertStereoToMono(stereoBuffer) {
 
 function stopRuntimeMacAudio() {
     if (runtimeMacAudioProc) {
-        try { runtimeMacAudioProc.kill('SIGTERM'); } catch {}
+        try {
+            runtimeMacAudioProc.kill('SIGTERM');
+        } catch {}
         runtimeMacAudioProc = null;
     }
 }
@@ -332,6 +450,12 @@ function startRuntimeMacGroqAudio(event) {
 
 function shouldForwardAudioChannel(channel) {
     const mode = storage.getPreferences().audioMode || 'speaker_only';
+
+    if (runtimeProviderMode === 'groq') {
+        if (mode === 'mic_only') return channel === 'send-mic-audio-content';
+        return channel === 'send-audio-content';
+    }
+
     if (mode === 'mic_only') return channel === 'send-mic-audio-content';
     if (mode === 'both') return true;
     return channel === 'send-audio-content';
@@ -344,6 +468,13 @@ function sendScreenAnalysisLifecycle(event, channel, result = null) {
     } catch (error) {
         console.warn(`Could not report ${channel}:`, error.message);
     }
+}
+
+function normalizeImageResult(result) {
+    if (result?.success === true && Object.prototype.hasOwnProperty.call(result, 'text') && !String(result.text || '').trim()) {
+        return { success: false, error: '503 Empty provider response' };
+    }
+    return result;
 }
 
 function wrapIpcHandler(channel, handler) {
@@ -411,7 +542,9 @@ function wrapIpcHandler(channel, handler) {
     if (channel === 'send-image-content') {
         return (event, ...args) => {
             sendScreenAnalysisLifecycle(event, 'screen-analysis-started');
-            const queued = imageRequestQueue.then(() => callWithProviderRetry(() => handler(event, ...args)));
+            const queued = imageRequestQueue.then(() =>
+                callWithProviderRetry(async () => normalizeImageResult(await handler(event, ...args)))
+            );
             imageRequestQueue = queued.catch(() => {});
 
             return queued.then(
