@@ -233,8 +233,13 @@ async function patchAssistantView() {
             const result = await runAnalyzeScreen();
             if (!result?.success) {
                 const message = result?.error || 'Analyze Screen failed.';
+                const errorResponse = `Error: ${message}`;
                 window.cheatingDaddy?.setStatus('Analyze error: ' + message);
-                window.cheatingDaddy?.addNewResponse(`Error: ${message}`);
+                const appElement = document.querySelector('cheating-daddy-app');
+                const lastResponse = appElement?.responses?.[appElement.responses.length - 1];
+                if (lastResponse !== errorResponse) {
+                    window.cheatingDaddy?.addNewResponse(errorResponse);
+                }
             }
         } finally {
             this.isAnalyzing = false;
@@ -268,19 +273,25 @@ async function patchMainViewPlatformGuard() {
 
     const proto = MainView.prototype;
     const originalSaveMode = proto._saveMode;
+    const supported = ['win32', 'darwin'].includes(window.process.platform);
+
     proto._saveMode = async function (mode) {
-        if (mode === 'local' && !['win32', 'darwin'].includes(window.process.platform)) {
+        if (mode === 'local' && !supported) {
             window.cheatingDaddy?.setStatus(`Local AI is not available on ${window.process.platform}. Use Gemini or Groq.`);
             return;
         }
         return originalSaveMode.call(this, mode);
     };
 
-    if (!['win32', 'darwin'].includes(window.process.platform) && this?._mode === 'local') {
-        await originalSaveMode.call(this, 'byok');
-    }
-
     proto.__platformHardened = true;
+
+    if (!supported) {
+        const appElement = document.querySelector('cheating-daddy-app');
+        const mainView = appElement?.shadowRoot?.querySelector('main-view');
+        if (mainView?._mode === 'local') {
+            await originalSaveMode.call(mainView, 'byok');
+        }
+    }
 }
 
 async function patchAppLifecycle() {
