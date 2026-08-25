@@ -4,9 +4,11 @@ if (require('electron-squirrel-startup')) {
 
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
+const { installAnalyzeProviderFallback } = require('./utils/analyzeProviderFallback');
 
 // Patch provider construction before gemini.js destructures @google/genai.
 installProviderRuntimeHardening();
+installAnalyzeProviderFallback();
 
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer } = require('./utils/gemini');
