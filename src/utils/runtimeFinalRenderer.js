@@ -9,7 +9,7 @@ function localAiSupported() {
 }
 
 function getAssistantView() {
-    const appElement = document.querySelector('cheating-daddy-app');
+    const appElement = document.querySelector('context-halo-app');
     return appElement?.shadowRoot?.querySelector('assistant-view') || null;
 }
 
@@ -21,12 +21,12 @@ function syncAnalyzeIndicator(active) {
 }
 
 function patchResponseDeduplication() {
-    const api = window.cheatingDaddy;
+    const api = window.contextHalo;
     if (!api || api.__finalResponseDedupPatched) return;
 
     const originalAddNewResponse = api.addNewResponse.bind(api);
     api.addNewResponse = response => {
-        const appElement = document.querySelector('cheating-daddy-app');
+        const appElement = document.querySelector('context-halo-app');
         const lastResponse = appElement?.responses?.[appElement.responses.length - 1];
         if (typeof response === 'string' && response.startsWith('Error:') && lastResponse === response) {
             return;
@@ -48,7 +48,7 @@ async function patchLocalArchitectureGuard() {
 
     proto._saveMode = async function (mode) {
         if (mode === 'local' && !localAiSupported()) {
-            window.cheatingDaddy?.setStatus(
+            window.contextHalo?.setStatus(
                 `Local AI is not available for ${window.process.platform}/${window.process.arch}. Use Gemini or Groq.`
             );
             return;
@@ -85,7 +85,7 @@ function installAnalyzeLifecyclePolish() {
         syncAnalyzeIndicator(false);
 
         if (result?.success === true && Object.prototype.hasOwnProperty.call(result, 'text') && !String(result.text || '').trim()) {
-            window.cheatingDaddy?.setStatus('Analyze Screen returned an empty response. Try again.');
+            window.contextHalo?.setStatus('Analyze Screen returned an empty response. Try again.');
         }
     });
 }

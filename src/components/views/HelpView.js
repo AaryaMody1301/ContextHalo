@@ -105,7 +105,7 @@ export class HelpView extends LitElement {
 
     async _loadKeybinds() {
         try {
-            const keybinds = await cheatingDaddy.storage.getKeybinds();
+            const keybinds = await contextHalo.storage.getKeybinds();
             if (keybinds) {
                 this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
                 this.requestUpdate();
@@ -116,7 +116,7 @@ export class HelpView extends LitElement {
     }
 
     getDefaultKeybinds() {
-        const isMac = cheatingDaddy.isMacOS || navigator.platform.includes('Mac');
+        const isMac = contextHalo.isMacOS || navigator.platform.includes('Mac');
         return {
             moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
             moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
@@ -163,8 +163,8 @@ export class HelpView extends LitElement {
                     <section class="surface">
                         <div class="surface-title">Support</div>
                         <div class="link-row">
-                            <button class="link-button" @click=${() => this._open('https://cheatingdaddy.com')}>Website</button>
-                            <button class="link-button" @click=${() => this._open('https://github.com/sohzm/cheating-daddy')}>GitHub</button>
+                            <button class="link-button" @click=${() => this._open('https://contexthalo.com')}>Website</button>
+                            <button class="link-button" @click=${() => this._open('https://github.com/sohzm/context-halo')}>GitHub</button>
                             <button class="link-button" @click=${() => this._open('https://discord.gg/GCBdubnXfJ')}>Discord</button>
                         </div>
                     </section>

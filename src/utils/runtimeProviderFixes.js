@@ -9,7 +9,7 @@ function mirrorGoogleSearchSetting(value) {
 }
 
 async function patchPreferenceStorage() {
-    const storage = window.cheatingDaddy?.storage;
+    const storage = window.contextHalo?.storage;
     if (!storage || storage.__runtimeProviderFixesPatched) return;
 
     try {
@@ -176,7 +176,7 @@ async function patchMainView() {
 
         return html`
             <div class="form-wrapper">
-                <div class="page-title">Cheating Daddy <span class="mode-suffix">Groq</span></div>
+                <div class="page-title">ContextHalo <span class="mode-suffix">Groq</span></div>
                 <div class="page-subtitle">Use your Groq free-tier API key without opening a Gemini Live session</div>
                 ${this._renderGroqMode()}
             </div>

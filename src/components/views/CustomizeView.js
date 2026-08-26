@@ -220,12 +220,12 @@ export class CustomizeView extends LitElement {
     }
 
     getThemes() {
-        return cheatingDaddy.theme.getAll();
+        return contextHalo.theme.getAll();
     }
 
     async _loadFromStorage() {
         try {
-            const [prefs, keybinds] = await Promise.all([cheatingDaddy.storage.getPreferences(), cheatingDaddy.storage.getKeybinds()]);
+            const [prefs, keybinds] = await Promise.all([contextHalo.storage.getPreferences(), contextHalo.storage.getKeybinds()]);
             this.googleSearchEnabled = prefs.googleSearchEnabled ?? true;
             this.backgroundTransparency = prefs.backgroundTransparency ?? 0.8;
             this.fontSize = prefs.fontSize ?? 20;
@@ -290,7 +290,7 @@ export class CustomizeView extends LitElement {
     }
 
     getDefaultKeybinds() {
-        const isMac = cheatingDaddy.isMacOS || navigator.platform.includes('Mac');
+        const isMac = contextHalo.isMacOS || navigator.platform.includes('Mac');
         return {
             moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
             moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
@@ -323,7 +323,7 @@ export class CustomizeView extends LitElement {
     }
 
     async saveKeybinds() {
-        await cheatingDaddy.storage.setKeybinds(this.keybinds);
+        await contextHalo.storage.setKeybinds(this.keybinds);
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.send('update-keybinds', this.keybinds);
@@ -352,25 +352,25 @@ export class CustomizeView extends LitElement {
 
     async handleCustomPromptInput(e) {
         this.customPrompt = e.target.value;
-        await cheatingDaddy.storage.updatePreference('customPrompt', this.customPrompt);
+        await contextHalo.storage.updatePreference('customPrompt', this.customPrompt);
     }
 
     async handleAudioModeSelect(e) {
         this.audioMode = e.target.value;
-        await cheatingDaddy.storage.updatePreference('audioMode', this.audioMode);
+        await contextHalo.storage.updatePreference('audioMode', this.audioMode);
         this.requestUpdate();
     }
 
     async handleThemeChange(e) {
         this.theme = e.target.value;
-        await cheatingDaddy.theme.save(this.theme);
+        await contextHalo.theme.save(this.theme);
         this.updateBackgroundAppearance();
         this.requestUpdate();
     }
 
     async handleGoogleSearchChange(e) {
         this.googleSearchEnabled = e.target.checked;
-        await cheatingDaddy.storage.updatePreference('googleSearchEnabled', this.googleSearchEnabled);
+        await contextHalo.storage.updatePreference('googleSearchEnabled', this.googleSearchEnabled);
         if (window.require) {
             try {
                 const { ipcRenderer } = window.require('electron');
@@ -384,19 +384,19 @@ export class CustomizeView extends LitElement {
 
     async handleBackgroundTransparencyChange(e) {
         this.backgroundTransparency = parseFloat(e.target.value);
-        await cheatingDaddy.storage.updatePreference('backgroundTransparency', this.backgroundTransparency);
+        await contextHalo.storage.updatePreference('backgroundTransparency', this.backgroundTransparency);
         this.updateBackgroundAppearance();
         this.requestUpdate();
     }
 
     updateBackgroundAppearance() {
-        const colors = cheatingDaddy.theme.get(this.theme);
-        cheatingDaddy.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
+        const colors = contextHalo.theme.get(this.theme);
+        contextHalo.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
     }
 
     async handleFontSizeChange(e) {
         this.fontSize = parseInt(e.target.value, 10);
-        await cheatingDaddy.storage.updatePreference('fontSize', this.fontSize);
+        await contextHalo.storage.updatePreference('fontSize', this.fontSize);
         this.updateFontSize();
         this.requestUpdate();
     }
@@ -463,7 +463,7 @@ export class CustomizeView extends LitElement {
 
     async resetKeybinds() {
         this.keybinds = this.getDefaultKeybinds();
-        await cheatingDaddy.storage.setKeybinds(null);
+        await contextHalo.storage.setKeybinds(null);
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.send('update-keybinds', this.keybinds);
@@ -492,12 +492,12 @@ export class CustomizeView extends LitElement {
                 theme: 'dark',
             };
             for (const [key, value] of Object.entries(defaults)) {
-                await cheatingDaddy.storage.updatePreference(key, value);
+                await contextHalo.storage.updatePreference(key, value);
             }
 
             // Restore keybinds
             this.keybinds = this.getDefaultKeybinds();
-            await cheatingDaddy.storage.setKeybinds(null);
+            await contextHalo.storage.setKeybinds(null);
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 ipcRenderer.send('update-keybinds', this.keybinds);
@@ -522,7 +522,7 @@ export class CustomizeView extends LitElement {
             // Apply visual changes
             this.updateBackgroundAppearance();
             this.updateFontSize();
-            await cheatingDaddy.theme.save(defaults.theme);
+            await contextHalo.theme.save(defaults.theme);
 
             this.clearStatusMessage = 'All settings restored to defaults';
             this.clearStatusType = 'success';
@@ -543,7 +543,7 @@ export class CustomizeView extends LitElement {
         this.clearStatusType = '';
         this.requestUpdate();
         try {
-            await cheatingDaddy.storage.clearAll();
+            await contextHalo.storage.clearAll();
             this.clearStatusMessage = 'Successfully cleared all local data';
             this.clearStatusType = 'success';
             this.requestUpdate();

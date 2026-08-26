@@ -55,14 +55,14 @@ function installWindowsSmokeCheck(window) {
         try {
             const result = await window.webContents.executeJavaScript(`
                 (async () => {
-                    await customElements.whenDefined('cheating-daddy-app');
+                    await customElements.whenDefined('context-halo-app');
                     await customElements.whenDefined('main-view');
                     await customElements.whenDefined('assistant-view');
                     return {
                         bridge: Boolean(window.electronAPI && window.require),
                         platform: window.process?.platform,
                         arch: window.process?.arch,
-                        app: Boolean(document.querySelector('cheating-daddy-app')),
+                        app: Boolean(document.querySelector('context-halo-app')),
                     };
                 })()
             `, true);

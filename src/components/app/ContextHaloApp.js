@@ -8,7 +8,7 @@ import { OnboardingView } from '../views/OnboardingView.js';
 import { AICustomizeView } from '../views/AICustomizeView.js';
 import { FeedbackView } from '../views/FeedbackView.js';
 
-export class CheatingDaddyApp extends LitElement {
+export class ContextHaloApp extends LitElement {
     static styles = css`
         * {
             box-sizing: border-box;
@@ -422,7 +422,7 @@ export class CheatingDaddyApp extends LitElement {
 
     async _checkForUpdates() {
         try {
-            this._localVersion = await cheatingDaddy.getVersion();
+            this._localVersion = await contextHalo.getVersion();
             // This fork's portable releases are identified by GitHub release tags,
             // while the app package version is currently static. Do not compare
             // against the original upstream repository and generate false updates.
@@ -435,7 +435,7 @@ export class CheatingDaddyApp extends LitElement {
 
     async _loadFromStorage() {
         try {
-            const [config, prefs] = await Promise.all([cheatingDaddy.storage.getConfig(), cheatingDaddy.storage.getPreferences()]);
+            const [config, prefs] = await Promise.all([contextHalo.storage.getConfig(), contextHalo.storage.getPreferences()]);
 
             this.currentView = config.onboarded ? 'main' : 'onboarding';
             this.selectedProfile = prefs.selectedProfile || 'interview';
@@ -553,7 +553,7 @@ export class CheatingDaddyApp extends LitElement {
 
     async handleClose() {
         if (this.currentView === 'assistant') {
-            cheatingDaddy.stopCapture();
+            contextHalo.stopCapture();
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 await ipcRenderer.invoke('close-session');
@@ -586,7 +586,7 @@ export class CheatingDaddyApp extends LitElement {
     // ── Session start ──
 
     async handleStart() {
-        const prefs = await cheatingDaddy.storage.getPreferences();
+        const prefs = await contextHalo.storage.getPreferences();
         const providerMode = prefs.providerMode || 'byok';
 
         const failStart = message => {
@@ -600,28 +600,28 @@ export class CheatingDaddyApp extends LitElement {
         let success = false;
 
         if (providerMode === 'cloud') {
-            const creds = await cheatingDaddy.storage.getCredentials();
+            const creds = await contextHalo.storage.getCredentials();
             if (!creds.cloudToken || creds.cloudToken.trim() === '') {
                 failStart('No cloud token configured');
                 return;
             }
-            success = await cheatingDaddy.initializeCloud(this.selectedProfile);
+            success = await contextHalo.initializeCloud(this.selectedProfile);
         } else if (providerMode === 'local') {
-            success = await cheatingDaddy.initializeLocal(this.selectedProfile, this.selectedLanguage);
+            success = await contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage);
         } else if (providerMode === 'groq') {
-            const groqKey = await cheatingDaddy.storage.getGroqApiKey();
+            const groqKey = await contextHalo.storage.getGroqApiKey();
             if (!groqKey || groqKey.trim() === '') {
                 failStart('No Groq API key configured');
                 return;
             }
-            success = await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
         } else {
-            const apiKey = await cheatingDaddy.storage.getApiKey();
+            const apiKey = await contextHalo.storage.getApiKey();
             if (!apiKey || apiKey.trim() === '') {
                 failStart('No Gemini API key configured');
                 return;
             }
-            success = await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
         }
 
         // Never enter the assistant screen after a provider initialization failure.
@@ -630,7 +630,7 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
 
-        const captureStarted = await cheatingDaddy.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        const captureStarted = await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
         if (!captureStarted) {
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
@@ -649,13 +649,13 @@ export class CheatingDaddyApp extends LitElement {
     }
 
     async handleCancelLocalDownload() {
-        await cheatingDaddy.cancelLocalInitialization();
+        await contextHalo.cancelLocalInitialization();
     }
 
     async handleAPIKeyHelp() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com/help/api-key');
+            await ipcRenderer.invoke('open-external', 'https://contexthalo.com/help/api-key');
         }
     }
 
@@ -670,27 +670,27 @@ export class CheatingDaddyApp extends LitElement {
 
     async handleProfileChange(profile) {
         this.selectedProfile = profile;
-        await cheatingDaddy.storage.updatePreference('selectedProfile', profile);
+        await contextHalo.storage.updatePreference('selectedProfile', profile);
     }
 
     async handleLanguageChange(language) {
         this.selectedLanguage = language;
-        await cheatingDaddy.storage.updatePreference('selectedLanguage', language);
+        await contextHalo.storage.updatePreference('selectedLanguage', language);
     }
 
     async handleScreenshotIntervalChange(interval) {
         this.selectedScreenshotInterval = interval;
-        await cheatingDaddy.storage.updatePreference('selectedScreenshotInterval', interval);
+        await contextHalo.storage.updatePreference('selectedScreenshotInterval', interval);
     }
 
     async handleImageQualityChange(quality) {
         this.selectedImageQuality = quality;
-        await cheatingDaddy.storage.updatePreference('selectedImageQuality', quality);
+        await contextHalo.storage.updatePreference('selectedImageQuality', quality);
     }
 
     async handleLayoutModeChange(layoutMode) {
         this.layoutMode = layoutMode;
-        await cheatingDaddy.storage.updateConfig('layout', layoutMode);
+        await contextHalo.storage.updateConfig('layout', layoutMode);
         this.requestUpdate();
     }
 
@@ -702,7 +702,7 @@ export class CheatingDaddyApp extends LitElement {
     }
 
     async handleSendText(message) {
-        const result = await window.cheatingDaddy.sendTextMessage(message);
+        const result = await window.contextHalo.sendTextMessage(message);
         if (!result.success) {
             this.setStatus('Error sending message: ' + result.error);
         } else {
@@ -890,7 +890,7 @@ export class CheatingDaddyApp extends LitElement {
         return html`
             <div class="sidebar ${this._isLiveMode() ? 'hidden' : ''}">
                 <div class="sidebar-brand">
-                    <h1>Cheating Daddy</h1>
+                    <h1>ContextHalo</h1>
                 </div>
                 <nav class="sidebar-nav">
                     ${items.map(
@@ -994,4 +994,4 @@ export class CheatingDaddyApp extends LitElement {
     }
 }
 
-customElements.define('cheating-daddy-app', CheatingDaddyApp);
+customElements.define('context-halo-app', ContextHaloApp);

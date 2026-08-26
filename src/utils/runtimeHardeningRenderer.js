@@ -28,7 +28,7 @@ function patchMediaCaptureTracking() {
                     'ended',
                     () => {
                         displayCaptureEnded = true;
-                        window.cheatingDaddy?.setStatus('Screen sharing stopped. End the session and start again to resume Analyze Screen.');
+                        window.contextHalo?.setStatus('Screen sharing stopped. End the session and start again to resume Analyze Screen.');
                     },
                     { once: true }
                 );
@@ -86,8 +86,8 @@ function cleanupTrackedCaptureResources() {
     displayCaptureEnded = false;
 }
 
-function patchCheatingDaddyFacade() {
-    const api = window.cheatingDaddy;
+function patchContextHaloFacade() {
+    const api = window.contextHalo;
     if (!api || api.__runtimeHardened) return;
 
     const originalStopCapture = api.stopCapture.bind(api);
@@ -234,11 +234,11 @@ async function patchAssistantView() {
             if (!result?.success) {
                 const message = result?.error || 'Analyze Screen failed.';
                 const errorResponse = `Error: ${message}`;
-                window.cheatingDaddy?.setStatus('Analyze error: ' + message);
-                const appElement = document.querySelector('cheating-daddy-app');
+                window.contextHalo?.setStatus('Analyze error: ' + message);
+                const appElement = document.querySelector('context-halo-app');
                 const lastResponse = appElement?.responses?.[appElement.responses.length - 1];
                 if (lastResponse !== errorResponse) {
-                    window.cheatingDaddy?.addNewResponse(errorResponse);
+                    window.contextHalo?.addNewResponse(errorResponse);
                 }
             }
         } finally {
@@ -278,7 +278,7 @@ async function patchMainViewPlatformGuard() {
 
     proto._saveMode = async function (mode) {
         if (mode === 'local' && !supported) {
-            window.cheatingDaddy?.setStatus(`Local AI is not available on ${window.process.platform}. Use Gemini or Groq.`);
+            window.contextHalo?.setStatus(`Local AI is not available on ${window.process.platform}. Use Gemini or Groq.`);
             return;
         }
         return originalSaveMode.call(this, mode);
@@ -295,7 +295,7 @@ async function patchMainViewPlatformGuard() {
     proto.__platformHardened = true;
 
     if (!supported) {
-        const appElement = document.querySelector('cheating-daddy-app');
+        const appElement = document.querySelector('context-halo-app');
         const mainView = appElement?.shadowRoot?.querySelector('main-view');
         if (mainView?._mode === 'local') {
             await originalSaveMode.call(mainView, 'byok');
@@ -304,8 +304,8 @@ async function patchMainViewPlatformGuard() {
 }
 
 async function patchAppLifecycle() {
-    await customElements.whenDefined('cheating-daddy-app');
-    const App = customElements.get('cheating-daddy-app');
+    await customElements.whenDefined('context-halo-app');
+    const App = customElements.get('context-halo-app');
     if (!App || App.prototype.__runtimeHardened) return;
 
     const proto = App.prototype;
@@ -348,10 +348,10 @@ async function patchAppLifecycle() {
 
     proto.__runtimeHardened = true;
 
-    const appElement = document.querySelector('cheating-daddy-app');
+    const appElement = document.querySelector('context-halo-app');
     if (appElement) {
         try {
-            appElement._localVersion = await window.cheatingDaddy.getVersion();
+            appElement._localVersion = await window.contextHalo.getVersion();
             appElement.requestUpdate();
         } catch {}
     }
@@ -359,7 +359,7 @@ async function patchAppLifecycle() {
 
 function installRuntimeEventHandlers() {
     ipcRenderer.on('session-initializing', (_event, initializing) => {
-        const appElement = document.querySelector('cheating-daddy-app');
+        const appElement = document.querySelector('context-halo-app');
         const mainView = appElement?.shadowRoot?.querySelector('main-view');
         if (mainView) {
             mainView.isInitializing = Boolean(initializing);
@@ -369,7 +369,7 @@ function installRuntimeEventHandlers() {
 
     ipcRenderer.on('shortcut', (_event, shortcutKey) => {
         if (shortcutKey !== 'ctrl+enter' && shortcutKey !== 'cmd+enter') return;
-        const appElement = document.querySelector('cheating-daddy-app');
+        const appElement = document.querySelector('context-halo-app');
         if (!appElement) return;
 
         if (appElement.currentView === 'main') {
@@ -387,7 +387,7 @@ function installRuntimeEventHandlers() {
 async function applyRuntimeHardening() {
     patchMediaCaptureTracking();
     patchAudioContextTracking();
-    patchCheatingDaddyFacade();
+    patchContextHaloFacade();
     installRuntimeEventHandlers();
     await Promise.all([patchAssistantView(), patchMainViewPlatformGuard(), patchAppLifecycle()]);
 }

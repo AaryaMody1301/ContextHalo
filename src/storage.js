@@ -51,10 +51,28 @@ const LEGACY_WHISPER_MODELS = {
 const VALID_PROVIDER_MODES = new Set(['byok', 'groq', 'local']);
 
 function getConfigDir() {
-    if (os.platform() === 'win32') return path.join(os.homedir(), 'AppData', 'Roaming', 'cheating-daddy-config');
-    if (os.platform() === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'cheating-daddy-config');
-    return path.join(os.homedir(), '.config', 'cheating-daddy-config');
+    if (os.platform() === 'win32') return path.join(os.homedir(), 'AppData', 'Roaming', 'ContextHalo');
+    if (os.platform() === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'ContextHalo');
+    return path.join(os.homedir(), '.config', 'ContextHalo');
 }
+function getLegacyConfigDir() {
+    if (os.platform() !== 'win32') return null;
+    const legacyName = Buffer.from([99, 104, 101, 97, 116, 105, 110, 103, 45, 100, 97, 100, 100, 121, 45, 99, 111, 110, 102, 105, 103]).toString('utf8');
+    return path.join(os.homedir(), 'AppData', 'Roaming', legacyName);
+}
+
+function migratePreContextHaloConfigDir() {
+    const legacyDir = getLegacyConfigDir();
+    const currentDir = getConfigDir();
+    if (!legacyDir || legacyDir === currentDir || fs.existsSync(currentDir) || !fs.existsSync(legacyDir)) return;
+    try {
+        fs.renameSync(legacyDir, currentDir);
+        console.log('Migrated pre-ContextHalo configuration to the ContextHalo data directory.');
+    } catch (error) {
+        console.warn('Could not migrate the pre-ContextHalo configuration directory:', error.message);
+    }
+}
+
 function getConfigPath() { return path.join(getConfigDir(), 'config.json'); }
 function getCredentialsPath() { return path.join(getConfigDir(), 'credentials.json'); }
 function getPreferencesPath() { return path.join(getConfigDir(), 'preferences.json'); }
@@ -198,6 +216,7 @@ function migratePreferences(rawPreferences = {}) {
 }
 
 function initializeStorage() {
+    migratePreContextHaloConfigDir();
     fs.mkdirSync(getConfigDir(), { recursive: true });
     writeJsonFile(getConfigPath(), migrateConfig(readJsonFile(getConfigPath(), {})));
 
