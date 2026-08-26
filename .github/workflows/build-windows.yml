@@ -2,7 +2,7 @@ name: Build ContextHalo Windows Portable EXE
 
 on:
   push:
-    branches: [main]
+    branches: [main, phase-1-complete-fixes]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -98,17 +98,5 @@ jobs:
           tag_name: v0.8.0-portable.${{ github.run_number }}
           name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          make_latest: true
-          body: |
-            ## ContextHalo Windows Portable
-
-            Official Windows x64 portable build of ContextHalo.
-
-            - Supported OS: Windows 10/11 x64
-            - Portable executable: `ContextHalo-Windows-x64.exe`
-            - Source: https://github.com/${{ github.repository }}
-            - Issues: https://github.com/${{ github.repository }}/issues
-            - Documentation: https://github.com/${{ github.repository }}#readme
-
-            This build was produced from commit `${{ github.sha }}` after the repository's Windows validation, tests, sandboxed Electron renderer smoke test, and executable verification passed.
+          generate_release_notes: true
           files: release/ContextHalo-Windows-x64.exe
