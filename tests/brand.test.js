@@ -8,6 +8,7 @@ const skipDirs = new Set(['.git', 'node_modules', 'dist', 'out', '.webpack']);
 const textExtensions = new Set(['.js', '.json', '.md', '.yml', '.yaml', '.html', '.css', '.plist', '.txt', '.example']);
 const textFiles = new Set(['.gitignore', '.editorconfig', '.prettierrc', '.prettierignore']);
 const legacyBrand = /cheating(?:[ _-]?daddy)/i;
+const oldComponentFile = ['Cheating', 'Daddy', 'App.js'].join('');
 
 function walk(dir, files = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -39,5 +40,5 @@ test('public-facing ContextHalo identifiers are consistent', () => {
     assert.equal(pkg.build.appId, 'com.aaryamody.contexthalo');
     assert.equal(pkg.build.win.artifactName, 'ContextHalo-Windows-x64.exe');
     assert.ok(fs.existsSync(path.join(root, 'src/components/app/ContextHaloApp.js')));
-    assert.ok(!fs.existsSync(path.join(root, 'src/components/app/CheatingDaddyApp.js')));
+    assert.ok(!fs.existsSync(path.join(root, 'src/components/app', oldComponentFile)));
 });
