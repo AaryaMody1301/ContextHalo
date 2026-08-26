@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible ContextHalo problem on Windows 10/11 x64
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ContextHalo. Never include Gemini/Groq API keys, access tokens, private recordings, or sensitive screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: ContextHalo version
+      description: Release tag or commit, for example v0.8.0-portable.95.
+      placeholder: v0.8.0-portable.95
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows version
+      options:
+        - Windows 11 x64
+        - Windows 10 x64
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider mode
+      options:
+        - Gemini API
+        - Groq API
+        - Local AI
+        - Not provider-specific
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ContextHalo
+        2. Select ...
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste only redacted logs. Remove API keys, tokens, private prompts, and personal information first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I verified this report does not contain API keys, tokens, or other secrets.
+          required: true
+        - label: I tested with the latest ContextHalo Windows release or current main branch.
+          required: true
