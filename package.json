@@ -3,6 +3,14 @@
     "productName": "ContextHalo",
     "version": "0.8.0",
     "description": "A context-aware Windows desktop AI assistant for screen, audio, meetings, development, presentations, and productivity workflows.",
+    "homepage": "https://github.com/AaryaMody1301/ContextHalo#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/AaryaMody1301/ContextHalo.git"
+    },
+    "bugs": {
+        "url": "https://github.com/AaryaMody1301/ContextHalo/issues"
+    },
     "main": "src/index.js",
     "scripts": {
         "start": "electron-forge start",
