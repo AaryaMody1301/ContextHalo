@@ -161,7 +161,7 @@ export class AppHeader extends LitElement {
     async _checkForUpdates() {
         try {
             const currentVersion = await contextHalo.getVersion();
-            const response = await fetch('https://raw.githubusercontent.com/sohzm/context-halo/refs/heads/master/package.json');
+            const response = await fetch('https://raw.githubusercontent.com/AaryaMody1301/ContextHalo/main/package.json');
             if (!response.ok) return;
 
             const remotePackage = await response.json();
@@ -190,7 +190,7 @@ export class AppHeader extends LitElement {
 
     async _openUpdatePage() {
         const { ipcRenderer } = require('electron');
-        await ipcRenderer.invoke('open-external', 'https://contexthalo.com');
+        await ipcRenderer.invoke('open-external', 'https://github.com/AaryaMody1301/ContextHalo/releases/latest');
     }
 
     disconnectedCallback() {
