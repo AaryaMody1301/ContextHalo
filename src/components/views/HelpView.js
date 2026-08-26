@@ -87,7 +87,6 @@ export class HelpView extends LitElement {
                     grid-template-columns: 1fr;
                 }
             }
-
         `,
     ];
 
@@ -161,11 +160,10 @@ export class HelpView extends LitElement {
                     <div class="page-title">Help</div>
 
                     <section class="surface">
-                        <div class="surface-title">Support</div>
+                        <div class="surface-title">ContextHalo project</div>
                         <div class="link-row">
-                            <button class="link-button" @click=${() => this._open('https://contexthalo.com')}>Website</button>
-                            <button class="link-button" @click=${() => this._open('https://github.com/sohzm/context-halo')}>GitHub</button>
-                            <button class="link-button" @click=${() => this._open('https://discord.gg/GCBdubnXfJ')}>Discord</button>
+                            <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo')}>GitHub</button>
+                            <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo/issues')}>Report an issue</button>
                         </div>
                     </section>
 
