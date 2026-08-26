@@ -31,6 +31,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # GitHub Actions tokens cannot modify workflow files without the separate workflows permission.
+          # Keep workflow changes for the GitHub connector to apply after the generated source rebrand lands.
+          git restore .github/workflows
           git add -A
           git commit -m "Apply ContextHalo rebrand"
           git push origin HEAD:refactor/contexthalo-rebrand
