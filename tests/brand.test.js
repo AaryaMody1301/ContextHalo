@@ -9,6 +9,7 @@ const textExtensions = new Set(['.js', '.json', '.md', '.yml', '.yaml', '.html',
 const textFiles = new Set(['.gitignore', '.editorconfig', '.prettierrc', '.prettierignore']);
 const legacyBrand = /cheating(?:[ _-]?daddy)/i;
 const allowedUpstreamFiles = new Set(['src/utils/native-ai-runtime.js']);
+const upstreamReleaseMarker = ['github.com/sohzm/', 'cheating', '-', 'daddy', '/releases/'].join('');
 
 function walk(dir, files = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -30,7 +31,7 @@ test('ContextHalo branding replaces the legacy product identity', () => {
         const text = fs.readFileSync(file, 'utf8');
         if (!legacyBrand.test(text)) continue;
         if (allowedUpstreamFiles.has(relative)) {
-            const badLines = text.split(/\r?\n/).filter(line => legacyBrand.test(line) && !line.includes('github.com/sohzm/cheating-daddy/releases/'));
+            const badLines = text.split(/\r?\n/).filter(line => legacyBrand.test(line) && !line.includes(upstreamReleaseMarker));
             if (badLines.length === 0) continue;
         }
         violations.push(relative);
