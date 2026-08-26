@@ -2,7 +2,7 @@ name: Build ContextHalo Windows Portable EXE
 
 on:
   push:
-    branches: [main, phase-1-complete-fixes]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     name: Build ContextHalo Windows x64 EXE
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
@@ -81,7 +81,7 @@ jobs:
     name: Publish ContextHalo GitHub Release
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       contents: write
 
