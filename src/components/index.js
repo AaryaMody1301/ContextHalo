@@ -1,5 +1,5 @@
 // Main app components
-export { CheatingDaddyApp } from './app/CheatingDaddyApp.js';
+export { ContextHaloApp } from './app/ContextHaloApp.js';
 export { AppHeader } from './app/AppHeader.js';
 
 // View components

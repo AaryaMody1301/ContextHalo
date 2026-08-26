@@ -1,8 +1,8 @@
 {
-    "name": "cheating-daddy",
-    "productName": "Cheating Daddy",
+    "name": "context-halo",
+    "productName": "ContextHalo",
     "version": "0.8.0",
-    "description": "A real-time desktop AI assistant for interviews, meetings, presentations, and screen-based workflows.",
+    "description": "A context-aware Windows desktop AI assistant for screen, audio, meetings, development, presentations, and productivity workflows.",
     "main": "src/index.js",
     "scripts": {
         "start": "electron-forge start",
@@ -20,12 +20,14 @@
     },
     "keywords": [
         "electron",
+        "windows",
         "desktop-ai",
         "ai-assistant",
+        "context-aware",
         "gemini",
         "groq",
-        "screen-analysis",
-        "interview-assistant"
+        "local-ai",
+        "screen-analysis"
     ],
     "author": {
         "name": "Aarya Mody"
@@ -51,8 +53,8 @@
         "electron-builder": "^26.15.3"
     },
     "build": {
-        "appId": "com.aaryamody.cheatingdaddy",
-        "productName": "Cheating Daddy",
+        "appId": "com.aaryamody.contexthalo",
+        "productName": "ContextHalo",
         "asar": true,
         "directories": {
             "output": "dist"
@@ -67,7 +69,7 @@
                     ]
                 }
             ],
-            "artifactName": "Cheating-Daddy-Windows-x64.exe"
+            "artifactName": "ContextHalo-Windows-x64.exe"
         }
     }
 }

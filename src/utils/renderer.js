@@ -155,11 +155,11 @@ async function initializeGemini(profile = 'interview', language = 'en-US') {
     );
 
     if (result?.success) {
-        cheatingDaddy.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Live');
+        contextHalo.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Live');
         return true;
     }
 
-    cheatingDaddy.setStatus(result?.error || 'Connection failed');
+    contextHalo.setStatus(result?.error || 'Connection failed');
     return false;
 }
 
@@ -171,10 +171,10 @@ async function initializeLocal(profile = 'interview', language = 'en-US') {
 
     const success = await ipcRenderer.invoke('initialize-local', localLlmModel, whisperModel, profile, customPrompt, language);
     if (success) {
-        cheatingDaddy.setStatus('Local AI Live');
+        contextHalo.setStatus('Local AI Live');
         return true;
     } else {
-        cheatingDaddy.setStatus('error');
+        contextHalo.setStatus('error');
         return false;
     }
 }
@@ -187,17 +187,17 @@ async function initializeCloud(profile = 'interview') {
     const creds = await storage.getCredentials();
     const token = creds.cloudToken;
     if (!token || !token.trim()) {
-        cheatingDaddy.setStatus('error');
+        contextHalo.setStatus('error');
         return false;
     }
 
     const prefs = await storage.getPreferences();
     const success = await ipcRenderer.invoke('initialize-cloud', token, profile, prefs.customPrompt || '');
     if (success) {
-        cheatingDaddy.setStatus('Live');
+        contextHalo.setStatus('Live');
         return true;
     } else {
-        cheatingDaddy.setStatus('error');
+        contextHalo.setStatus('error');
         return false;
     }
 }
@@ -205,7 +205,7 @@ async function initializeCloud(profile = 'interview') {
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
-    cheatingDaddy.setStatus(status);
+    contextHalo.setStatus(status);
 });
 
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
@@ -375,7 +375,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         return true;
     } catch (err) {
         console.error('Error starting capture:', err);
-        cheatingDaddy.setStatus('Capture failed: ' + err.message);
+        contextHalo.setStatus('Capture failed: ' + err.message);
         stopCapture();
         return false;
     }
@@ -664,7 +664,7 @@ async function captureManualScreenshot(imageQuality = null) {
                     // Response already displayed via streaming events (new-response/update-response)
                 } else {
                     console.error('Failed to get image response:', result.error);
-                    cheatingDaddy.addNewResponse(`Error: ${result.error}`);
+                    contextHalo.addNewResponse(`Error: ${result.error}`);
                 }
             };
             reader.readAsDataURL(blob);
@@ -787,11 +787,11 @@ ipcRenderer.on('clear-sensitive-data', async () => {
 
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {
-    const currentView = cheatingDaddy.getCurrentView();
+    const currentView = contextHalo.getCurrentView();
 
     if (shortcutKey === 'ctrl+enter' || shortcutKey === 'cmd+enter') {
         if (currentView === 'main') {
-            cheatingDaddy.element().handleStart();
+            contextHalo.element().handleStart();
         } else {
             captureManualScreenshot();
         }
@@ -799,7 +799,7 @@ function handleShortcut(shortcutKey) {
 }
 
 // Create reference to the main app element
-const cheatingDaddyApp = document.querySelector('cheating-daddy-app');
+const contextHaloApp = document.querySelector('context-halo-app');
 
 // ============ THEME SYSTEM ============
 const theme = {
@@ -1079,23 +1079,23 @@ const theme = {
     },
 };
 
-// Consolidated cheatingDaddy object - all functions in one place
-const cheatingDaddy = {
+// Consolidated contextHalo object - all functions in one place
+const contextHalo = {
     // App version
     getVersion: async () => ipcRenderer.invoke('get-app-version'),
 
     // Element access
-    element: () => cheatingDaddyApp,
-    e: () => cheatingDaddyApp,
+    element: () => contextHaloApp,
+    e: () => contextHaloApp,
 
     // App state functions - access properties directly from the app element
-    getCurrentView: () => cheatingDaddyApp.currentView,
-    getLayoutMode: () => cheatingDaddyApp.layoutMode,
+    getCurrentView: () => contextHaloApp.currentView,
+    getLayoutMode: () => contextHaloApp.layoutMode,
 
     // Status and response functions
-    setStatus: text => cheatingDaddyApp.setStatus(text),
-    addNewResponse: response => cheatingDaddyApp.addNewResponse(response),
-    updateCurrentResponse: response => cheatingDaddyApp.updateCurrentResponse(response),
+    setStatus: text => contextHaloApp.setStatus(text),
+    addNewResponse: response => contextHaloApp.addNewResponse(response),
+    updateCurrentResponse: response => contextHaloApp.updateCurrentResponse(response),
 
     // Core functionality
     initializeGemini,
@@ -1122,7 +1122,7 @@ const cheatingDaddy = {
 };
 
 // Make it globally available
-window.cheatingDaddy = cheatingDaddy;
+window.contextHalo = contextHalo;
 
 // Load theme after DOM is ready
 if (document.readyState === 'loading') {

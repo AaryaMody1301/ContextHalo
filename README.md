@@ -1,27 +1,28 @@
-# Cheating Daddy
+# ContextHalo
 
-A desktop AI assistant for real-time interview, meeting, presentation, and screen-based assistance. The application combines live audio, screen context, and text input with Gemini, Groq, cloud, and local provider options.
+ContextHalo is an open-source, context-aware AI desktop assistant for Windows. It combines screen context, Windows system audio, microphone input, typed prompts, and local or cloud AI models to provide real-time assistance for meetings, presentations, development workflows, research, and general productivity.
 
-> **Status:** Active development. Windows is the primary supported build target.
+> **Platform:** Windows 10/11 x64 is the supported target.
 
 ## Features
 
-- Real-time AI assistance with configurable provider modes
-- Screen capture and image analysis
-- System-audio and microphone workflows
-- Gemini Live and Groq integrations
-- Conversation history and multiple profiles
+- Gemini Live for low-latency audio assistance
+- Gemini screenshot and screen-context analysis
+- Groq transcription, reasoning, and vision modes
+- Optional fully local AI with whisper.cpp and llama.cpp
+- Windows system-audio loopback and microphone capture
+- Speaker-only, microphone-only, and mixed-audio modes
+- On-demand screen analysis with keyboard shortcuts
+- Conversation and screen-analysis history
 - Always-on-top transparent overlay with click-through mode
-- Configurable keyboard shortcuts
-- Windows portable builds and cross-platform Electron packaging
+- Windows DPAPI-backed API-key protection through Electron safeStorage
 
 ## Requirements
 
-- Node.js 22+
-- npm 10+
-- Windows, macOS, or Linux with Electron support
-- A valid API key for the provider you choose
-- Required screen/audio permissions for your operating system
+- Windows 10 or Windows 11 x64
+- Node.js 22+ and npm 10+ for development
+- A Gemini API key, Groq API key, or Local AI model depending on the selected provider
+- Screen/audio permissions required by Windows
 
 ## Quick start
 
@@ -30,50 +31,46 @@ npm install
 npm start
 ```
 
-For a production-style Windows portable build:
+Build the portable Windows executable:
 
 ```bash
 npm run build:portable
 ```
 
-## Development commands
+## Validation
 
-| Command | Purpose |
-| --- | --- |
-| `npm start` | Run the app locally |
-| `npm run check` | Run JavaScript syntax checks |
-| `npm run package` | Package the Electron application |
-| `npm run make` | Build platform installers through Electron Forge |
-| `npm run build:portable` | Build the Windows x64 portable executable |
-
-## Project structure
-
-```text
-.github/
-├── dependabot.yml      # Dependency update automation
-└── workflows/          # CI and release automation
-
-scripts/                # Repository maintenance utilities
-src/
-├── index.js            # Electron main process and IPC
-├── renderer/           # Application UI
-├── utils/              # Providers, storage, window and platform utilities
-└── assets/             # Application assets
-
-preload.js              # Isolated renderer-to-main IPC bridge
+```bash
+npm run check
+npm test
 ```
+
+CI also launches the real Electron renderer in sandboxed mode before packaging the portable Windows executable.
+
+## Provider modes
+
+### Gemini API
+Uses Gemini Live for real-time audio and Gemini Flash for screen analysis.
+
+### Groq API
+Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
+
+### Local AI
+Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No cloud API key is required.
 
 ## Security and privacy
 
-- API credentials are stored locally and are never committed to the repository.
-- Keep API keys out of source code, screenshots, issues, and logs.
-- Copy `.env.example` to `.env` only for local development workflows that need environment variables.
-- Report security issues privately; see [SECURITY.md](SECURITY.md).
+- API credentials are never committed to the repository.
+- On Windows, ContextHalo encrypts stored API credentials with Electron safeStorage / Windows DPAPI when available.
+- Renderer sandboxing, context isolation, a restrictive CSP, and IPC channel allowlists are enabled.
+- Keep API keys out of screenshots, issues, logs, and source files.
+- See [SECURITY.md](SECURITY.md) for security reporting guidance.
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Keep changes focused, avoid unrelated formatting churn, and ensure the relevant build checks pass.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Keep changes focused and ensure the Windows validation workflow passes before merging.
 
-## License
+## Credits and license
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+ContextHalo is a substantially modified and rebranded derivative of earlier GPL-3.0 work. See [CREDITS.md](CREDITS.md) for attribution.
+
+Licensed under the [GNU General Public License v3.0](LICENSE).

@@ -87,7 +87,6 @@ export class HelpView extends LitElement {
                     grid-template-columns: 1fr;
                 }
             }
-
         `,
     ];
 
@@ -105,7 +104,7 @@ export class HelpView extends LitElement {
 
     async _loadKeybinds() {
         try {
-            const keybinds = await cheatingDaddy.storage.getKeybinds();
+            const keybinds = await contextHalo.storage.getKeybinds();
             if (keybinds) {
                 this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
                 this.requestUpdate();
@@ -116,7 +115,7 @@ export class HelpView extends LitElement {
     }
 
     getDefaultKeybinds() {
-        const isMac = cheatingDaddy.isMacOS || navigator.platform.includes('Mac');
+        const isMac = contextHalo.isMacOS || navigator.platform.includes('Mac');
         return {
             moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
             moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
@@ -161,11 +160,10 @@ export class HelpView extends LitElement {
                     <div class="page-title">Help</div>
 
                     <section class="surface">
-                        <div class="surface-title">Support</div>
+                        <div class="surface-title">ContextHalo project</div>
                         <div class="link-row">
-                            <button class="link-button" @click=${() => this._open('https://cheatingdaddy.com')}>Website</button>
-                            <button class="link-button" @click=${() => this._open('https://github.com/sohzm/cheating-daddy')}>GitHub</button>
-                            <button class="link-button" @click=${() => this._open('https://discord.gg/GCBdubnXfJ')}>Discord</button>
+                            <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo')}>GitHub</button>
+                            <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo/issues')}>Report an issue</button>
                         </div>
                     </section>
 

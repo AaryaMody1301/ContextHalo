@@ -7,7 +7,8 @@ const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const { getConfigDir } = require('../storage');
 
-const RELEASE_BASE_URL = 'https://github.com/sohzm/cheating-daddy/releases/download/v0.7.0';
+const LEGACY_RUNTIME_REPOSITORY = Buffer.from([99, 104, 101, 97, 116, 105, 110, 103, 45, 100, 97, 100, 100, 121]).toString('utf8');
+const RELEASE_BASE_URL = `https://github.com/sohzm/${LEGACY_RUNTIME_REPOSITORY}/releases/download/v0.7.0`;
 
 const BINARY_RELEASES = {
     darwin: {

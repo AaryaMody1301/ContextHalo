@@ -1,4 +1,4 @@
-name: Build Windows Portable EXE
+name: Build ContextHalo Windows Portable EXE
 
 on:
   push:
@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-portable-${{ github.workflow }}-${{ github.ref }}
+  group: contexthalo-windows-portable-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-    name: Build standalone Windows x64 EXE
+    name: Build ContextHalo Windows x64 EXE
     runs-on: windows-latest
 
     steps:
@@ -60,7 +60,7 @@ jobs:
       - name: Verify portable EXE
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path "dist" -File -Filter "Cheating-Daddy-Windows-x64.exe" | Select-Object -First 1
+          $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
           if (-not $exe) {
             Write-Host "Contents of dist/:"
             Get-ChildItem -Path "dist" -Recurse | Select-Object FullName, Length
@@ -72,13 +72,13 @@ jobs:
       - name: Upload portable EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Cheating-Daddy-Windows-x64-Portable
-          path: dist/Cheating-Daddy-Windows-x64.exe
+          name: ContextHalo-Windows-x64-Portable
+          path: dist/ContextHalo-Windows-x64.exe
           if-no-files-found: error
           retention-days: 90
 
   publish-release:
-    name: Publish GitHub Release
+    name: Publish ContextHalo GitHub Release
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
@@ -89,14 +89,14 @@ jobs:
       - name: Download portable EXE
         uses: actions/download-artifact@v5
         with:
-          name: Cheating-Daddy-Windows-x64-Portable
+          name: ContextHalo-Windows-x64-Portable
           path: release
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.8.0-portable.${{ github.run_number }}
-          name: Cheating Daddy Windows Portable Build ${{ github.run_number }}
+          name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: release/Cheating-Daddy-Windows-x64.exe
+          files: release/ContextHalo-Windows-x64.exe

@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 test('storage v4 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
-    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cheating-daddy-storage-'));
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
 
