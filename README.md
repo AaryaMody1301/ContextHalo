@@ -2,7 +2,9 @@
 
 ContextHalo is an open-source, context-aware AI desktop assistant for Windows. It combines screen context, Windows system audio, microphone input, typed prompts, and local or cloud AI models to provide real-time assistance for meetings, presentations, development workflows, research, and general productivity.
 
-> **Platform:** Windows 10/11 x64 is the supported target.
+> **Supported platform:** Windows 10/11 x64.
+
+**Project links:** [Latest release](https://github.com/AaryaMody1301/ContextHalo/releases/latest) · [Report a bug](https://github.com/AaryaMody1301/ContextHalo/issues/new/choose) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ## Features
 
@@ -44,17 +46,20 @@ npm run check
 npm test
 ```
 
-CI also launches the real Electron renderer in sandboxed mode before packaging the portable Windows executable.
+CI also launches the real Electron renderer in sandboxed mode before packaging and verifying the portable Windows executable.
 
 ## Provider modes
 
 ### Gemini API
+
 Uses Gemini Live for real-time audio and Gemini Flash for screen analysis.
 
 ### Groq API
+
 Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
 
 ### Local AI
+
 Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No cloud API key is required.
 
 ## Security and privacy
@@ -62,15 +67,16 @@ Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No 
 - API credentials are never committed to the repository.
 - On Windows, ContextHalo encrypts stored API credentials with Electron safeStorage / Windows DPAPI when available.
 - Renderer sandboxing, context isolation, a restrictive CSP, and IPC channel allowlists are enabled.
-- Keep API keys out of screenshots, issues, logs, and source files.
+- Network/provider operations use bounded timeouts and cancellation where applicable.
+- Keep API keys, private recordings, sensitive screenshots, personal data, and access tokens out of issues, logs, and source files.
 - See [SECURITY.md](SECURITY.md) for security reporting guidance.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Keep changes focused and ensure the Windows validation workflow passes before merging.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Keep changes focused and ensure the Windows validation workflow passes before merging.
 
 ## Credits and license
 
-ContextHalo is a substantially modified and rebranded derivative of earlier GPL-3.0 work. See [CREDITS.md](CREDITS.md) for attribution.
+ContextHalo is a substantially modified and rebranded derivative of earlier GPL-3.0 work. See [CREDITS.md](CREDITS.md) for attribution and provenance.
 
 Licensed under the [GNU General Public License v3.0](LICENSE).
