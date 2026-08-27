@@ -909,7 +909,7 @@ export class ContextHaloApp extends LitElement {
                     ${
                         this._updateAvailable
                             ? html`
-                                  <button class="update-btn" @click=${() => this.handleExternalLinkClick('https://github.com/AaryaMody1301/Updated_Public_Repo/releases')}>
+                                  <button class="update-btn" @click=${() => this.handleExternalLinkClick('https://github.com/AaryaMody1301/ContextHalo/releases/latest')}>
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                           <path
                                               fill="none"

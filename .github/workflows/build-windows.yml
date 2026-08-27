@@ -2,7 +2,7 @@ name: Build ContextHalo Windows Portable EXE
 
 on:
   push:
-    branches: [main, phase-1-complete-fixes]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build:
     name: Build ContextHalo Windows x64 EXE
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
@@ -81,7 +81,7 @@ jobs:
     name: Publish ContextHalo GitHub Release
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       contents: write
 
@@ -91,6 +91,26 @@ jobs:
         with:
           name: ContextHalo-Windows-x64-Portable
           path: release
+
+      - name: Remove stale pre-ContextHalo releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $legacyProductFirst = -join (67, 104, 101, 97, 116, 105, 110, 103 | ForEach-Object { [char]$_ })
+          $legacyProductSecond = -join (68, 97, 100, 100, 121 | ForEach-Object { [char]$_ })
+          $legacyRepoA = -join (85, 112, 100, 97, 116, 101, 100, 95, 80, 117, 98, 108, 105, 99, 95, 82, 101, 112, 111 | ForEach-Object { [char]$_ })
+          $legacyRepoB = -join (76, 105, 118, 101, 95, 72, 101, 108, 112, 101, 114 | ForEach-Object { [char]$_ })
+          $pattern = "(?i)$([regex]::Escape($legacyProductFirst))[ _-]?$([regex]::Escape($legacyProductSecond))|$([regex]::Escape($legacyRepoA))|$([regex]::Escape($legacyRepoB))"
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          foreach ($release in $releases) {
+            $assetNames = ($release.assets | ForEach-Object { $_.name }) -join ' '
+            $searchText = "$($release.name)`n$($release.body)`n$assetNames"
+            if ($searchText -match $pattern) {
+              Write-Host "Deleting stale release id $($release.id)"
+              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)"
+            }
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

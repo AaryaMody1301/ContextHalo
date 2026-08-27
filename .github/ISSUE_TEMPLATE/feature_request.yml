@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a Windows-focused improvement for ContextHalo
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: ContextHalo currently targets Windows 10/11 x64. Please keep proposals focused on that supported platform.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What workflow or limitation would this feature improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like ContextHalo to provide.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional alternatives, workarounds, or tradeoffs.
