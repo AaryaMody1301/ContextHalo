@@ -92,6 +92,19 @@ jobs:
           name: ContextHalo-Windows-x64-Portable
           path: release
 
+      - name: Remove stale pre-ContextHalo releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releaseIds = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].id'
+          foreach ($releaseId in $releaseIds) {
+            if ($releaseId) {
+              Write-Host "Deleting stale release id $releaseId"
+              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$releaseId"
+            }
+          }
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
