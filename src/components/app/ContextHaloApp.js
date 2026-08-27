@@ -655,7 +655,7 @@ export class ContextHaloApp extends LitElement {
     async handleAPIKeyHelp() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://contexthalo.com/help/api-key');
+            await ipcRenderer.invoke('open-external', 'https://ai.google.dev/gemini-api/docs/api-key');
         }
     }
 
