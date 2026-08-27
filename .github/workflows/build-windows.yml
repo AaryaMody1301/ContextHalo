@@ -97,7 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $releaseIds = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].id'
+          $releaseIds = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select((.name // "" | test("Cheating|Updated_Public_Repo|Live_Helper"; "i")) or (.body // "" | test("Cheating|Updated_Public_Repo|Live_Helper"; "i")) or ([.assets[].name] | join(" ") | test("Cheating|Updated_Public_Repo|Live_Helper"; "i"))) | .id'
           foreach ($releaseId in $releaseIds) {
             if ($releaseId) {
               Write-Host "Deleting stale release id $releaseId"
