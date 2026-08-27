@@ -8,6 +8,10 @@ const skipDirs = new Set(['.git', 'node_modules', 'dist', 'out', '.webpack']);
 const textExtensions = new Set(['.js', '.json', '.md', '.yml', '.yaml', '.html', '.css', '.plist', '.txt', '.example']);
 const textFiles = new Set(['.gitignore', '.editorconfig', '.prettierrc', '.prettierignore']);
 const legacyBrand = /cheating(?:[ _-]?daddy)/i;
+const legacyRepositoryNames = [
+    Buffer.from([85, 112, 100, 97, 116, 101, 100, 95, 80, 117, 98, 108, 105, 99, 95, 82, 101, 112, 111]).toString('utf8'),
+    Buffer.from([76, 105, 118, 101, 95, 72, 101, 108, 112, 101, 114]).toString('utf8'),
+];
 const oldComponentFile = ['Cheating', 'Daddy', 'App.js'].join('');
 
 function walk(dir, files = []) {
@@ -20,15 +24,21 @@ function walk(dir, files = []) {
     return files;
 }
 
-test('ContextHalo branding replaces the legacy product identity', () => {
+function containsLegacyIdentity(value) {
+    if (legacyBrand.test(value)) return true;
+    const lower = value.toLowerCase();
+    return legacyRepositoryNames.some(name => lower.includes(name.toLowerCase()));
+}
+
+test('ContextHalo branding replaces the legacy product and repository identities', () => {
     const violations = [];
     for (const file of walk(root)) {
         const relative = path.relative(root, file).replaceAll('\\', '/');
-        if (legacyBrand.test(relative)) violations.push(relative);
+        if (containsLegacyIdentity(relative)) violations.push(relative);
         const ext = path.extname(file).toLowerCase();
         if (!textExtensions.has(ext) && !textFiles.has(path.basename(file))) continue;
         const text = fs.readFileSync(file, 'utf8');
-        if (legacyBrand.test(text)) violations.push(relative);
+        if (containsLegacyIdentity(text)) violations.push(relative);
     }
     assert.deepEqual(violations, []);
 });
