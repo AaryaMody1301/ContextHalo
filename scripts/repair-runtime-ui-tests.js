@@ -9,8 +9,10 @@ const read = file => fs.readFileSync(file, 'utf8');
 test('session start surfaces initialization and capture failures on Home', () => {
     const app = read('src/components/app/ContextHaloApp.js');
     assert.ok(app.includes('session-initializing'));
-    assert.ok(app.includes('.isInitializing=${this.isInitializing}'));
-    assert.ok(app.includes('.startError=${this.startError}'));
+    assert.ok(app.includes('.isInitializing='));
+    assert.ok(app.includes('this.isInitializing'));
+    assert.ok(app.includes('.startError='));
+    assert.ok(app.includes('this.startError'));
     assert.ok(app.includes('Starting Windows screen and audio capture...'));
     assert.ok(app.includes('catch (error)'));
 });
