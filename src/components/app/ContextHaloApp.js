@@ -348,6 +348,45 @@ export class ContextHaloApp extends LitElement {
             background: var(--bg-app);
         }
 
+        .startup-shell {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            place-items: center;
+            background: var(--bg-app);
+            color: var(--text-primary);
+        }
+
+        .startup-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: var(--bg-surface);
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+        }
+
+        .startup-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-strong);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: startup-spin 0.8s linear infinite;
+        }
+
+        @keyframes startup-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .app-shell.compact .sidebar {
+            width: 184px;
+            min-width: 184px;
+        }
+
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -373,6 +412,8 @@ export class ContextHaloApp extends LitElement {
         startTime: { type: Number },
         isRecording: { type: Boolean },
         sessionActive: { type: Boolean },
+        isInitializing: { type: Boolean },
+        startError: { type: String },
         selectedProfile: { type: String },
         selectedLanguage: { type: String },
         responses: { type: Array },
@@ -397,6 +438,8 @@ export class ContextHaloApp extends LitElement {
         this.startTime = null;
         this.isRecording = false;
         this.sessionActive = false;
+        this.isInitializing = false;
+        this.startError = '';
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
         this.selectedScreenshotInterval = '5';
@@ -461,6 +504,11 @@ export class ContextHaloApp extends LitElement {
             ipcRenderer.on('new-response', (_, response) => this.addNewResponse(response));
             ipcRenderer.on('update-response', (_, response) => this.updateCurrentResponse(response));
             ipcRenderer.on('update-status', (_, status) => this.setStatus(status));
+            ipcRenderer.on('session-initializing', (_, active) => {
+                this.isInitializing = Boolean(active);
+                if (active) this.startError = '';
+                this.requestUpdate();
+            });
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
@@ -482,6 +530,7 @@ export class ContextHaloApp extends LitElement {
             ipcRenderer.removeAllListeners('new-response');
             ipcRenderer.removeAllListeners('update-response');
             ipcRenderer.removeAllListeners('update-status');
+            ipcRenderer.removeAllListeners('session-initializing');
             ipcRenderer.removeAllListeners('click-through-toggled');
             ipcRenderer.removeAllListeners('reconnect-failed');
             ipcRenderer.removeAllListeners('whisper-downloading');
@@ -576,6 +625,13 @@ export class ContextHaloApp extends LitElement {
         }
     }
 
+    async _handleMaximize() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('window-toggle-maximize');
+        }
+    }
+
     async handleHideToggle() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -586,66 +642,86 @@ export class ContextHaloApp extends LitElement {
     // ── Session start ──
 
     async handleStart() {
-        const prefs = await contextHalo.storage.getPreferences();
-        const providerMode = prefs.providerMode || 'byok';
+        if (this.isInitializing || this.sessionActive) return;
+
+        this.isInitializing = true;
+        this.startError = '';
+        this.setStatus('Preparing session...');
+        this.requestUpdate();
 
         const failStart = message => {
-            this.setStatus(message);
+            const detail = String(message || 'Session could not be started');
+            this.startError = detail;
+            this.setStatus(detail);
             const mainView = this.shadowRoot.querySelector('main-view');
-            if (mainView && mainView.triggerApiKeyError) {
+            if (/api key|authentication|credential/i.test(detail) && mainView?.triggerApiKeyError) {
                 mainView.triggerApiKeyError();
             }
+            this.requestUpdate();
         };
 
-        let success = false;
+        try {
+            const prefs = await contextHalo.storage.getPreferences();
+            const providerMode = prefs.providerMode || 'byok';
+            let success = false;
 
-        if (providerMode === 'cloud') {
-            const creds = await contextHalo.storage.getCredentials();
-            if (!creds.cloudToken || creds.cloudToken.trim() === '') {
-                failStart('No cloud token configured');
+            if (providerMode === 'local') {
+                this.setStatus('Preparing local AI...');
+                success = await contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage);
+            } else if (providerMode === 'groq') {
+                const groqKey = await contextHalo.storage.getGroqApiKey();
+                if (!groqKey || groqKey.trim() === '') {
+                    failStart('No Groq API key configured');
+                    return;
+                }
+                this.setStatus('Connecting to Groq...');
+                success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            } else {
+                const apiKey = await contextHalo.storage.getApiKey();
+                if (!apiKey || apiKey.trim() === '') {
+                    failStart('No Gemini API key configured');
+                    return;
+                }
+                this.setStatus('Connecting to Gemini Live...');
+                success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            }
+
+            if (!success) {
+                failStart(this.statusText || 'Could not connect to the selected AI provider');
                 return;
             }
-            success = await contextHalo.initializeCloud(this.selectedProfile);
-        } else if (providerMode === 'local') {
-            success = await contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage);
-        } else if (providerMode === 'groq') {
-            const groqKey = await contextHalo.storage.getGroqApiKey();
-            if (!groqKey || groqKey.trim() === '') {
-                failStart('No Groq API key configured');
+
+            this.setStatus('Starting Windows screen and audio capture...');
+            const captureStarted = await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+            if (!captureStarted) {
+                if (window.require) {
+                    const { ipcRenderer } = window.require('electron');
+                    await ipcRenderer.invoke('close-session');
+                }
+                failStart(this.statusText || 'Could not start screen/audio capture');
                 return;
             }
-            success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
-        } else {
-            const apiKey = await contextHalo.storage.getApiKey();
-            if (!apiKey || apiKey.trim() === '') {
-                failStart('No Gemini API key configured');
-                return;
-            }
-            success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
-        }
 
-        // Never enter the assistant screen after a provider initialization failure.
-        if (!success) {
-            failStart(this.statusText || 'Could not connect to the selected AI provider');
-            return;
+            this.responses = [];
+            this.currentResponseIndex = -1;
+            this.startTime = Date.now();
+            this.sessionActive = true;
+            this.startError = '';
+            this.currentView = 'assistant';
+            this.setStatus(providerMode === 'groq' ? 'Groq ready' : providerMode === 'local' ? 'Local AI ready' : 'Listening...');
+            this._startTimer();
+        } catch (error) {
+            try {
+                if (window.require) {
+                    const { ipcRenderer } = window.require('electron');
+                    await ipcRenderer.invoke('close-session');
+                }
+            } catch {}
+            failStart(error?.message || String(error));
+        } finally {
+            this.isInitializing = false;
+            this.requestUpdate();
         }
-
-        const captureStarted = await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
-        if (!captureStarted) {
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('close-session');
-            }
-            failStart(this.statusText || 'Could not start screen/audio capture');
-            return;
-        }
-
-        this.responses = [];
-        this.currentResponseIndex = -1;
-        this.startTime = Date.now();
-        this.sessionActive = true;
-        this.currentView = 'assistant';
-        this._startTimer();
     }
 
     async handleCancelLocalDownload() {
@@ -752,6 +828,9 @@ export class ContextHaloApp extends LitElement {
                         .onProfileChange=${p => this.handleProfileChange(p)}
                         .onStart=${() => this.handleStart()}
                         .onExternalLink=${url => this.handleExternalLinkClick(url)}
+                        .isInitializing=${this.isInitializing}
+                        .statusText=${this.statusText}
+                        .startError=${this.startError}
                         .whisperDownloading=${this._whisperDownloading}
                         .downloadProgress=${this._localAiDownloadProgress}
                         .onCancelDownload=${() => this.handleCancelLocalDownload()}
@@ -967,6 +1046,14 @@ export class ContextHaloApp extends LitElement {
     }
 
     render() {
+        if (!this._storageLoaded) {
+            return html`
+                <div class="startup-shell">
+                    <div class="startup-card"><span class="startup-spinner"></span><span>Loading ContextHalo settings…</span></div>
+                </div>
+            `;
+        }
+
         // Onboarding is fullscreen, no sidebar
         if (this.currentView === 'onboarding') {
             return html` <div class="fullscreen">${this.renderCurrentView()}</div> `;
@@ -975,12 +1062,12 @@ export class ContextHaloApp extends LitElement {
         const isLive = this._isLiveMode();
 
         return html`
-            <div class="app-shell">
+            <div class="app-shell ${this.layoutMode === 'compact' ? 'compact' : ''}">
                 <div class="top-drag-bar ${isLive ? 'hidden' : ''}">
                     <div class="traffic-lights">
                         <button class="traffic-light close" @click=${() => this.handleClose()} title="Close"></button>
                         <button class="traffic-light minimize" @click=${() => this._handleMinimize()} title="Minimize"></button>
-                        <button class="traffic-light maximize" title="Maximize"></button>
+                        <button class="traffic-light maximize" @click=${() => this._handleMaximize()} title="Maximize or restore"></button>
                     </div>
                     <div class="drag-region"></div>
                 </div>

@@ -24,16 +24,15 @@ export class MainView extends LitElement {
 
         :host {
             height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: var(--space-xl) var(--space-lg);
+            min-height: 100%;
+            display: block;
+            overflow-y: auto;
+            padding: 58px clamp(24px, 6vw, 72px) 44px;
         }
 
         .form-wrapper {
-            width: 100%;
-            max-width: 420px;
+            width: min(760px, 100%);
+            margin: 0 auto;
             display: flex;
             flex-direction: column;
             gap: var(--space-md);
@@ -267,11 +266,18 @@ export class MainView extends LitElement {
         select {
             cursor: pointer;
             appearance: none;
+            color-scheme: dark;
             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23999' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
             background-position: right 8px center;
             background-repeat: no-repeat;
             background-size: 14px;
             padding-right: 28px;
+        }
+
+        select option,
+        select optgroup {
+            background: #191919;
+            color: #f5f5f5;
         }
 
         textarea {
@@ -315,6 +321,34 @@ export class MainView extends LitElement {
             to {
                 transform: rotate(360deg);
             }
+        }
+
+        .session-status {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            font-size: var(--font-size-xs);
+            line-height: 1.45;
+        }
+
+        .session-status.error {
+            border-color: rgba(239, 68, 68, 0.55);
+            background: rgba(239, 68, 68, 0.08);
+            color: #fca5a5;
+        }
+
+        .session-status-dot {
+            width: 7px;
+            height: 7px;
+            flex: none;
+            margin-top: 5px;
+            border-radius: 50%;
+            background: currentColor;
         }
 
         /* ── Start button ── */
@@ -689,6 +723,8 @@ export class MainView extends LitElement {
         selectedProfile: { type: String },
         onProfileChange: { type: Function },
         isInitializing: { type: Boolean },
+        statusText: { type: String },
+        startError: { type: String },
         whisperDownloading: { type: Boolean },
         downloadProgress: { type: Object },
         onCancelDownload: { type: Function },
@@ -718,6 +754,8 @@ export class MainView extends LitElement {
         this.selectedProfile = 'interview';
         this.onProfileChange = () => {};
         this.isInitializing = false;
+        this.statusText = '';
+        this.startError = '';
         this.whisperDownloading = false;
         this.downloadProgress = { active: false, label: '', percentage: null };
         this.onCancelDownload = () => {};
@@ -1049,6 +1087,49 @@ export class MainView extends LitElement {
 
     // ── Render helpers ──
 
+    _renderProfileSelector() {
+        const profiles = [
+            ['interview', 'Job Interview'],
+            ['sales', 'Sales Call'],
+            ['meeting', 'Business Meeting'],
+            ['presentation', 'Presentation'],
+            ['negotiation', 'Negotiation'],
+            ['exam', 'Exam Assistant'],
+        ];
+        return html`
+            <details class="config-section" open>
+                <summary class="config-summary">
+                    <span class="config-summary-text">
+                        <span class="config-summary-title">Session</span>
+                        <span class="config-summary-description">Choose how ContextHalo should assist you</span>
+                    </span>
+                    ${this._renderConfigChevron()}
+                </summary>
+                <div class="config-content">
+                    <div class="form-group">
+                        <label class="form-label">Session Profile</label>
+                        <select .value=${this.selectedProfile} @change=${event => this.onProfileChange(event.target.value)}>
+                            ${profiles.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
+                        </select>
+                        <div class="form-hint">The profile changes the live system prompt for the session.</div>
+                    </div>
+                </div>
+            </details>
+        `;
+    }
+
+    _renderSessionStatus() {
+        const error = String(this.startError || '').trim();
+        const text = error || (this.isInitializing ? (this.statusText || 'Starting session…') : '');
+        if (!text) return '';
+        return html`
+            <div class="session-status ${error ? 'error' : ''}" role=${error ? 'alert' : 'status'}>
+                <span class="session-status-dot"></span>
+                <span>${text}</span>
+            </div>
+        `;
+    }
+
     _renderStartButton() {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         const isDownloading = this._mode === 'local' && this.downloadProgress.active;
@@ -1115,7 +1196,7 @@ export class MainView extends LitElement {
                         : ''
                 }
                 <span class="btn-label">
-                    ${isDownloading ? (hasPercentage ? `${percentage}%` : 'Preparing...') : 'Start Session'}
+                    ${isDownloading ? (hasPercentage ? `${percentage}%` : 'Preparing...') : this.isInitializing ? 'Starting…' : 'Start Session'}
                     ${isDownloading ? '' : html`<span class="shortcut-hint">${isMac ? cmdIcon : ctrlIcon}${enterIcon}</span>`}
                 </span>
             </button>
@@ -1342,6 +1423,8 @@ export class MainView extends LitElement {
                         : html` <div class="page-title">${html`ContextHalo <span class="mode-suffix">BYOK</span>`}</div> `
                 }
                 <div class="page-subtitle">${this._mode === 'byok' ? 'Bring your own API keys' : 'Run models locally on your machine'}</div>
+                ${this._renderProfileSelector()}
+                ${this._renderSessionStatus()}
 
                 <!-- Cloud mode render branch intentionally disabled. -->
                 ${this._mode === 'byok' ? this._renderByokMode() : ''} ${this._mode === 'local' ? this._renderLocalMode() : ''}

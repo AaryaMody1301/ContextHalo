@@ -178,6 +178,7 @@ export class CustomizeView extends LitElement {
     static properties = {
         selectedProfile: { type: String },
         selectedLanguage: { type: String },
+        selectedScreenshotInterval: { type: String },
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
         keybinds: { type: Object },
@@ -187,6 +188,7 @@ export class CustomizeView extends LitElement {
         theme: { type: String },
         onProfileChange: { type: Function },
         onLanguageChange: { type: Function },
+        onScreenshotIntervalChange: { type: Function },
         onImageQualityChange: { type: Function },
         onLayoutModeChange: { type: Function },
         isClearing: { type: Boolean },
@@ -199,11 +201,13 @@ export class CustomizeView extends LitElement {
         super();
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
+        this.selectedScreenshotInterval = '5';
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
         this.keybinds = this.getDefaultKeybinds();
         this.onProfileChange = () => {};
         this.onLanguageChange = () => {};
+        this.onScreenshotIntervalChange = () => {};
         this.onImageQualityChange = () => {};
         this.onLayoutModeChange = () => {};
         this.googleSearchEnabled = true;
@@ -303,6 +307,7 @@ export class CustomizeView extends LitElement {
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+            emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         };
     }
 
@@ -319,6 +324,7 @@ export class CustomizeView extends LitElement {
             { key: 'nextResponse', name: 'Next Response', description: 'Move to next AI response' },
             { key: 'scrollUp', name: 'Scroll Response Up', description: 'Scroll response content upward' },
             { key: 'scrollDown', name: 'Scroll Response Down', description: 'Scroll response content downward' },
+            { key: 'emergencyErase', name: 'Emergency Erase', description: 'Close the app and clear sensitive local data' },
         ];
     }
 
@@ -338,6 +344,11 @@ export class CustomizeView extends LitElement {
     handleLanguageSelect(e) {
         this.selectedLanguage = e.target.value;
         this.onLanguageChange(this.selectedLanguage);
+    }
+
+    handleScreenshotIntervalSelect(e) {
+        this.selectedScreenshotInterval = e.target.value;
+        this.onScreenshotIntervalChange(this.selectedScreenshotInterval);
     }
 
     handleImageQualitySelect(e) {
@@ -506,6 +517,7 @@ export class CustomizeView extends LitElement {
             // Apply to local state
             this.selectedProfile = defaults.selectedProfile;
             this.selectedLanguage = defaults.selectedLanguage;
+            this.selectedScreenshotInterval = defaults.selectedScreenshotInterval;
             this.selectedImageQuality = defaults.selectedImageQuality;
             this.audioMode = defaults.audioMode;
             this.fontSize = defaults.fontSize;
@@ -517,7 +529,9 @@ export class CustomizeView extends LitElement {
             // Notify parent callbacks
             this.onProfileChange(defaults.selectedProfile);
             this.onLanguageChange(defaults.selectedLanguage);
+            this.onScreenshotIntervalChange(defaults.selectedScreenshotInterval);
             this.onImageQualityChange(defaults.selectedImageQuality);
+            this.onLayoutModeChange('normal');
 
             // Apply visual changes
             this.updateBackgroundAppearance();
@@ -565,6 +579,64 @@ export class CustomizeView extends LitElement {
             this.isClearing = false;
             this.requestUpdate();
         }
+    }
+
+    renderSessionSection() {
+        return html`
+            <section class="surface">
+                <div class="surface-title">Session Defaults</div>
+                <div class="surface-subtitle">Defaults used when you start a new assistant session.</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Session Profile</label>
+                        <select class="control" .value=${this.selectedProfile} @change=${this.handleProfileSelect}>
+                            ${this.getProfiles().map(profile => html`<option value=${profile.value}>${profile.name}</option>`)}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Window Layout</label>
+                        <select class="control" .value=${this.layoutMode} @change=${this.handleLayoutModeSelect}>
+                            <option value="normal">Normal</option>
+                            <option value="compact">Compact sidebar</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Screenshot Interval</label>
+                        <select class="control" .value=${this.selectedScreenshotInterval} @change=${this.handleScreenshotIntervalSelect}>
+                            <option value="3">3 seconds</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                            <option value="30">30 seconds</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+        `;
+    }
+
+    renderAISection() {
+        return html`
+            <section class="surface">
+                <div class="surface-title">AI Behavior</div>
+                <div class="surface-subtitle">Shared instructions and optional search grounding for new sessions.</div>
+                <div class="form-grid">
+                    <label class="toggle-row">
+                        <input class="toggle-input" type="checkbox" .checked=${this.googleSearchEnabled} @change=${this.handleGoogleSearchChange} />
+                        <span class="toggle-label">Enable Google Search grounding for Gemini Live</span>
+                    </label>
+                    <div class="form-group vertical">
+                        <label class="form-label">Custom Instructions</label>
+                        <textarea
+                            class="control"
+                            placeholder="Optional instructions applied to every new session"
+                            .value=${this.customPrompt}
+                            @input=${this.handleCustomPromptInput}
+                        ></textarea>
+                        <div class="form-help">Keep this focused. Profile-specific instructions are combined with these custom instructions.</div>
+                    </div>
+                </div>
+            </section>
+        `;
     }
 
     renderAudioSection() {
@@ -707,6 +779,9 @@ export class CustomizeView extends LitElement {
             <div class="unified-page">
                 <div class="unified-wrap">
                     <div class="page-title">Settings</div>
+                    <div class="page-subtitle">Configure session defaults, AI behavior, audio, appearance, keyboard shortcuts, and local data.</div>
+                    ${this.renderSessionSection()}
+                    ${this.renderAISection()}
                     ${this.renderAudioSection()}
                     ${this.renderLanguageSection()}
                     ${this.renderAppearanceSection()}

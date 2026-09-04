@@ -6,6 +6,8 @@ let screenshotInterval = null;
 let audioContext = null;
 let audioProcessor = null;
 let micAudioProcessor = null;
+let micAudioContext = null;
+let micMediaStream = null;
 let audioBuffer = [];
 const SAMPLE_RATE = 24000;
 const AUDIO_CHUNK_DURATION = 0.1; // seconds
@@ -322,31 +324,32 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
             console.log('Linux capture started - system audio:', mediaStream.getAudioTracks().length > 0, 'microphone mode:', audioMode);
         } else {
-            // Windows - use display media with loopback for system audio
+            // Windows: Electron's main-process display-media handler selects the
+            // primary screen and supplies WASAPI loopback. Do not apply microphone
+            // processing constraints to that loopback track.
+            const needsLoopback = audioMode !== 'mic_only';
             mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     frameRate: 1,
                     width: { ideal: 1920 },
                     height: { ideal: 1080 },
                 },
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                },
+                audio: needsLoopback,
             });
 
-            console.log('Windows capture started with loopback audio');
-
-            // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
+            if (needsLoopback) {
+                if (mediaStream.getAudioTracks().length === 0) {
+                    throw new Error('Windows system-audio loopback was not available. Make sure audio is playing and try again.');
+                }
+                console.log('Windows capture started with loopback audio');
+                setupWindowsLoopbackProcessing();
+            } else {
+                console.log('Windows screen capture started without loopback (microphone-only mode)');
+            }
 
             if (audioMode === 'mic_only' || audioMode === 'both') {
-                let micStream = null;
                 try {
-                    micStream = await navigator.mediaDevices.getUserMedia({
+                    micMediaStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
                             sampleRate: SAMPLE_RATE,
                             channelCount: 1,
@@ -357,9 +360,11 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         video: false,
                     });
                     console.log('Windows microphone capture started');
-                    setupLinuxMicProcessing(micStream);
+                    setupLinuxMicProcessing(micMediaStream);
                 } catch (micError) {
-                    console.warn('Failed to get microphone access on Windows:', micError);
+                    if (audioMode === 'mic_only') throw new Error('Microphone capture failed: ' + micError.message);
+                    console.warn('Failed to get microphone access on Windows; continuing with speaker audio:', micError);
+                    contextHalo.setStatus('Microphone unavailable; continuing with speaker audio');
                 }
             }
         }
@@ -382,8 +387,14 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 }
 
 function setupLinuxMicProcessing(micStream) {
-    // Setup microphone audio processing for Linux
-    const micAudioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    if (micAudioProcessor) {
+        try { micAudioProcessor.disconnect(); } catch {}
+        micAudioProcessor = null;
+    }
+    if (micAudioContext) {
+        micAudioContext.close().catch(() => {});
+    }
+    micAudioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
     const micSource = micAudioContext.createMediaStreamSource(micStream);
     const micProcessor = micAudioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
@@ -690,8 +701,18 @@ function stopCapture() {
 
     // Clean up microphone audio processor (Linux only)
     if (micAudioProcessor) {
-        micAudioProcessor.disconnect();
+        try { micAudioProcessor.disconnect(); } catch {}
         micAudioProcessor = null;
+    }
+
+    if (micAudioContext) {
+        micAudioContext.close().catch(() => {});
+        micAudioContext = null;
+    }
+
+    if (micMediaStream) {
+        micMediaStream.getTracks().forEach(track => track.stop());
+        micMediaStream = null;
     }
 
     if (audioContext) {
@@ -1082,7 +1103,10 @@ const theme = {
 // Consolidated contextHalo object - all functions in one place
 const contextHalo = {
     // App version
-    getVersion: async () => ipcRenderer.invoke('get-app-version'),
+    getVersion: async () => {
+        const result = await ipcRenderer.invoke('get-app-version');
+        return result?.success ? result.data : '';
+    },
 
     // Element access
     element: () => contextHaloApp,

@@ -122,12 +122,19 @@ export const unifiedPageStyles = css`
 
     select.control {
         appearance: none;
+        color-scheme: dark;
         background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b6b6b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
         background-position: right 8px center;
         background-repeat: no-repeat;
         background-size: 12px;
         padding-right: 28px;
         cursor: pointer;
+    }
+
+    select.control option,
+    select.control optgroup {
+        background: #191919;
+        color: #f5f5f5;
     }
 
     textarea.control {

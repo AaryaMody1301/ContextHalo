@@ -100,7 +100,8 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
     assert.match(gemini, /currentProviderMode === 'groq' \? await sendImageToGroq\(data, prompt\) : await sendImageToGeminiHttp\(data, prompt\)/);
     assert.match(gemini, /groqTranscriptionModel/);
     assert.match(gemini, /whisper-large-v3-turbo/);
-    assert.match(gemini, /model: getConfig\(\)\.geminiLiveModel/);
+    assert.match(gemini, /const liveModel = String\(getConfig\(\)\.geminiLiveModel/);
+    assert.match(gemini, /model: liveModel/);
 });
 
 test('supported Electron runtime and lockfile stay aligned', () => {
