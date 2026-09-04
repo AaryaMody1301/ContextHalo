@@ -23,7 +23,20 @@ function updateProviderMode(channel, args) {
     }
 }
 
+function resetBufferedWindowsAudio() {
+    if (process.platform !== 'win32') return;
+    try {
+        require('./utils/windowsRuntimeMain').resetAudioMixer?.();
+    } catch (error) {
+        console.warn('Could not reset buffered Windows audio for typed prompt:', error?.message || error);
+    }
+}
+
 function startTypedPromptAudioGate() {
+    // The Windows both-sources path buffers chunks before dispatching them to the
+    // provider. Clear those queues before the text request so an already-buffered
+    // chunk cannot race behind audioStreamEnd and reopen the Live audio stream.
+    resetBufferedWindowsAudio();
     typedPromptAudioGateActive = true;
     typedPromptAudioGateUntil = Date.now() + TYPED_PROMPT_AUDIO_GATE_MS;
 }
