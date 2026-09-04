@@ -14,6 +14,7 @@ const {
     setupWindowsWindowHardening,
 } = require('./utils/windowsRuntimeMain');
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
+const { installRealtimeContextMain } = require('./utils/realtimeContextMain');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
 
@@ -22,6 +23,7 @@ const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
 installWindowsProviderTransport();
 installWindowsLocalAiRuntime();
 installProviderRuntimeHardening();
+installRealtimeContextMain();
 installAnalyzeProviderFallback();
 
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
