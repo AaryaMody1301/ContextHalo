@@ -15,6 +15,7 @@ const {
 } = require('./utils/windowsRuntimeMain');
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 const { installRealtimeContextMain } = require('./utils/realtimeContextMain');
+const { setupContextCaptureMain } = require('./utils/contextCaptureMain');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
 
@@ -82,6 +83,7 @@ function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
     setupRuntimeWindowHardening(mainWindow);
     setupWindowsWindowHardening(mainWindow);
+    setupContextCaptureMain(mainWindow, ipcMain);
     installWindowsSmokeCheck(mainWindow);
     return mainWindow;
 }
