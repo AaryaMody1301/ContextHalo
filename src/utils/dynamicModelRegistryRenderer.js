@@ -36,11 +36,12 @@ function renderModelPicker(view, options) {
         all = [],
         onSave,
         helper = '',
+        allowAdvanced = true,
     } = options;
 
     const preferredModels = uniqueModels(preferred);
     const preferredIds = new Set(preferredModels.map(model => model.id));
-    const advancedModels = uniqueModels(all.filter(model => !preferredIds.has(model.id)));
+    const advancedModels = allowAdvanced ? uniqueModels(all.filter(model => !preferredIds.has(model.id))) : [];
     const catalogModels = [...preferredModels, ...advancedModels];
     const hasCatalog = catalogModels.length > 0;
     const currentKnown = catalogModels.some(model => model.id === value);
@@ -148,6 +149,12 @@ async function patchDynamicModelRegistry() {
             const result = await ipcRenderer.invoke('provider-models:list', provider, forceRefresh === true);
             if (!result?.success) throw new Error(result?.error || 'Model discovery failed');
             this[catalogKey] = result.data;
+            if (isGemini && Array.isArray(result.data?.live) && result.data.live.length) {
+                const currentLive = this._geminiLiveModel || GEMINI_DEFAULTS.live;
+                if (!result.data.live.some(model => model.id === currentLive)) {
+                    await this._saveGeminiLiveModel(result.data.recommended?.live || GEMINI_DEFAULTS.live);
+                }
+            }
             if (result.data?.warning) this[errorKey] = `Using cached catalog: ${result.data.warning}`;
         } catch (error) {
             this[errorKey] = error?.message || String(error);
@@ -225,9 +232,10 @@ async function patchDynamicModelRegistry() {
                         label: 'Gemini Live Model',
                         value: this._geminiLiveModel || GEMINI_DEFAULTS.live,
                         preferred: catalog?.live,
-                        all,
+                        all: catalog?.live || [],
                         onSave: this._saveGeminiLiveModel,
-                        helper: 'Live-compatible models are identified from the provider-supported generation methods. Advanced choices may not support Live sessions.',
+                        allowAdvanced: false,
+                        helper: 'Only models that advertise Gemini Live (bidiGenerateContent) support are offered here.',
                     })}
 
                     ${renderModelPicker(this, {
@@ -310,9 +318,10 @@ async function patchDynamicModelRegistry() {
                         label: 'Audio Transcription Model',
                         value: this._groqTranscriptionModel || GROQ_DEFAULTS.transcription,
                         preferred: catalog?.transcription,
-                        all,
+                        all: catalog?.transcription || [],
                         onSave: this._saveGroqTranscriptionModel,
-                        helper: 'Whisper/transcription IDs are preferred. Advanced selections may not support the transcription endpoint.',
+                        allowAdvanced: false,
+                        helper: 'Only Whisper/transcription models detected from the Groq catalog are offered here.',
                     })}
 
                     <div class="config-note">

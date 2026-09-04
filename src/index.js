@@ -63,17 +63,51 @@ function installWindowsSmokeCheck(window) {
                     await customElements.whenDefined('context-halo-app');
                     await customElements.whenDefined('main-view');
                     await customElements.whenDefined('assistant-view');
+                    await customElements.whenDefined('customize-view');
+
+                    const mainView = document.createElement('main-view');
+                    mainView.style.display = 'none';
+                    document.body.appendChild(mainView);
+                    await mainView.updateComplete;
+                    mainView.startError = 'Smoke test session failure';
+                    mainView.requestUpdate();
+                    await mainView.updateComplete;
+                    const mainText = mainView.shadowRoot?.textContent || '';
+                    const homeReady = mainText.includes('Start Session') && mainText.includes('Session Profile');
+                    const errorReady = Boolean(mainView.shadowRoot?.querySelector('.session-status.error'));
+
+                    const settingsView = document.createElement('customize-view');
+                    settingsView.style.display = 'none';
+                    document.body.appendChild(settingsView);
+                    await settingsView.updateComplete;
+                    const settingsText = settingsView.shadowRoot?.textContent || '';
+                    const settingsReady = settingsText.includes('Session Defaults') &&
+                        settingsText.includes('AI Behavior') &&
+                        settingsText.includes('Keyboard Shortcuts');
+
+                    mainView.remove();
+                    settingsView.remove();
+
                     return {
                         bridge: Boolean(window.electronAPI && window.require),
                         platform: window.process?.platform,
                         arch: window.process?.arch,
                         app: Boolean(document.querySelector('context-halo-app')),
+                        home: homeReady,
+                        sessionError: errorReady,
+                        settings: settingsReady,
                     };
                 })()
             `, true);
 
-            const ready = result?.bridge === true && result?.platform === 'win32' && result?.arch === 'x64' && result?.app === true;
-            finish(ready, ready ? 'sandboxed preload and renderer loaded' : `unexpected renderer state ${JSON.stringify(result)}`);
+            const ready = result?.bridge === true &&
+                result?.platform === 'win32' &&
+                result?.arch === 'x64' &&
+                result?.app === true &&
+                result?.home === true &&
+                result?.sessionError === true &&
+                result?.settings === true;
+            finish(ready, ready ? 'sandboxed preload, Home, session error state, and Settings rendered' : `unexpected renderer state ${JSON.stringify(result)}`);
         } catch (error) {
             finish(false, error.message);
         }

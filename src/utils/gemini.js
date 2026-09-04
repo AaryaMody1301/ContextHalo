@@ -3,7 +3,7 @@ const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('../audioUtils');
 const { getSystemPrompt } = require('./prompts');
-const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig } = require('../storage');
+const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
 const { connectCloud, sendCloudAudio, sendCloudText, sendCloudImage, closeCloud, isCloudActive, setOnTurnComplete } = require('./cloud');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 
@@ -167,51 +167,16 @@ function getCurrentSessionData() {
 
 async function getEnabledTools() {
     const tools = [];
-
-    // Check if Google Search is enabled (default: true)
-    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'true');
+    const googleSearchEnabled = getPreferences().googleSearchEnabled === true;
     console.log('Google Search enabled:', googleSearchEnabled);
-
-    if (googleSearchEnabled === 'true') {
-        tools.push({ googleSearch: {} });
-        console.log('Added Google Search tool');
-    } else {
-        console.log('Google Search tool disabled');
-    }
-
+    if (googleSearchEnabled) tools.push({ googleSearch: {} });
     return tools;
 }
 
 async function getStoredSetting(key, defaultValue) {
-    try {
-        const windows = BrowserWindow.getAllWindows();
-        if (windows.length > 0) {
-            // Wait a bit for the renderer to be ready
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Try to get setting from renderer process localStorage
-            const value = await windows[0].webContents.executeJavaScript(`
-                (function() {
-                    try {
-                        if (typeof localStorage === 'undefined') {
-                            console.log('localStorage not available yet for ${key}');
-                            return '${defaultValue}';
-                        }
-                        const stored = localStorage.getItem('${key}');
-                        console.log('Retrieved setting ${key}:', stored);
-                        return stored || '${defaultValue}';
-                    } catch (e) {
-                        console.error('Error accessing localStorage for ${key}:', e);
-                        return '${defaultValue}';
-                    }
-                })()
-            `);
-            return value;
-        }
-    } catch (error) {
-        console.error('Error getting stored setting for', key, ':', error.message);
+    if (key === 'googleSearchEnabled') {
+        return String(getPreferences().googleSearchEnabled === true);
     }
-    console.log('Using default value for', key, ':', defaultValue);
     return defaultValue;
 }
 
@@ -834,6 +799,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
     const systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
     currentSystemPrompt = systemPrompt; // Store for Groq
+    const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview')
+        .replace(/^models\//, '')
+        .trim() || 'gemini-3.1-flash-live-preview';
+    sendToRenderer('update-status', `Connecting to ${liveModel}...`);
 
     // Initialize new conversation session only on first connect
     if (!isReconnect) {
@@ -842,7 +811,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
     try {
         const session = await client.live.connect({
-            model: getConfig().geminiLiveModel,
+            model: liveModel,
             callbacks: {
                 onopen: function () {
                     logTransportEvent('gemini.live.opened', {});
@@ -935,9 +904,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 // transcription settings and can cause an invalid setup request.
                 inputAudioTranscription: {},
                 outputAudioTranscription: {},
-                sessionResumption: geminiSessionResumptionHandle
-                    ? { handle: geminiSessionResumptionHandle }
-                    : {},
+                ...(geminiSessionResumptionHandle
+                    ? { sessionResumption: { handle: geminiSessionResumptionHandle } }
+                    : {}),
                 tools: enabledTools,
                 thinkingConfig: { thinkingLevel: 'minimal' },
                 systemInstruction: {

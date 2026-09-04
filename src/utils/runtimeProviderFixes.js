@@ -177,7 +177,9 @@ async function patchMainView() {
         return html`
             <div class="form-wrapper">
                 <div class="page-title">ContextHalo <span class="mode-suffix">Groq</span></div>
-                <div class="page-subtitle">Use your Groq free-tier API key without opening a Gemini Live session</div>
+                <div class="page-subtitle">Use your Groq API key without opening a Gemini Live session</div>
+                ${this._renderProfileSelector ? this._renderProfileSelector() : ''}
+                ${this._renderSessionStatus ? this._renderSessionStatus() : ''}
                 ${this._renderGroqMode()}
             </div>
         `;

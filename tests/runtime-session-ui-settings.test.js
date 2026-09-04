@@ -1,6 +1,4 @@
-const fs = require('node:fs');
-
-const regression = `const test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -55,19 +53,3 @@ test('Settings exposes session, AI behavior and emergency erase controls', () =>
     assert.ok(settings.includes('emergencyErase'));
     assert.ok(settings.includes('Compact sidebar'));
 });
-`;
-
-fs.writeFileSync('tests/runtime-session-ui-settings.test.js', regression, 'utf8');
-
-const storagePath = 'tests/storage.test.js';
-let storage = fs.readFileSync(storagePath, 'utf8').replace(/\r\n/g, '\n');
-const before = "    assert.match(gemini, /model: getConfig\\(\\)\\.geminiLiveModel/);";
-const after = [
-    "    assert.match(gemini, /const liveModel = String\\(getConfig\\(\\)\\.geminiLiveModel/);",
-    "    assert.match(gemini, /model: liveModel/);",
-].join('\n');
-if (!storage.includes(before)) throw new Error('Could not find the legacy Gemini Live model assertion');
-storage = storage.replace(before, after);
-fs.writeFileSync(storagePath, storage, 'utf8');
-
-console.log('Runtime UI regression assertions updated for normalized model and literal source checks.');
