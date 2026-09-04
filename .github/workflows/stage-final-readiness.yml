@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: npm ci --no-audit --no-fund
 
+      - name: Audit high-severity dependency vulnerabilities
+        shell: pwsh
+        run: npm audit --audit-level=high
+
       - name: Run source validation
         shell: pwsh
         run: npm run check
