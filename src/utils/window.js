@@ -1,6 +1,7 @@
 const { BrowserWindow, globalShortcut, ipcMain, screen, session, desktopCapturer, app } = require('electron');
 const path = require('node:path');
 const storage = require('../storage');
+const { createWindowModeController } = require('./windowModeController');
 
 let mouseEventsIgnored = false;
 
@@ -19,10 +20,17 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         minWidth: MIN_WINDOW_SIZE.width,
         minHeight: MIN_WINDOW_SIZE.height,
         resizable: true,
+        maximizable: true,
+        minimizable: true,
         frame: false,
         transparent: true,
-        hasShadow: false,
-        alwaysOnTop: true,
+        hasShadow: true,
+        roundedCorners: true,
+        thickFrame: true,
+        alwaysOnTop: false,
+        skipTaskbar: false,
+        autoHideMenuBar: true,
+        title: 'ContextHalo',
         icon: path.join(__dirname, '../assets/logo.ico'),
         webPreferences: {
             preload: path.join(__dirname, '../../preload.js'),
@@ -68,10 +76,14 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         { useSystemPicker: false }
     );
 
-    mainWindow.setContentProtection(true);
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-    try { mainWindow.setSkipTaskbar(true); } catch (error) { console.warn('Could not hide from taskbar:', error.message); }
+    const windowModeController = createWindowModeController(mainWindow, screen);
+    const handleDisplayMetricsChanged = () => windowModeController.repositionHud();
+    screen.on('display-metrics-changed', handleDisplayMetricsChanged);
+
+    mainWindow.on('show', () => windowModeController.reassertHudMode());
+    mainWindow.on('closed', () => {
+        screen.removeListener('display-metrics-changed', handleDisplayMetricsChanged);
+    });
 
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('will-navigate', event => event.preventDefault());
@@ -81,11 +93,17 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         setTimeout(() => {
             const defaultKeybinds = getDefaultKeybinds();
             const savedKeybinds = storage.getKeybinds();
-            updateGlobalShortcuts(savedKeybinds ? { ...defaultKeybinds, ...savedKeybinds } : defaultKeybinds, mainWindow, sendToRenderer, geminiSessionRef);
+            updateGlobalShortcuts(
+                savedKeybinds ? { ...defaultKeybinds, ...savedKeybinds } : defaultKeybinds,
+                mainWindow,
+                sendToRenderer,
+                geminiSessionRef,
+                windowModeController
+            );
         }, 150);
     });
 
-    setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef);
+    setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
     return mainWindow;
 }
 
@@ -100,15 +118,24 @@ function getDefaultKeybinds() {
     };
 }
 
-function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef) {
+function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef, windowModeController) {
     globalShortcut.unregisterAll();
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
     const moveIncrement = Math.floor(Math.min(width, height) * 0.1);
+    const moveWindow = (deltaX, deltaY) => {
+        if (windowModeController) {
+            windowModeController.moveBy(deltaX, deltaY);
+            return;
+        }
+        if (!mainWindow.isVisible()) return;
+        const [x, y] = mainWindow.getPosition();
+        mainWindow.setPosition(x + deltaX, y + deltaY);
+    };
     const movementActions = {
-        moveUp: () => { if (mainWindow.isVisible()) { const [x, y] = mainWindow.getPosition(); mainWindow.setPosition(x, y - moveIncrement); } },
-        moveDown: () => { if (mainWindow.isVisible()) { const [x, y] = mainWindow.getPosition(); mainWindow.setPosition(x, y + moveIncrement); } },
-        moveLeft: () => { if (mainWindow.isVisible()) { const [x, y] = mainWindow.getPosition(); mainWindow.setPosition(x - moveIncrement, y); } },
-        moveRight: () => { if (mainWindow.isVisible()) { const [x, y] = mainWindow.getPosition(); mainWindow.setPosition(x + moveIncrement, y); } },
+        moveUp: () => moveWindow(0, -moveIncrement),
+        moveDown: () => moveWindow(0, moveIncrement),
+        moveLeft: () => moveWindow(-moveIncrement, 0),
+        moveRight: () => moveWindow(moveIncrement, 0),
     };
 
     const register = (name, handler) => {
@@ -118,7 +145,13 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
     };
 
     Object.entries(movementActions).forEach(([name, handler]) => register(name, handler));
-    register('toggleVisibility', () => mainWindow.isVisible() ? mainWindow.hide() : mainWindow.showInactive());
+    register('toggleVisibility', () => {
+        if (mainWindow.isVisible()) mainWindow.hide();
+        else {
+            mainWindow.showInactive();
+            windowModeController?.reassertHudMode();
+        }
+    });
     register('toggleClickThrough', () => {
         mouseEventsIgnored = !mouseEventsIgnored;
         mainWindow.setIgnoreMouseEvents(mouseEventsIgnored, mouseEventsIgnored ? { forward: true } : undefined);
@@ -138,11 +171,20 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
     });
 }
 
-function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
+function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, windowModeController) {
     ipcMain.on('view-changed', (event, view) => {
         if (!isTrustedEvent(event, mainWindow) || typeof view !== 'string' || mainWindow.isDestroyed()) return;
         const isLiveMode = view === 'assistant';
-        if (!isLiveMode) mainWindow.setIgnoreMouseEvents(false);
+
+        if (isLiveMode) {
+            windowModeController?.enterHudMode();
+            return;
+        }
+
+        mouseEventsIgnored = false;
+        mainWindow.setIgnoreMouseEvents(false);
+        mainWindow.webContents.send('click-through-toggled', false);
+        windowModeController?.enterNormalMode();
     });
 
     ipcMain.handle('window-minimize', event => {
@@ -153,13 +195,23 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
 
     ipcMain.on('update-keybinds', (event, newKeybinds) => {
         if (!isTrustedEvent(event, mainWindow) || !newKeybinds || typeof newKeybinds !== 'object') return;
-        updateGlobalShortcuts({ ...getDefaultKeybinds(), ...newKeybinds }, mainWindow, sendToRenderer, geminiSessionRef);
+        updateGlobalShortcuts(
+            { ...getDefaultKeybinds(), ...newKeybinds },
+            mainWindow,
+            sendToRenderer,
+            geminiSessionRef,
+            windowModeController
+        );
     });
 
     ipcMain.handle('toggle-window-visibility', event => {
         if (!isTrustedEvent(event, mainWindow)) return { success: false, error: 'Untrusted renderer' };
         if (mainWindow.isDestroyed()) return { success: false, error: 'Window has been destroyed' };
-        if (mainWindow.isVisible()) mainWindow.hide(); else mainWindow.showInactive();
+        if (mainWindow.isVisible()) mainWindow.hide();
+        else {
+            mainWindow.showInactive();
+            windowModeController?.reassertHudMode();
+        }
         return { success: true };
     });
 }
