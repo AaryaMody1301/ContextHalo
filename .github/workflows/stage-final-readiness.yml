@@ -1,0 +1,74 @@
+name: Stage Final Readiness Audit
+
+on:
+  push:
+    branches: [fix/final-readiness-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: fix/final-readiness-audit
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Apply guarded source fixes
+        shell: pwsh
+        run: node scripts/apply-final-readiness-audit.js
+
+      - name: Refresh Electron 43 patch release
+        shell: pwsh
+        run: npm install --save-dev electron@43.6.0 --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      - name: Run source validation
+        shell: pwsh
+        run: npm run check
+
+      - name: Run tests
+        shell: pwsh
+        run: npm test --if-present
+
+      - name: Run Electron renderer smoke test
+        shell: pwsh
+        run: |
+          & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Electron renderer smoke test failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Build portable Windows EXE
+        shell: pwsh
+        run: npm run build:portable -- --publish never
+
+      - name: Verify portable EXE
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Portable Windows EXE was not produced." }
+          Write-Host "Portable EXE: $($exe.FullName)"
+          Write-Host "SHA256: $((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
+
+      - name: Commit validated audit fixes and remove staging machinery
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/utils/gemini.js tests/typed-gemini-history.test.js README.md package.json package-lock.json
+          git rm scripts/apply-final-readiness-audit.js .github/workflows/stage-final-readiness.yml
+          git commit -m "fix: preserve typed Gemini history and refresh Electron [skip ci]"
+          git push origin HEAD:fix/final-readiness-audit
