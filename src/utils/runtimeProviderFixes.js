@@ -73,7 +73,7 @@ async function patchMainView() {
                 <summary class="config-summary">
                     <span class="config-summary-text">
                         <span class="config-summary-title">Gemini</span>
-                        <span class="config-summary-description">Live audio plus Gemini 3.7 Flash screenshots</span>
+                        <span class="config-summary-description">Live audio plus Gemini 3.8 Flash screenshots</span>
                     </span>
                     ${this._renderConfigChevron()}
                 </summary>
@@ -98,7 +98,7 @@ async function patchMainView() {
                     </div>
 
                     <div class="config-note">
-                        Live audio uses Gemini 3.1 Flash Live Preview. Manual screenshots use Gemini 3.7 Flash from the migrated app configuration.
+                        Live audio uses Gemini 3.1 Flash Live Preview. Manual screenshots use Gemini 3.8 Flash from the migrated app configuration.
                     </div>
                 </div>
             </details>
