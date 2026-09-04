@@ -36,11 +36,6 @@ jobs:
         shell: pwsh
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Apply non-breaking transitive security fixes
-        continue-on-error: true
-        shell: pwsh
-        run: npm audit fix --package-lock-only --ignore-scripts --no-fund
-
       - name: Install locked dependencies
         shell: pwsh
         run: npm ci --no-audit --no-fund
