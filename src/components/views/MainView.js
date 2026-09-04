@@ -23,10 +23,12 @@ export class MainView extends LitElement {
         }
 
         :host {
-            height: 100%;
-            min-height: 100%;
             display: block;
-            overflow-y: auto;
+            width: 100%;
+            min-height: 100%;
+            height: auto;
+            overflow: visible;
+            box-sizing: border-box;
             padding: 58px clamp(24px, 6vw, 72px) 44px;
         }
 

@@ -82,8 +82,32 @@ function installWindowsSmokeCheck(window) {
                     await settingsView.updateComplete;
                     const settingsText = settingsView.shadowRoot?.textContent || '';
                     const settingsReady = settingsText.includes('Session Defaults') &&
+                        settingsText.includes('AI Provider & Models') &&
                         settingsText.includes('AI Behavior') &&
                         settingsText.includes('Keyboard Shortcuts');
+
+                    const app = document.querySelector('context-halo-app');
+                    for (let i = 0; i < 80 && app?._storageLoaded !== true; i++) {
+                        await new Promise(resolve => setTimeout(resolve, 25));
+                    }
+                    app.currentView = 'main';
+                    app.requestUpdate();
+                    await app.updateComplete;
+                    const content = app.shadowRoot?.querySelector('.content-inner');
+                    const liveMain = app.shadowRoot?.querySelector('main-view');
+                    const mainOverflow = liveMain ? getComputedStyle(liveMain).overflowY : '';
+                    if (liveMain) liveMain.style.minHeight = '1800px';
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    if (content) content.scrollTop = content.scrollHeight;
+                    const parentCanScroll = Boolean(content && content.scrollTop > 0);
+                    app.navigate('customize');
+                    await app.updateComplete;
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    const settingsInApp = app.shadowRoot?.querySelector('customize-view');
+                    const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
+                    const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
+                    const navigationReset = Boolean(content && content.scrollTop === 0);
+                    const singleScrollOwner = mainOverflow !== 'auto' && settingsOverflow !== 'auto';
 
                     mainView.remove();
                     settingsView.remove();
@@ -96,6 +120,9 @@ function installWindowsSmokeCheck(window) {
                         home: homeReady,
                         sessionError: errorReady,
                         settings: settingsReady,
+                        parentCanScroll,
+                        navigationReset,
+                        singleScrollOwner,
                     };
                 })()
             `, true);
@@ -106,8 +133,11 @@ function installWindowsSmokeCheck(window) {
                 result?.app === true &&
                 result?.home === true &&
                 result?.sessionError === true &&
-                result?.settings === true;
-            finish(ready, ready ? 'sandboxed preload, Home, session error state, and Settings rendered' : `unexpected renderer state ${JSON.stringify(result)}`);
+                result?.settings === true &&
+                result?.parentCanScroll === true &&
+                result?.navigationReset === true &&
+                result?.singleScrollOwner === true;
+            finish(ready, ready ? 'sandboxed preload, Home/Settings rendered, and navigation scrolling verified' : `unexpected renderer state ${JSON.stringify(result)}`);
         } catch (error) {
             finish(false, error.message);
         }
