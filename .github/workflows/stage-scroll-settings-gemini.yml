@@ -27,6 +27,11 @@ jobs:
           node-version: '24'
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
       - name: Apply guarded repairs
         shell: pwsh
         run: node .github/scripts/apply_scroll_settings_gemini_repair.js
@@ -76,6 +81,7 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item -Force .github/scripts/apply_scroll_settings_gemini_repair.js
+          Remove-Item -Force .github/scripts/apply_scroll_settings_gemini_repair.py
           Remove-Item -Force .github/workflows/stage-scroll-settings-gemini.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
