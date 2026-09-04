@@ -147,7 +147,7 @@ function buildSessionReview(session) {
         important: byType('important'),
         messageCount: Array.isArray(session?.conversationHistory) ? session.conversationHistory.length : 0,
         transcriptItems: Array.isArray(session?.liveTranscript) ? session.liveTranscript.filter(item => item?.final !== false).length : 0,
-        practiceReady: informativeSentences(text).length >= 2,
+        practiceReady: informativeSentences(text).length >= 1,
         text,
     };
 }
