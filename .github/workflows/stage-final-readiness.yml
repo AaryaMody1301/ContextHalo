@@ -23,21 +23,23 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Apply guarded source fixes
+      - name: Apply guarded readiness fixes
         shell: pwsh
         run: node scripts/apply-final-readiness-audit.js
 
-      - name: Refresh supported runtime dependencies
+      - name: Synchronize simplified dependency lockfile
         shell: pwsh
-        run: |
-          npm install --save-dev electron@43.6.0 --package-lock-only --ignore-scripts --no-audit --no-fund
-          npm install --save @google/genai@2.19.0 --package-lock-only --ignore-scripts --no-audit --no-fund
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Install locked dependencies
         shell: pwsh
         run: npm ci --no-audit --no-fund
 
-      - name: Audit high-severity dependency vulnerabilities
+      - name: Audit production dependencies
+        shell: pwsh
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit complete dependency tree
         shell: pwsh
         run: npm audit --audit-level=high
 
@@ -68,13 +70,15 @@ jobs:
           if (-not $exe) { throw "Portable Windows EXE was not produced." }
           Write-Host "Portable EXE: $($exe.FullName)"
           Write-Host "SHA256: $((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
+          $unpacked = Get-ChildItem -Path "dist\win-unpacked" -File -Filter "ContextHalo.exe" | Select-Object -First 1
+          if (-not $unpacked) { throw "Unpacked Windows executable was not produced for fuse validation." }
 
       - name: Commit validated audit fixes and remove staging machinery
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/utils/gemini.js tests/typed-gemini-history.test.js tests/storage.test.js README.md package.json package-lock.json
-          git rm scripts/apply-final-readiness-audit.js .github/workflows/stage-final-readiness.yml
-          git commit -m "fix: preserve typed Gemini history and refresh runtime dependencies [skip ci]"
+          git add -A
+          git rm --ignore-unmatch scripts/apply-final-readiness-audit.js .github/workflows/stage-final-readiness.yml
+          git commit -m "fix: complete final Windows readiness audit [skip ci]"
           git push origin HEAD:fix/final-readiness-audit
