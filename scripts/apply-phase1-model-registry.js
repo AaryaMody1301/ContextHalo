@@ -13,10 +13,19 @@ function write(rel, content) {
 
 function replaceOnce(rel, from, to) {
     const current = read(rel);
-    if (!current.includes(from)) {
-        throw new Error(`Expected pattern not found in ${rel}: ${from.slice(0, 120)}`);
+    if (current.includes(from)) {
+        write(rel, current.replace(from, to));
+        return;
     }
-    write(rel, current.replace(from, to));
+
+    const fromCrLf = from.replaceAll('\n', '\r\n');
+    const toCrLf = to.replaceAll('\n', '\r\n');
+    if (current.includes(fromCrLf)) {
+        write(rel, current.replace(fromCrLf, toCrLf));
+        return;
+    }
+
+    throw new Error(`Expected pattern not found in ${rel}: ${from.slice(0, 120)}`);
 }
 
 for (const required of [
