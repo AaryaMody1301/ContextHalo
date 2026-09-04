@@ -2,14 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const CONFIG_VERSION = 5;
+const CONFIG_VERSION = 6;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
     onboarded: false,
     layout: 'normal',
     geminiLiveModel: 'gemini-3.1-flash-live-preview',
-    geminiHttpModel: 'gemini-3.7-flash',
+    geminiHttpModel: 'gemini-3.8-flash',
     groqModel: 'openai/gpt-oss-120b',
     groqImageModel: 'qwen/qwen3.6-27b',
     groqTranscriptionModel: 'whisper-large-v3-turbo',
@@ -186,6 +186,9 @@ function migrateConfig(rawConfig = {}) {
         config.geminiLiveModel = DEFAULT_CONFIG.geminiLiveModel;
     }
     if (!config.geminiHttpModel || RETIRED_GEMINI_HTTP_MODELS.has(config.geminiHttpModel)) {
+        config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
+    }
+    if (previousVersion < 6 && source.geminiHttpModel === 'gemini-3.7-flash') {
         config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
     }
     if (previousVersion < 4 && source.groqModel === 'qwen/qwen3.6-27b') {
