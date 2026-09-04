@@ -1,7 +1,11 @@
 const fs = require('node:fs');
 
+function readNormalized(filePath) {
+    return fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+}
+
 function replaceOnce(filePath, before, after, label) {
-    const source = fs.readFileSync(filePath, 'utf8');
+    const source = readNormalized(filePath);
     const first = source.indexOf(before);
     if (first < 0) throw new Error(`Could not find ${label} in ${filePath}`);
     if (source.indexOf(before, first + before.length) >= 0) {
@@ -51,7 +55,7 @@ const regressionTest = `const test = require('node:test');\nconst assert = requi
 fs.writeFileSync('tests/typed-gemini-history.test.js', regressionTest, 'utf8');
 
 const readmePath = 'README.md';
-const readme = fs.readFileSync(readmePath, 'utf8');
+const readme = readNormalized(readmePath);
 const featuresStart = readme.indexOf('## Features');
 const requirementsStart = readme.indexOf('## Requirements');
 if (featuresStart < 0 || requirementsStart <= featuresStart) throw new Error('README feature section could not be located');
