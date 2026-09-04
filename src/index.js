@@ -16,7 +16,9 @@ const {
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 const { installRealtimeContextMain } = require('./utils/realtimeContextMain');
 const { installSessionPackMain } = require('./utils/sessionPackMain');
+const { installKnowledgeRagMain } = require('./utils/knowledgeRagMain');
 const { setupContextCaptureMain } = require('./utils/contextCaptureMain');
+const { setupPhase4Main } = require('./utils/phase4Main');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
 
@@ -28,6 +30,7 @@ installProviderRuntimeHardening();
 installRealtimeContextMain();
 installSessionPackMain();
 installAnalyzeProviderFallback();
+installKnowledgeRagMain();
 
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer } = require('./utils/gemini');
@@ -86,6 +89,7 @@ function createMainWindow() {
     setupRuntimeWindowHardening(mainWindow);
     setupWindowsWindowHardening(mainWindow);
     setupContextCaptureMain(mainWindow, ipcMain);
+    setupPhase4Main(mainWindow, ipcMain);
     installWindowsSmokeCheck(mainWindow);
     return mainWindow;
 }
