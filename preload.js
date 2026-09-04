@@ -67,6 +67,7 @@ const allowedChannels = {
         'whisper-downloading',
         'local-ai-download-progress',
         'groq-rate-limit',
+        'live-transcript',
     ],
 };
 
