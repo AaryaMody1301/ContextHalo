@@ -53,11 +53,12 @@ test('storage v4 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 4);
+    assert.equal(config.configVersion, 5);
     assert.equal(config.geminiLiveModel, 'gemini-3.1-flash-live-preview');
     assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
     assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');
+    assert.equal(config.groqTranscriptionModel, 'whisper-large-v3-turbo');
     assert.equal(config.onboarded, true);
     assert.equal(config.layout, 'compact');
 
@@ -97,7 +98,8 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
     assert.match(gemini, /currentProviderMode = 'groq'/);
     assert.match(gemini, /geminiSessionRef\.current = null/);
     assert.match(gemini, /currentProviderMode === 'groq' \? await sendImageToGroq\(data, prompt\) : await sendImageToGeminiHttp\(data, prompt\)/);
-    assert.match(gemini, /form\.append\('model', 'whisper-large-v3-turbo'\)/);
+    assert.match(gemini, /groqTranscriptionModel/);
+    assert.match(gemini, /whisper-large-v3-turbo/);
     assert.match(gemini, /model: getConfig\(\)\.geminiLiveModel/);
 });
 

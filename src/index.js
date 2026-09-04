@@ -27,6 +27,7 @@ installAnalyzeProviderFallback();
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
+const { listProviderModels } = require('./utils/providerModelRegistry');
 
 const geminiSessionRef = { current: null };
 let mainWindow = null;
@@ -194,6 +195,19 @@ function setupStorageIpcHandlers() {
 }
 
 function setupGeneralIpcHandlers() {
+    ipcMain.handle('provider-models:list', async (event, provider, forceRefresh = false) => {
+        if (!isTrustedEvent(event) || !['gemini', 'groq'].includes(provider)) {
+            return { success: false, error: 'Invalid provider model request' };
+        }
+        try {
+            const apiKey = provider === 'gemini' ? storage.getApiKey() : storage.getGroqApiKey();
+            const data = await listProviderModels(provider, apiKey, { forceRefresh: forceRefresh === true });
+            return { success: true, data };
+        } catch (error) {
+            return { success: false, error: error?.message || String(error) };
+        }
+    });
+
     ipcMain.handle('get-app-version', event => {
         if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
         return { success: true, data: app.getVersion() };

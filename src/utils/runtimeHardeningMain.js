@@ -287,7 +287,7 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
 
     const result = await callWithProviderRetry(async () => {
         const form = new FormData();
-        form.append('model', 'whisper-large-v3-turbo');
+        form.append('model', storage.getConfig().groqTranscriptionModel || 'whisper-large-v3-turbo');
         form.append('response_format', 'json');
         form.append('file', new Blob([pcmToWavBuffer(pcm, sampleRate)], { type: 'audio/wav' }), 'utterance.wav');
         if (language) form.append('language', language);
