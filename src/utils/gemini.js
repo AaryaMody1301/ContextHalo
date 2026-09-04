@@ -23,6 +23,7 @@ let groqConversationHistory = [];
 // Conversation tracking variables
 let currentSessionId = null;
 let currentTranscription = '';
+let pendingTypedPrompt = '';
 let conversationHistory = [];
 let screenAnalysisHistory = [];
 let currentProfile = null;
@@ -91,6 +92,7 @@ function initializeNewSession(profile = null, customPrompt = null) {
     currentSessionId = Date.now().toString();
     startTransportLog(currentSessionId);
     currentTranscription = '';
+    pendingTypedPrompt = '';
     groqRequestStartedForTurn = false;
     conversationHistory = [];
     screenAnalysisHistory = [];
@@ -880,12 +882,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     }
 
                     if (message.serverContent?.generationComplete) {
-                        if (currentTranscription.trim() !== '') {
-                            if (currentProviderMode !== 'groq' && messageBuffer.trim() !== '') {
-                                saveConversationTurn(currentTranscription, messageBuffer);
-                            }
-                            currentTranscription = '';
+                        const turnInput = pendingTypedPrompt.trim() || currentTranscription.trim();
+                        if (turnInput && currentProviderMode !== 'groq' && messageBuffer.trim() !== '') {
+                            saveConversationTurn(turnInput, messageBuffer);
                         }
+                        currentTranscription = '';
+                        pendingTypedPrompt = '';
                         messageBuffer = '';
                     }
 
@@ -971,6 +973,7 @@ async function attemptReconnect() {
     // Clear stale buffers
     messageBuffer = '';
     currentTranscription = '';
+    pendingTypedPrompt = '';
     // Don't reset groqConversationHistory to preserve context across reconnects
 
     sendToRenderer('update-status', `Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
@@ -1471,12 +1474,15 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
 
+        const cleanText = text.trim();
+        pendingTypedPrompt = cleanText;
         try {
-            console.log('Sending text message:', text);
+            console.log('Sending text message:', cleanText);
 
-            await geminiSessionRef.current.sendRealtimeInput({ text: text.trim() });
+            await geminiSessionRef.current.sendRealtimeInput({ text: cleanText });
             return { success: true };
         } catch (error) {
+            if (pendingTypedPrompt === cleanText) pendingTypedPrompt = '';
             console.error('Error sending text:', error);
             return { success: false, error: error.message };
         }

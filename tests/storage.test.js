@@ -106,7 +106,7 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
 test('supported Electron runtime and lockfile stay aligned', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
     const lockfile = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package-lock.json'), 'utf8'));
-    assert.equal(packageJson.devDependencies.electron, '^43.4.1');
-    assert.equal(lockfile.packages[''].devDependencies.electron, '^43.4.1');
-    assert.equal(lockfile.packages['node_modules/electron'].version, '43.4.1');
+    assert.equal(packageJson.devDependencies.electron, '^43.6.0');
+    assert.equal(lockfile.packages[''].devDependencies.electron, '^43.6.0');
+    assert.equal(lockfile.packages['node_modules/electron'].version, '43.6.0');
 });

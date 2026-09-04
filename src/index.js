@@ -1,7 +1,3 @@
-if (require('electron-squirrel-startup')) {
-    process.exit(0);
-}
-
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
 const { installAnalyzeProviderFallback } = require('./utils/analyzeProviderFallback');

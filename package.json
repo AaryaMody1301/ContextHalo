@@ -13,11 +13,10 @@
     },
     "main": "src/index.js",
     "scripts": {
-        "start": "electron-forge start",
-        "package": "electron-forge package",
-        "make": "electron-forge make",
+        "start": "electron .",
+        "package": "electron-builder --dir --win --x64 --publish never",
+        "make": "npm run build:portable",
         "build:portable": "electron-builder --win portable --x64",
-        "publish": "electron-forge publish",
         "check": "node scripts/check-source.js",
         "lint": "npm run check",
         "test": "node --test --test-concurrency=1 tests/*.test.js"
@@ -42,22 +41,11 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
-        "@google/genai": "^2.18.0",
-        "electron-squirrel-startup": "^1.0.1",
+        "@google/genai": "^2.21.0",
         "ws": "^8.21.3"
     },
     "devDependencies": {
-        "@electron-forge/cli": "^7.11.2",
-        "@electron-forge/maker-deb": "^7.11.2",
-        "@electron-forge/maker-dmg": "^7.11.2",
-        "@electron-forge/maker-rpm": "^7.11.2",
-        "@electron-forge/maker-squirrel": "^7.11.2",
-        "@electron-forge/maker-zip": "^7.11.2",
-        "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
-        "@electron-forge/plugin-fuses": "^7.11.2",
-        "@electron/fuses": "^1.8.0",
-        "@reforged/maker-appimage": "^5.0.0",
-        "electron": "^43.4.1",
+        "electron": "^43.6.0",
         "electron-builder": "^26.15.3"
     },
     "build": {
@@ -78,6 +66,14 @@
                 }
             ],
             "artifactName": "ContextHalo-Windows-x64.exe"
+        },
+        "electronFuses": {
+            "runAsNode": false,
+            "enableCookieEncryption": true,
+            "enableNodeOptionsEnvironmentVariable": false,
+            "enableNodeCliInspectArguments": false,
+            "enableEmbeddedAsarIntegrityValidation": true,
+            "onlyLoadAppFromAsar": true
         }
     }
 }

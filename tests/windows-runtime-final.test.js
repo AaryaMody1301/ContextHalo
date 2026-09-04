@@ -137,6 +137,18 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.equal(preloadSource.includes('process.env'), false);
     assert.equal(cloudSource.includes("console.log('[Cloud] Connecting to', url)"), false);
     assert.equal(packageJson.build.win.icon, 'src/assets/logo.ico');
+    assert.deepEqual(packageJson.build.electronFuses, {
+        runAsNode: false,
+        enableCookieEncryption: true,
+        enableNodeOptionsEnvironmentVariable: false,
+        enableNodeCliInspectArguments: false,
+        enableEmbeddedAsarIntegrityValidation: true,
+        onlyLoadAppFromAsar: true,
+    });
+    assert.equal(packageJson.dependencies['electron-squirrel-startup'], undefined);
+    assert.equal(Object.keys(packageJson.devDependencies).some(name => name.startsWith('@electron-forge/')), false);
+    assert.equal(packageJson.devDependencies['@reforged/maker-appimage'], undefined);
+    assert.equal(indexSource.includes('electron-squirrel-startup'), false);
     assert.ok(indexSource.indexOf('installWindowsProviderTransport();') < indexSource.indexOf("require('./utils/gemini')"));
     assert.ok(indexSource.indexOf('installWindowsLocalAiRuntime();') < indexSource.indexOf("require('./utils/gemini')"));
     assert.match(analyzeSource, /__lastAnalyzeActualModel = model/);
