@@ -93,5 +93,10 @@ replaceOnce(
     "    assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');\n    assert.equal(config.onboarded, true);",
     "    assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');\n    assert.equal(config.groqTranscriptionModel, 'whisper-large-v3-turbo');\n    assert.equal(config.onboarded, true);"
 );
+replaceOnce(
+    'tests/storage.test.js',
+    "    assert.match(gemini, /form\\.append\\('model', 'whisper-large-v3-turbo'\\)/);",
+    "    assert.match(gemini, /groqTranscriptionModel/);\n    assert.match(gemini, /whisper-large-v3-turbo/);"
+);
 
 console.log('Phase 1 dynamic model registry changes applied successfully.');
