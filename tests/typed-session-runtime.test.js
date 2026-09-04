@@ -16,6 +16,7 @@ test('Electron startup installs typed Gemini Live turn finalization and audio ga
     assert.match(bootstrap, /sendRealtimeInput\(\{ audioStreamEnd: true \}\)/);
     assert.match(bootstrap, /send-audio-content/);
     assert.match(bootstrap, /send-mic-audio-content/);
+    assert.match(bootstrap, /resetAudioMixer/);
     assert.match(bootstrap, /reason: 'typed-prompt-turn'/);
     assert.match(bootstrap, /channel === 'new-response' \|\| channel === 'update-response'/);
     assert.match(bootstrap, /TYPED_PROMPT_AUDIO_GATE_MS = 30000/);
