@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: npm ci --no-audit --no-fund
 
+      - name: Audit production dependencies
+        shell: pwsh
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Run source validation
         shell: pwsh
         run: npm run check
