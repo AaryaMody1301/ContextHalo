@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+        />
+        <title>Select region</title>
+        <style>
+            html,
+            body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+                background: transparent;
+                color: #fff;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                user-select: none;
+            }
+
+            #overlay {
+                position: fixed;
+                inset: 0;
+                cursor: crosshair;
+                background: rgba(4, 7, 12, 0.22);
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+            }
+
+            #hint {
+                position: fixed;
+                left: 50%;
+                top: 24px;
+                transform: translateX(-50%);
+                padding: 8px 13px;
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 999px;
+                background: rgba(8, 11, 17, 0.82);
+                box-shadow: 0 10px 34px rgba(0, 0, 0, 0.28);
+                backdrop-filter: blur(18px);
+                font-size: 12px;
+                pointer-events: none;
+            }
+
+            #selection {
+                position: fixed;
+                border: 2px solid rgba(96, 165, 250, 0.95);
+                background: rgba(59, 130, 246, 0.08);
+                box-shadow:
+                    0 0 0 9999px rgba(3, 6, 11, 0.42),
+                    0 0 24px rgba(59, 130, 246, 0.28);
+                pointer-events: none;
+            }
+
+            #sizeLabel {
+                position: absolute;
+                right: 0;
+                bottom: -27px;
+                padding: 4px 7px;
+                border-radius: 6px;
+                background: rgba(8, 11, 17, 0.86);
+                color: rgba(255, 255, 255, 0.82);
+                font: 10px Consolas, monospace;
+                white-space: nowrap;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="overlay"></div>
+        <div id="hint">Drag to select a screen region · Esc to cancel</div>
+        <div id="selection" hidden><span id="sizeLabel"></span></div>
+        <script type="module" src="utils/regionSelectorRenderer.js"></script>
+    </body>
+</html>
