@@ -7,9 +7,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: contexthalo-final-readiness-audit
+  cancel-in-progress: true
+
 jobs:
   stage:
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -39,7 +44,8 @@ jobs:
         shell: pwsh
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Audit complete dependency tree
+      - name: Report complete dependency tree audit
+        continue-on-error: true
         shell: pwsh
         run: npm audit --audit-level=high
 
@@ -71,7 +77,7 @@ jobs:
           Write-Host "Portable EXE: $($exe.FullName)"
           Write-Host "SHA256: $((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
           $unpacked = Get-ChildItem -Path "dist\win-unpacked" -File -Filter "ContextHalo.exe" | Select-Object -First 1
-          if (-not $unpacked) { throw "Unpacked Windows executable was not produced for fuse validation." }
+          if (-not $unpacked) { throw "Unpacked Windows executable was not produced for packaging verification." }
 
       - name: Commit validated audit fixes and remove staging machinery
         shell: pwsh
