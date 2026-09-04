@@ -330,8 +330,11 @@ export class ContextHaloApp extends LitElement {
         /* Content inner */
         .content-inner {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
             overflow-x: hidden;
+            overscroll-behavior: contain;
+            scroll-behavior: auto;
         }
 
         .content-inner.live {
@@ -598,6 +601,16 @@ export class ContextHaloApp extends LitElement {
     navigate(view) {
         this.currentView = view;
         this.requestUpdate();
+        // Home, Settings and the other normal pages share .content-inner as
+        // their only vertical scroller. Always enter a page at its real top.
+        this.updateComplete.then(() => this._resetContentScroll());
+    }
+
+    _resetContentScroll() {
+        const content = this.shadowRoot?.querySelector('.content-inner');
+        if (!content || this._isLiveMode()) return;
+        content.scrollTop = 0;
+        content.scrollLeft = 0;
     }
 
     async handleClose() {
@@ -800,9 +813,12 @@ export class ContextHaloApp extends LitElement {
     updated(changedProperties) {
         super.updated(changedProperties);
 
-        if (changedProperties.has('currentView') && window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('view-changed', this.currentView);
+        if (changedProperties.has('currentView')) {
+            this._resetContentScroll();
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('view-changed', this.currentView);
+            }
         }
     }
 
@@ -858,6 +874,7 @@ export class ContextHaloApp extends LitElement {
                         .onScreenshotIntervalChange=${i => this.handleScreenshotIntervalChange(i)}
                         .onImageQualityChange=${q => this.handleImageQualityChange(q)}
                         .onLayoutModeChange=${lm => this.handleLayoutModeChange(lm)}
+                        .onOpenProviderSettings=${() => this.navigate('main')}
                     ></customize-view>
                 `;
 

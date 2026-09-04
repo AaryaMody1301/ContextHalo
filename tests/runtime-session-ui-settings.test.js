@@ -28,8 +28,11 @@ test('Gemini Live reads preferences in main and normalizes the configured model'
     assert.ok(gemini.includes('getPreferences().googleSearchEnabled === true'));
     assert.ok(gemini.includes("const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview')"));
     assert.ok(gemini.includes('model: liveModel'));
-    assert.ok(gemini.includes('...(geminiSessionResumptionHandle'));
-    assert.ok(gemini.includes('sessionResumption: { handle: geminiSessionResumptionHandle }'));
+    assert.ok(gemini.includes("listProviderModels('gemini', apiKey)"));
+    assert.ok(gemini.includes('connectGeminiLiveWithGuard'));
+    assert.ok(gemini.includes('lastGeminiInitializationError'));
+    assert.ok(gemini.includes('retrying without Search'));
+    assert.ok(!gemini.includes('thinkingConfig: { thinkingLevel'));
 });
 
 test('model selectors are readable and capability restricted', () => {

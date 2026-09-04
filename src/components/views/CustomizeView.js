@@ -191,6 +191,7 @@ export class CustomizeView extends LitElement {
         onScreenshotIntervalChange: { type: Function },
         onImageQualityChange: { type: Function },
         onLayoutModeChange: { type: Function },
+        onOpenProviderSettings: { type: Function },
         isClearing: { type: Boolean },
         isRestoring: { type: Boolean },
         clearStatusMessage: { type: String },
@@ -210,6 +211,7 @@ export class CustomizeView extends LitElement {
         this.onScreenshotIntervalChange = () => {};
         this.onImageQualityChange = () => {};
         this.onLayoutModeChange = () => {};
+        this.onOpenProviderSettings = () => {};
         this.googleSearchEnabled = true;
         this.isClearing = false;
         this.isRestoring = false;
@@ -614,6 +616,19 @@ export class CustomizeView extends LitElement {
         `;
     }
 
+    renderProviderSection() {
+        return html`
+            <section class="surface">
+                <div class="surface-title">AI Provider & Models</div>
+                <div class="surface-subtitle">Gemini, Groq, Local AI, API keys, and model choices are shared with Home.</div>
+                <div class="form-group">
+                    <div class="form-help">Use one provider editor so credentials and model selections cannot drift between pages.</div>
+                    <button class="control" style="width:auto;cursor:pointer;" @click=${() => this.onOpenProviderSettings()}>Open provider setup</button>
+                </div>
+            </section>
+        `;
+    }
+
     renderAISection() {
         return html`
             <section class="surface">
@@ -781,6 +796,7 @@ export class CustomizeView extends LitElement {
                     <div class="page-title">Settings</div>
                     <div class="page-subtitle">Configure session defaults, AI behavior, audio, appearance, keyboard shortcuts, and local data.</div>
                     ${this.renderSessionSection()}
+                    ${this.renderProviderSection()}
                     ${this.renderAISection()}
                     ${this.renderAudioSection()}
                     ${this.renderLanguageSection()}

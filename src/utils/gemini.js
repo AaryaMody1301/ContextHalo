@@ -6,6 +6,7 @@ const { getSystemPrompt } = require('./prompts');
 const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
 const { connectCloud, sendCloudAudio, sendCloudText, sendCloudImage, closeCloud, isCloudActive, setOnTurnComplete } = require('./cloud');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
+const { listProviderModels } = require('./providerModelRegistry');
 
 // Lazy-loaded to avoid circular dependency (localai.js imports from gemini.js)
 let _localai = null;
@@ -58,6 +59,7 @@ let groqSystemAudioBuffer = Buffer.alloc(0);
 let groqTranscriptionInFlight = false;
 let groqRateLimitState = null;
 let geminiSessionResumptionHandle = null;
+let lastGeminiInitializationError = '';
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
 
@@ -247,19 +249,90 @@ function getGroqReasoningOptions(model, disableThinking) {
     return {};
 }
 
+function getGeminiErrorDetail(error) {
+    const values = [
+        error?.message,
+        error?.reason,
+        error?.error?.message,
+        error?.error?.status,
+        error?.status,
+        Number.isFinite(error?.code) ? `code ${error.code}` : '',
+    ].filter(Boolean).map(String);
+    return [...new Set(values)].join(' · ') || String(error || 'Unknown Gemini error');
+}
+
 function formatGeminiError(error) {
-    const message = String(error?.message || error || '');
-    const normalized = message.toLowerCase();
+    const detail = getGeminiErrorDetail(error);
+    const normalized = detail.toLowerCase();
     if (normalized.includes('api key') || normalized.includes('unauthenticated') || normalized.includes('401')) {
-        return 'Gemini authentication failed. Check that the API key is valid and enabled for the Gemini API.';
+        return `Gemini authentication failed: ${detail}. Check the API key and that the Gemini API is enabled for its project.`;
+    }
+    if (normalized.includes('permission_denied') || normalized.includes('forbidden') || normalized.includes('403')) {
+        return `Gemini permission denied: ${detail}. Check API-key restrictions and project access.`;
     }
     if (normalized.includes('resource_exhausted') || normalized.includes('quota') || normalized.includes('429')) {
-        return 'Gemini quota or rate limit reached. Wait for the provider reset or use a project with available quota.';
+        return `Gemini quota or rate limit reached: ${detail}`;
     }
-    if (normalized.includes('not found') || normalized.includes('404') || normalized.includes('model')) {
-        return 'Gemini could not access the configured Live model. Check model availability for this API key.';
+    if (normalized.includes('not found') || normalized.includes('404')) {
+        return `Gemini could not access the configured Live model: ${detail}`;
     }
-    return message ? `Gemini connection failed: ${message}` : 'Gemini connection failed.';
+    if (normalized.includes('invalid argument') || normalized.includes('1007')) {
+        return `Gemini rejected the Live session setup: ${detail}`;
+    }
+    return `Gemini Live connection failed: ${detail}`;
+}
+
+async function getGeminiLivePreflightError(apiKey, liveModel) {
+    try {
+        const catalog = await listProviderModels('gemini', apiKey);
+        const liveModels = Array.isArray(catalog?.live) ? catalog.live : [];
+        if (!liveModels.some(model => model.id === liveModel)) {
+            const suggested = catalog?.recommended?.live || liveModels[0]?.id || 'a Live-compatible model';
+            return `Gemini API key is valid, but ${liveModel} is not available as a Live model for this key. Choose ${suggested} and try again.`;
+        }
+        return '';
+    } catch (error) {
+        return `Gemini API preflight failed: ${getGeminiErrorDetail(error)}`;
+    }
+}
+
+function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000) {
+    let setupFinished = false;
+    let rejectEarly = () => {};
+    let timer = null;
+    const earlyFailure = new Promise((_, reject) => { rejectEarly = reject; });
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Gemini Live setup timed out after ${Math.ceil(timeoutMs / 1000)} seconds`)), timeoutMs);
+    });
+    const callbacks = params.callbacks || {};
+    const wrappedCallbacks = {
+        ...callbacks,
+        onerror(event) {
+            callbacks.onerror?.(event);
+            if (!setupFinished) rejectEarly(new Error(`Gemini Live socket error: ${getGeminiErrorDetail(event)}`));
+        },
+        onclose(event) {
+            callbacks.onclose?.(event);
+            if (!setupFinished) {
+                const code = Number.isFinite(event?.code) ? `code ${event.code}` : 'no close code';
+                const reason = event?.reason ? `: ${event.reason}` : '';
+                rejectEarly(new Error(`Gemini Live closed during setup (${code})${reason}`));
+            }
+        },
+    };
+    return Promise.race([
+        client.live.connect({ ...params, callbacks: wrappedCallbacks }),
+        earlyFailure,
+        timeout,
+    ]).then(session => {
+        setupFinished = true;
+        if (timer) clearTimeout(timer);
+        return session;
+    }, error => {
+        setupFinished = true;
+        if (timer) clearTimeout(timer);
+        throw error;
+    });
 }
 
 function compactGroqErrorBody(body) {
@@ -776,6 +849,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
     isInitializingSession = true;
     if (!isReconnect) {
+        geminiSessionResumptionHandle = null;
+        isUserClosing = false;
+        lastGeminiInitializationError = '';
         sendToRenderer('session-initializing', true);
     }
 
@@ -804,15 +880,22 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         .trim() || 'gemini-3.1-flash-live-preview';
     sendToRenderer('update-status', `Connecting to ${liveModel}...`);
 
-    // Initialize new conversation session only on first connect
     if (!isReconnect) {
-        initializeNewSession(profile, customPrompt);
+        const preflightError = await getGeminiLivePreflightError(apiKey, liveModel);
+        if (preflightError) {
+            lastGeminiInitializationError = preflightError;
+            sendToRenderer('update-status', preflightError);
+            isInitializingSession = false;
+            sendToRenderer('session-initializing', false);
+            return null;
+        }
     }
 
+    let liveSessionReady = false;
+    let connectedWithoutSearch = false;
+
     try {
-        const session = await client.live.connect({
-            model: liveModel,
-            callbacks: {
+        const callbacks = {
                 onopen: function () {
                     logTransportEvent('gemini.live.opened', {});
                     sendToRenderer('update-status', 'Live session connected');
@@ -868,17 +951,22 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     }
                 },
                 onerror: function (e) {
-                    console.log('Session error:', e.message);
-                    logTransportEvent('gemini.live.error', {
-                        error: e.message,
-                    });
-                    sendToRenderer('update-status', 'Error: ' + e.message);
+                    const detail = formatGeminiError(e);
+                    console.log('Session error:', getGeminiErrorDetail(e));
+                    logTransportEvent('gemini.live.error', { error: getGeminiErrorDetail(e) });
+                    if (!liveSessionReady) lastGeminiInitializationError = detail;
+                    sendToRenderer('update-status', detail);
                 },
                 onclose: function (e) {
-                    console.log('Session closed:', e.reason);
-                    logTransportEvent('gemini.live.closed', {
-                        reason: e.reason,
-                    });
+                    const closeDetail = `Gemini Live closed${Number.isFinite(e?.code) ? ` (code ${e.code})` : ''}${e?.reason ? `: ${e.reason}` : ''}`;
+                    console.log('Session closed:', closeDetail);
+                    logTransportEvent('gemini.live.closed', { reason: closeDetail });
+
+                    if (!liveSessionReady) {
+                        lastGeminiInitializationError = closeDetail;
+                        sendToRenderer('update-status', closeDetail);
+                        return;
+                    }
 
                     // Don't reconnect if user intentionally closed
                     if (isUserClosing) {
@@ -896,24 +984,40 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         sendToRenderer('update-status', 'Session closed');
                     }
                 },
-            },
-            config: {
-                responseModalities: [Modality.AUDIO],
-                // Gemini 3.1 Live documents these as empty configuration
-                // objects. Speaker diarization fields are not valid Live API
-                // transcription settings and can cause an invalid setup request.
-                inputAudioTranscription: {},
-                outputAudioTranscription: {},
-                ...(geminiSessionResumptionHandle
-                    ? { sessionResumption: { handle: geminiSessionResumptionHandle } }
-                    : {}),
-                tools: enabledTools,
-                thinkingConfig: { thinkingLevel: 'minimal' },
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }],
-                },
-            },
-        });
+            };
+
+        const baseConfig = {
+            responseModalities: [Modality.AUDIO],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+        };
+        const preferredConfig = enabledTools.length ? { ...baseConfig, tools: enabledTools } : baseConfig;
+
+        let session;
+        try {
+            session = await connectGeminiLiveWithGuard(client, {
+                model: liveModel,
+                callbacks,
+                config: preferredConfig,
+            });
+        } catch (firstError) {
+            if (!enabledTools.length) throw firstError;
+            sendToRenderer('update-status', 'Gemini Live setup failed with Search enabled; retrying without Search...');
+            session = await connectGeminiLiveWithGuard(client, {
+                model: liveModel,
+                callbacks,
+                config: baseConfig,
+            });
+            connectedWithoutSearch = true;
+        }
+
+        liveSessionReady = true;
+        if (!isReconnect) initializeNewSession(profile, customPrompt);
+        lastGeminiInitializationError = '';
+        if (connectedWithoutSearch) {
+            sendToRenderer('update-status', 'Live session connected (Google Search disabled for this session)');
+        }
 
         isInitializingSession = false;
         if (!isReconnect) {
@@ -921,7 +1025,16 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         }
         return session;
     } catch (error) {
-        const message = formatGeminiError(error);
+        let message = formatGeminiError(error);
+        if (!isReconnect && /api request error|socket|setup|closed|timed out/i.test(getGeminiErrorDetail(error))) {
+            const preflightError = await getGeminiLivePreflightError(apiKey, liveModel);
+            if (!preflightError) {
+                message = `${message}. The API key can list ${liveModel}, so the failure is in the Live WebSocket/setup path rather than model discovery.`;
+            } else {
+                message = preflightError;
+            }
+        }
+        lastGeminiInitializationError = message;
         console.error('Failed to initialize Gemini session:', error);
         logTransportEvent('gemini.live.connect_error', {
             error: error?.message || String(error),
@@ -1278,7 +1391,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             geminiSessionRef.current = session;
             return { success: true, provider: 'gemini' };
         }
-        return { success: false, error: 'Gemini session could not be initialized. Check the status message for details.' };
+        return { success: false, error: lastGeminiInitializationError || 'Gemini session could not be initialized.' };
     });
 
     ipcMain.handle('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt, language = 'en-US') => {

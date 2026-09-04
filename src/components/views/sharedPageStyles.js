@@ -10,13 +10,16 @@ export const unifiedPageStyles = css`
 
     :host {
         display: block;
-        height: 100%;
+        width: 100%;
+        min-height: 100%;
+        height: auto;
     }
 
     .unified-page {
-        height: 100%;
-        overflow-y: auto;
-        padding: var(--space-lg);
+        min-height: 100%;
+        height: auto;
+        overflow: visible;
+        padding: 58px var(--space-lg) var(--space-lg);
         background: var(--bg-app);
     }
 
