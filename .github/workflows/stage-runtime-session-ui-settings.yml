@@ -1,0 +1,83 @@
+name: Stage Runtime Session UI Settings Repair
+
+on:
+  push:
+    branches: [fix/runtime-session-ui-settings]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contexthalo-runtime-session-ui-settings
+  cancel-in-progress: true
+
+jobs:
+  stage:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-session-ui-settings
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Validate patch script syntax
+        shell: pwsh
+        run: node --check scripts/apply-runtime-session-ui-settings.js
+
+      - name: Apply guarded runtime and UI fixes
+        shell: pwsh
+        run: node scripts/apply-runtime-session-ui-settings.js
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit production dependencies
+        shell: pwsh
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run source validation
+        shell: pwsh
+        run: npm run check
+
+      - name: Run tests
+        shell: pwsh
+        run: npm test --if-present
+
+      - name: Run Electron renderer smoke test
+        shell: pwsh
+        run: |
+          & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Electron renderer smoke test failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Build portable Windows EXE
+        shell: pwsh
+        run: npm run build:portable -- --publish never
+
+      - name: Verify portable EXE
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Portable Windows EXE was not produced." }
+          Write-Host "Portable EXE: $($exe.FullName)"
+          Write-Host "SHA256: $((Get-FileHash $exe.FullName -Algorithm SHA256).Hash)"
+
+      - name: Commit validated fixes and remove staging machinery
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git rm --ignore-unmatch scripts/apply-runtime-session-ui-settings.js .github/workflows/stage-runtime-session-ui-settings.yml
+          git commit -m "fix: repair session startup and settings UI [skip ci]"
+          git push origin HEAD:fix/runtime-session-ui-settings
