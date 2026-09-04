@@ -2,7 +2,7 @@ import { html } from '../assets/lit-core-2.7.4.min.js';
 
 const GEMINI_DEFAULTS = {
     live: 'gemini-3.1-flash-live-preview',
-    screen: 'gemini-3.7-flash',
+    screen: 'gemini-3.8-flash',
 };
 
 const GROQ_DEFAULTS = {
