@@ -23,6 +23,7 @@ const allowedChannels = {
         'storage:delete-all-sessions',
         'storage:get-today-limits',
         'storage:clear-all',
+        'provider-models:list',
         'get-app-version',
         'quit-application',
         'open-external',

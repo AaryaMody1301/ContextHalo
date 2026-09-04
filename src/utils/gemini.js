@@ -386,7 +386,7 @@ async function processGroqAudioQueue(sampleRate, language) {
     try {
         const wav = pcmToWavBuffer(chunk, sampleRate, 1);
         const form = new FormData();
-        form.append('model', 'whisper-large-v3-turbo');
+        form.append('model', getConfig().groqTranscriptionModel || 'whisper-large-v3-turbo');
         form.append('language', String(language).split('-')[0]);
         form.append('response_format', 'json');
         form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
