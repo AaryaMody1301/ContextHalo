@@ -74,7 +74,7 @@ packageJson.scripts.start = 'electron .';
 packageJson.scripts.package = 'electron-builder --dir --win --x64 --publish never';
 packageJson.scripts.make = 'npm run build:portable';
 delete packageJson.scripts.publish;
-packageJson.dependencies['@google/genai'] = '^2.19.0';
+packageJson.dependencies['@google/genai'] = '^2.21.0';
 delete packageJson.dependencies['electron-squirrel-startup'];
 for (const dependency of [
     '@electron-forge/cli',
