@@ -11,7 +11,7 @@
     "bugs": {
         "url": "https://github.com/AaryaMody1301/ContextHalo/issues"
     },
-    "main": "src/index.js",
+    "main": "src/bootstrap.js",
     "scripts": {
         "start": "electron .",
         "package": "electron-builder --dir --win --x64 --publish never",
