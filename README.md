@@ -8,16 +8,20 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 
 ## Features
 
-- Gemini Live for low-latency audio assistance
-- Gemini screenshot and screen-context analysis
-- Groq transcription, reasoning, and vision modes
-- Optional fully local AI with whisper.cpp and llama.cpp
-- Windows system-audio loopback and microphone capture
-- Speaker-only, microphone-only, and mixed-audio modes
-- On-demand screen analysis with keyboard shortcuts
-- Conversation and screen-analysis history
-- Always-on-top transparent overlay with click-through mode
+- Gemini Live, Groq, and optional fully local AI with dynamic provider model discovery
+- Low-latency Windows system-audio loopback and microphone capture
+- Protected Windows Live HUD with always-on-top, click-through, taskbar hiding, and capture protection
+- Mica/Acrylic Windows presentation with solid fallbacks where system materials are unavailable
+- Live transcript context across Gemini, Groq Whisper, and local whisper.cpp paths
+- Instant, Balanced, and Detailed response modes plus Important/Decision/Action/Question markers
+- Multi-monitor/window capture selection, protected region analysis, and explicit copied-text context
+- Session Packs for goals, notes, and reusable session context
+- Local Knowledge Library with dependency-free retrieval for text, code, logs, CSV/JSON, SQL, YAML, and related text formats
+- Practice Lab generated and graded locally from knowledge sources or previous sessions
+- Session Review for topics, decisions, actions, questions, markers, and follow-up practice
+- Conversation and screen-analysis history stored locally
 - Windows DPAPI-backed API-key protection through Electron safeStorage
+- Production portable builds use electron-builder with hardened Electron fuses and ASAR integrity validation
 
 ## Requirements
 
