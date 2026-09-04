@@ -1,0 +1,84 @@
+name: Stage scroll settings Gemini repair
+
+on:
+  push:
+    branches: [fix/scroll-settings-gemini-live]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-scroll-settings-gemini-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/scroll-settings-gemini-live
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Apply guarded repairs
+        shell: pwsh
+        run: node .github/scripts/apply_scroll_settings_gemini_repair.js
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit production dependencies
+        shell: pwsh
+        run: |
+          $env:npm_config_fetch_timeout = "60000"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            npm audit --omit=dev --audit-level=high
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
+          }
+          throw "Production dependency audit failed after 3 attempts."
+
+      - name: Run source validation
+        shell: pwsh
+        run: npm run check
+
+      - name: Run tests
+        shell: pwsh
+        run: npm test
+
+      - name: Run real Electron UI smoke
+        shell: pwsh
+        run: |
+          & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "Electron renderer smoke failed with exit code $LASTEXITCODE" }
+
+      - name: Build portable Windows EXE
+        shell: pwsh
+        run: npm run build:portable -- --publish never
+
+      - name: Verify portable EXE
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Portable Windows EXE was not produced." }
+          Write-Host "Portable EXE: $($exe.FullName)"
+          Write-Host "Size: $([math]::Round($exe.Length / 1MB, 2)) MB"
+
+      - name: Commit validated repair and remove staging machinery
+        shell: pwsh
+        run: |
+          Remove-Item -Force .github/scripts/apply_scroll_settings_gemini_repair.js
+          Remove-Item -Force .github/workflows/stage-scroll-settings-gemini.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: repair page scrolling and Gemini Live startup"
+          git push origin HEAD:fix/scroll-settings-gemini-live
