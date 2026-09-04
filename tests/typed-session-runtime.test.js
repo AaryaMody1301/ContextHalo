@@ -6,7 +6,7 @@ const test = require('node:test');
 const root = path.join(__dirname, '..');
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
-test('Electron startup installs typed Gemini Live turn finalization', () => {
+test('Electron startup installs typed Gemini Live turn finalization and audio gating', () => {
     const packageJson = JSON.parse(read('package.json'));
     const bootstrap = read('src/bootstrap.js');
 
@@ -14,8 +14,13 @@ test('Electron startup installs typed Gemini Live turn finalization', () => {
     assert.match(bootstrap, /channel === 'send-text-message'/);
     assert.match(bootstrap, /providerMode === 'byok'/);
     assert.match(bootstrap, /sendRealtimeInput\(\{ audioStreamEnd: true \}\)/);
+    assert.match(bootstrap, /send-audio-content/);
+    assert.match(bootstrap, /send-mic-audio-content/);
+    assert.match(bootstrap, /reason: 'typed-prompt-turn'/);
+    assert.match(bootstrap, /channel === 'new-response' \|\| channel === 'update-response'/);
+    assert.match(bootstrap, /TYPED_PROMPT_AUDIO_GATE_MS = 30000/);
     assert.ok(
-        bootstrap.indexOf('const result = await handler') < bootstrap.indexOf('await finalizeTypedGeminiTurn'),
+        bootstrap.indexOf('result = await handler') < bootstrap.indexOf('await finalizeTypedGeminiTurn'),
         'audio stream should only be finalized after the typed message handler succeeds'
     );
 });
