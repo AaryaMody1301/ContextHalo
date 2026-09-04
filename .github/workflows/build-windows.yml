@@ -40,6 +40,7 @@ jobs:
       - name: Audit production dependencies
         shell: pwsh
         run: |
+          # Retry only to tolerate transient npm advisory endpoint timeouts; a real vulnerability still fails every attempt.
           $env:npm_config_fetch_timeout = "60000"
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             Write-Host "Production dependency audit attempt $attempt of 3"
