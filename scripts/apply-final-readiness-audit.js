@@ -54,6 +54,13 @@ replaceOnce(
 const regressionTest = `const test = require('node:test');\nconst assert = require('node:assert/strict');\nconst fs = require('node:fs');\nconst path = require('node:path');\n\nfunction source() {\n    return fs.readFileSync(path.join(process.cwd(), 'src/utils/gemini.js'), 'utf8');\n}\n\ntest('Gemini Live typed prompts are preserved as session-history user turns', () => {\n    const gemini = source();\n    assert.match(gemini, /let pendingTypedPrompt = '';/);\n    assert.match(gemini, /pendingTypedPrompt = cleanText;/);\n    assert.match(gemini, /const turnInput = pendingTypedPrompt\\.trim\\(\\) \\|\\| currentTranscription\\.trim\\(\\);/);\n    assert.match(gemini, /saveConversationTurn\\(turnInput, messageBuffer\\);/);\n    assert.match(gemini, /if \\(pendingTypedPrompt === cleanText\\) pendingTypedPrompt = '';/);\n});\n`;
 fs.writeFileSync('tests/typed-gemini-history.test.js', regressionTest, 'utf8');
 
+replaceOnce(
+    'tests/storage.test.js',
+    `    assert.equal(packageJson.devDependencies.electron, '^43.4.1');\n    assert.equal(lockfile.packages[''].devDependencies.electron, '^43.4.1');\n    assert.equal(lockfile.packages['node_modules/electron'].version, '43.4.1');`,
+    `    assert.equal(packageJson.devDependencies.electron, '^43.6.0');\n    assert.equal(lockfile.packages[''].devDependencies.electron, '^43.6.0');\n    assert.equal(lockfile.packages['node_modules/electron'].version, '43.6.0');`,
+    'supported Electron runtime regression target'
+);
+
 const readmePath = 'README.md';
 const readme = readNormalized(readmePath);
 const featuresStart = readme.indexOf('## Features');
@@ -62,4 +69,4 @@ if (featuresStart < 0 || requirementsStart <= featuresStart) throw new Error('RE
 const features = `## Features\n\n- Gemini Live, Groq, and optional fully local AI with dynamic provider model discovery\n- Low-latency Windows system-audio loopback and microphone capture\n- Protected Windows Live HUD with always-on-top, click-through, taskbar hiding, and capture protection\n- Mica/Acrylic Windows presentation with solid fallbacks where system materials are unavailable\n- Live transcript context across Gemini, Groq Whisper, and local whisper.cpp paths\n- Instant, Balanced, and Detailed response modes plus Important/Decision/Action/Question markers\n- Multi-monitor/window capture selection, protected region analysis, and explicit copied-text context\n- Session Packs for goals, notes, and reusable session context\n- Local Knowledge Library with dependency-free retrieval for text, code, logs, CSV/JSON, SQL, YAML, and related text formats\n- Practice Lab generated and graded locally from knowledge sources or previous sessions\n- Session Review for topics, decisions, actions, questions, markers, and follow-up practice\n- Conversation and screen-analysis history stored locally\n- Windows DPAPI-backed API-key protection through Electron safeStorage\n\n`;
 fs.writeFileSync(readmePath, readme.slice(0, featuresStart) + features + readme.slice(requirementsStart), 'utf8');
 
-console.log('Final readiness source, regression test, and README patches applied.');
+console.log('Final readiness source, regression test, runtime assertion, and README patches applied.');
