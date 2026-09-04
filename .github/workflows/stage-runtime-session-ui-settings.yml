@@ -33,12 +33,14 @@ jobs:
         run: |
           node --check scripts/apply-runtime-session-ui-settings.js
           node --check scripts/repair-runtime-ui-tests.js
+          node --check scripts/apply-runtime-ui-smoke.js
 
       - name: Apply guarded runtime and UI fixes
         shell: pwsh
         run: |
           node scripts/apply-runtime-session-ui-settings.js
           node scripts/repair-runtime-ui-tests.js
+          node scripts/apply-runtime-ui-smoke.js
 
       - name: Install locked dependencies
         shell: pwsh
@@ -82,6 +84,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git rm --ignore-unmatch scripts/apply-runtime-session-ui-settings.js scripts/repair-runtime-ui-tests.js .github/workflows/stage-runtime-session-ui-settings.yml
+          git rm --ignore-unmatch scripts/apply-runtime-session-ui-settings.js scripts/repair-runtime-ui-tests.js scripts/apply-runtime-ui-smoke.js .github/workflows/stage-runtime-session-ui-settings.yml
           git commit -m "fix: repair session startup and settings UI [skip ci]"
           git push origin HEAD:fix/runtime-session-ui-settings
