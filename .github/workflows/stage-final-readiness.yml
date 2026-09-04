@@ -27,9 +27,11 @@ jobs:
         shell: pwsh
         run: node scripts/apply-final-readiness-audit.js
 
-      - name: Refresh Electron 43 patch release
+      - name: Refresh supported runtime dependencies
         shell: pwsh
-        run: npm install --save-dev electron@43.6.0 --package-lock-only --ignore-scripts --no-audit --no-fund
+        run: |
+          npm install --save-dev electron@43.6.0 --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm install --save @google/genai@2.19.0 --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Install locked dependencies
         shell: pwsh
@@ -68,7 +70,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/utils/gemini.js tests/typed-gemini-history.test.js README.md package.json package-lock.json
+          git add src/utils/gemini.js tests/typed-gemini-history.test.js tests/storage.test.js README.md package.json package-lock.json
           git rm scripts/apply-final-readiness-audit.js .github/workflows/stage-final-readiness.yml
-          git commit -m "fix: preserve typed Gemini history and refresh Electron [skip ci]"
+          git commit -m "fix: preserve typed Gemini history and refresh runtime dependencies [skip ci]"
           git push origin HEAD:fix/final-readiness-audit
