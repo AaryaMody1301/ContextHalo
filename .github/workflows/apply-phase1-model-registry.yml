@@ -2,7 +2,7 @@ name: Apply Phase 1 Dynamic Model Registry
 
 on:
   push:
-    branches: [phase1/dynamic-model-registry-disabled]
+    branches: [phase1/dynamic-model-registry]
 
 permissions:
   contents: write
