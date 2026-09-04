@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-test('storage v4 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
+test('storage v6 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -53,9 +53,9 @@ test('storage v4 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 5);
+    assert.equal(config.configVersion, 6);
     assert.equal(config.geminiLiveModel, 'gemini-3.1-flash-live-preview');
-    assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
+    assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
     assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');
     assert.equal(config.groqTranscriptionModel, 'whisper-large-v3-turbo');
@@ -68,13 +68,49 @@ test('storage v4 migration upgrades provider models without deleting user data',
     assert.equal(preferences.whisperModel, 'tiny.en');
     assert.equal(preferences.googleSearchEnabled, true);
 
-    assert.equal(storage.getAvailableModel(), 'gemini-3.7-flash');
+    assert.equal(storage.getAvailableModel(), 'gemini-3.8-flash');
     assert.equal(storage.getCredentials().apiKey, 'gemini-secret');
     assert.equal(storage.getCredentials().groqApiKey, 'groq-secret');
     assert.equal(fs.existsSync(path.join(historyDir, '123.json')), true);
 
     storage.updatePreference('providerMode', 'cloud');
     assert.equal(storage.getPreferences().providerMode, 'byok');
+});
+
+test('storage v6 migrates the previous Gemini 3.7 screen default to 3.8', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-v6-'));
+    const originalHomedir = os.homedir;
+    os.homedir = () => tempHome;
+
+    const storagePath = require.resolve('../src/storage');
+    delete require.cache[storagePath];
+    const storage = require(storagePath);
+
+    t.after(() => {
+        delete require.cache[storagePath];
+        os.homedir = originalHomedir;
+        fs.rmSync(tempHome, { recursive: true, force: true });
+    });
+
+    const configDir = storage.getConfigDir();
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+        path.join(configDir, 'config.json'),
+        JSON.stringify({
+            configVersion: 5,
+            onboarded: true,
+            geminiLiveModel: 'gemini-3.1-flash-live-preview',
+            geminiHttpModel: 'gemini-3.7-flash',
+            groqModel: 'openai/gpt-oss-120b',
+            groqImageModel: 'qwen/qwen3.6-27b',
+            groqTranscriptionModel: 'whisper-large-v3-turbo',
+        })
+    );
+
+    storage.initializeStorage();
+    const config = storage.getConfig();
+    assert.equal(config.configVersion, 6);
+    assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
 });
 
 test('renderer entrypoint loads provider fixes and removes the stale script reference', () => {
@@ -89,7 +125,7 @@ test('provider UI exposes Gemini, Groq, and Local modes with the intended free-t
     assert.match(fixes, /_saveMode\('byok'\)/);
     assert.match(fixes, /_saveMode\('local'\)/);
     assert.match(fixes, /whisper-large-v3-turbo/);
-    assert.match(fixes, /Gemini 3\.7 Flash/);
+    assert.match(fixes, /Gemini 3\.8 Flash/);
     assert.match(fixes, /does not require a Gemini key/);
 });
 
