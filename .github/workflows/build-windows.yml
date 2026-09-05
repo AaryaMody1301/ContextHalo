@@ -18,10 +18,29 @@ jobs:
   build:
     name: Build ContextHalo Windows x64 EXE
     runs-on: windows-2022
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Upload validation source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextHalo-Validation-Source
+          path: |
+            src/
+            tests/
+            scripts/
+            preload.js
+            package.json
+            package-lock.json
+            README.md
+            AGENTS.md
+            LICENSE
+            CREDITS.md
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -40,7 +59,6 @@ jobs:
       - name: Audit production dependencies
         shell: pwsh
         run: |
-          # Retry only to tolerate transient npm advisory endpoint timeouts; a real vulnerability still fails every attempt.
           $env:npm_config_fetch_timeout = "60000"
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             Write-Host "Production dependency audit attempt $attempt of 3"
@@ -56,7 +74,7 @@ jobs:
 
       - name: Run tests
         shell: pwsh
-        run: npm test --if-present
+        run: npm test
 
       - name: Run Electron renderer smoke test
         shell: pwsh
@@ -75,12 +93,11 @@ jobs:
         run: |
           $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
           if (-not $exe) {
-            Write-Host "Contents of dist/:"
             Get-ChildItem -Path "dist" -Recurse | Select-Object FullName, Length
             throw "Portable Windows EXE was not produced."
           }
-          Write-Host "Portable EXE: $($exe.FullName)"
-          Write-Host "Size: $([math]::Round($exe.Length / 1MB, 2)) MB"
+          if ($exe.Length -lt 1MB) { throw "Portable EXE is unexpectedly small." }
+          Get-FileHash $exe.FullName -Algorithm SHA256 | Format-List
 
       - name: Upload portable EXE artifact
         uses: actions/upload-artifact@v4
@@ -95,6 +112,7 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-2022
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -104,26 +122,6 @@ jobs:
         with:
           name: ContextHalo-Windows-x64-Portable
           path: release
-
-      - name: Remove stale pre-ContextHalo releases
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $legacyProductFirst = -join (67, 104, 101, 97, 116, 105, 110, 103 | ForEach-Object { [char]$_ })
-          $legacyProductSecond = -join (68, 97, 100, 100, 121 | ForEach-Object { [char]$_ })
-          $legacyRepoA = -join (85, 112, 100, 97, 116, 101, 100, 95, 80, 117, 98, 108, 105, 99, 95, 82, 101, 112, 111 | ForEach-Object { [char]$_ })
-          $legacyRepoB = -join (76, 105, 118, 101, 95, 72, 101, 108, 112, 101, 114 | ForEach-Object { [char]$_ })
-          $pattern = "(?i)$([regex]::Escape($legacyProductFirst))[ _-]?$([regex]::Escape($legacyProductSecond))|$([regex]::Escape($legacyRepoA))|$([regex]::Escape($legacyRepoB))"
-          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
-          foreach ($release in $releases) {
-            $assetNames = ($release.assets | ForEach-Object { $_.name }) -join ' '
-            $searchText = "$($release.name)`n$($release.body)`n$assetNames"
-            if ($searchText -match $pattern) {
-              Write-Host "Deleting stale release id $($release.id)"
-              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)"
-            }
-          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
