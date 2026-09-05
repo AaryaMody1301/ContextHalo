@@ -14,7 +14,6 @@ export class ContextHaloApp extends LitElement {
             box-sizing: border-box;
             font-family: var(--font);
             margin: 0;
-            padding: 0;
             cursor: default;
             user-select: none;
         }

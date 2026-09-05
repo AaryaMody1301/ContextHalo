@@ -20,6 +20,13 @@ async function rendererBehaviorSmoke() {
     const input=root.querySelector('#textInput');
     const button=root.querySelector('.send-btn');
     verify(input?.tagName==='TEXTAREA' && button,'Multiline composer and Send button render');
+    await waitUntil(()=>root.querySelector('.phase3-capture-tools'));
+    root.querySelector('.phase3-transcript-toggle').click(); await settle(assistant);
+    verify(Boolean(root.querySelector('.phase3-capture-tools')),'Capture tools survive transcript refresh');
+    [...root.querySelectorAll('.phase3-tool-button')].find(b=>b.textContent==='Context').click();
+    root.querySelector('.phase3-transcript-toggle').click(); await settle(assistant);
+    verify(Boolean(root.querySelector('.phase3-context-inspector')),'Context inspector survives transcript refresh');
+    [...root.querySelectorAll('.phase3-tool-button')].find(b=>b.textContent==='Context').click();
     const setDraft=async text=>{ input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));await settle(assistant); };
     const original=api.sendTextMessage;
     try {
@@ -85,6 +92,9 @@ async function rendererBehaviorSmoke() {
     await call('storage:delete-session',sessionId);
     verify((await ipc.invoke('storage:get-session','../escape')).success===false,'IPC rejects invalid session paths');
     app.navigate('main');await settle(app);
+    const home=app.shadowRoot.querySelector('main-view'); await settle(home);
+    await waitUntil(()=>home.shadowRoot.querySelector('.page-title')?.getBoundingClientRect().top>=40);
+    verify(home.shadowRoot.querySelector('.page-title').getBoundingClientRect().top>=40,'Home heading is below the draggable caption');
     verify(getComputedStyle(app.shadowRoot.querySelector('.sidebar-nav')).overflowY==='auto','Sidebar navigation remains scrollable in short windows');
     for (const id of ['phase4-knowledge-nav','phase4-practice-nav','phase4-review-nav']) {
         await waitUntil(()=>app.shadowRoot.getElementById(id));

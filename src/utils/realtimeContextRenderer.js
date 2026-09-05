@@ -487,7 +487,15 @@ function decorateAssistant() {
         responseContainer.parentNode.insertBefore(panel, responseContainer);
     }
 
-    panel.replaceChildren();
+    // Only rebuild the transcript-owned subtree. Capture tools and the context
+    // inspector have separate owners and must survive transcript/status updates.
+    let content = panel.querySelector(':scope > .phase3-transcript-content');
+    if (!content) {
+        content = document.createElement('div');
+        content.className = 'phase3-transcript-content';
+        panel.prepend(content);
+    }
+    content.replaceChildren();
     const row = document.createElement('div');
     row.className = 'phase3-context-row';
     const mode = RESPONSE_MODES.find(item => item.id === responseMode) || RESPONSE_MODES[1];
@@ -529,7 +537,7 @@ function decorateAssistant() {
         notice.textContent = markerNotice;
         row.appendChild(notice);
     }
-    panel.appendChild(row);
+    content.appendChild(row);
 
     const latest = interimTranscript || transcriptEntries[transcriptEntries.length - 1];
     if (latest) {
@@ -542,7 +550,7 @@ function decorateAssistant() {
         text.className = `phase3-transcript-text${latest.final === false ? ' interim' : ''}`;
         text.textContent = latest.text;
         preview.append(provider, text);
-        panel.appendChild(preview);
+        content.appendChild(preview);
     }
 
     if (transcriptExpanded && transcriptEntries.length) {
@@ -559,7 +567,7 @@ function decorateAssistant() {
             item.append(time, text);
             history.appendChild(item);
         }
-        panel.appendChild(history);
+        content.appendChild(history);
     }
 }
 
