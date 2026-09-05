@@ -33,8 +33,12 @@ jobs:
           import base64, gzip, hashlib, json
           from pathlib import Path
           parts = [Path(f'.github/repair-transfer-{i}.b64').read_text().strip() for i in range(4)]
-          for i, part in enumerate(parts):
-              print('Transfer part', i, 'length', len(part), 'sha256', hashlib.sha256(part.encode()).hexdigest())
+          corrections = [{'part':0,'before':'f08af46767afe7d985f13bfa4dc2044639226ea7c30a07af428b2e2371be42a3','edits':[[574,575,''],[971,972,''],[3084,3086,'+'],[8910,8911,'']]},{'part':2,'before':'d2746c59ce3fb00a4d4d36b261cbf4c498c77109407c0d24a06b02eeebc8056c','edits':[[1284,1285,'']]}]
+          for correction in corrections:
+              i = correction['part']
+              assert hashlib.sha256(parts[i].encode()).hexdigest() == correction['before']
+              for start, end, text in reversed(correction['edits']):
+                  parts[i] = parts[i][:start] + text + parts[i][end:]
           data = gzip.decompress(base64.b64decode(''.join(parts), validate=True))
           assert hashlib.sha256(data).hexdigest() == 'aff396112a6d0d37d3b9294a80e8af5fb8f47d1f69a5f5e8e1841504e2489b13', 'Repair checksum mismatch'
           pending = []
