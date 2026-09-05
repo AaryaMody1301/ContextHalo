@@ -75,11 +75,9 @@ test('renderer loads the Windows HUD layer before runtime hardening', () => {
     assert.match(hudSource, /currentView === 'assistant'/);
 });
 
-test('existing renderer hardening can still bind the maximize caption button', () => {
+test('maximize caption has one Lit handler, not a second imperative toggle', () => {
     const hardeningSource = read('src/utils/runtimeHardeningRenderer.js');
-    const hudSource = read('src/utils/windowsHudRenderer.js');
-
-    assert.match(hardeningSource, /querySelector\('\.traffic-light\.maximize'\)/);
-    assert.match(hardeningSource, /window-toggle-maximize/);
-    assert.match(hudSource, /\.traffic-light\.maximize/);
+    const appSource = read('src/components/app/ContextHaloApp.js');
+    assert.doesNotMatch(hardeningSource, /maximizeButton.addEventListener/);
+    assert.match(appSource, /@click=\$\{\(\) => this._handleMaximize\(\)\}/);
 });

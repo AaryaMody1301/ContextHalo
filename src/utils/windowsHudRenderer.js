@@ -234,7 +234,6 @@ const ASSISTANT_STYLES = `
         background: transparent !important;
     }
 
-    .input-bar-inner,
     .analyze-btn {
         height: 36px !important;
         border-color: rgba(255, 255, 255, 0.1) !important;

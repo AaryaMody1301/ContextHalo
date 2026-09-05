@@ -1,6 +1,8 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { setTimeout: delay } = require('node:timers/promises');
 
+const { getRequestSignal } = require('./sessionRequests');
+
 const providerScope = new AsyncLocalStorage();
 const activeControllers = new Set();
 
@@ -69,7 +71,7 @@ function tuneProviderRequest(kind, init) {
         const body = JSON.parse(init.body);
         if (!String(body.model || '').startsWith('openai/gpt-oss-')) return init;
 
-        body.reasoning_effort = 'low';
+        body.reasoning_effort ??= 'low';
         body.include_reasoning = false;
         body.max_completion_tokens = Math.max(Number(body.max_completion_tokens) || 0, 4096);
         return { ...init, body: JSON.stringify(body) };
@@ -210,7 +212,7 @@ async function boundedFetch(input, init = {}) {
         }, availableMs);
 
         const scopeSignal = providerScope.getStore()?.signal || null;
-        const signals = [sessionController.signal, scopeSignal, requestInit.signal].filter(Boolean);
+        const signals = [sessionController.signal, scopeSignal, requestInit.signal, getRequestSignal()].filter(Boolean);
         const signal = makeSignal(controller, signals);
 
         try {
@@ -236,8 +238,9 @@ async function boundedFetch(input, init = {}) {
 
             // Health checks only need the status code and are not streamed by callers.
             if (kind === 'local-health') {
+                try { await response.body?.cancel(); } catch {}
                 cleanupResponseController(controller, timer);
-                return response;
+                return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
             }
 
             return wrapResponseBody(response, controller, timer, policy.idleMs, kind);
@@ -246,7 +249,7 @@ async function boundedFetch(input, init = {}) {
             lastError = error;
 
             const scopeAborted = providerScope.getStore()?.signal?.aborted;
-            if (sessionController.signal.aborted || scopeAborted || requestInit.signal?.aborted) throw error;
+            if (sessionController.signal.aborted || scopeAborted || requestInit.signal?.aborted || getRequestSignal()?.aborted) throw error;
             if (!isRetryableFetchError(error) || attempt >= policy.attempts - 1) throw error;
 
             const backoff = 500 * 2 ** attempt + Math.floor(Math.random() * 250);

@@ -11,14 +11,14 @@ const ALLOWED_ATTRIBUTES = new Map([
     ['TH', new Set(['colspan', 'rowspan'])],
 ]);
 
-const DROP_WITH_CONTENT = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'OPTION', 'META', 'LINK']);
+const DROP_WITH_CONTENT = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'OPTION', 'META', 'LINK', 'BASE', 'SVG', 'MATH', 'TEMPLATE']);
 
 function safeExternalHref(value) {
     const href = String(value || '').trim();
     if (!href) return '';
     try {
         const parsed = new URL(href);
-        return ['https:', 'http:', 'mailto:'].includes(parsed.protocol) ? parsed.toString() : '';
+        return ['https:', 'http:'].includes(parsed.protocol) ? parsed.toString() : '';
     } catch {
         return '';
     }
@@ -62,22 +62,3 @@ export function sanitizeAssistantHtml(html) {
     return documentFragment.body.innerHTML;
 }
 
-async function installAssistantResponseSanitizer() {
-    await customElements.whenDefined('assistant-view');
-    const AssistantView = customElements.get('assistant-view');
-    if (!AssistantView || AssistantView.prototype.__responseSanitizerInstalled) return;
-
-    const proto = AssistantView.prototype;
-    const originalRenderMarkdown = proto.renderMarkdown;
-    if (typeof originalRenderMarkdown !== 'function') return;
-
-    proto.renderMarkdown = function (content) {
-        return sanitizeAssistantHtml(originalRenderMarkdown.call(this, content));
-    };
-
-    proto.__responseSanitizerInstalled = true;
-}
-
-installAssistantResponseSanitizer().catch(error => {
-    console.error('Failed to install assistant response sanitizer:', error);
-});

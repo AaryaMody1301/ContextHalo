@@ -7,6 +7,14 @@ const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, increm
 const { connectCloud, sendCloudAudio, sendCloudText, sendCloudImage, closeCloud, isCloudActive, setOnTurnComplete } = require('./cloud');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 const { listProviderModels } = require('./providerModelRegistry');
+const { randomUUID } = require('node:crypto');
+const { readSseJson } = require('./sse');
+const { appendSessionPack } = require('./sessionPackMain');
+const { runSessionRequest, resetSessionRequests, closeSessionRequests, requestIsCurrent,
+    assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
+let liveGeneration = 0;
+let reconnectPromise = null;
+
 
 // Lazy-loaded to avoid circular dependency (localai.js imports from gemini.js)
 let _localai = null;
@@ -24,7 +32,6 @@ let groqConversationHistory = [];
 // Conversation tracking variables
 let currentSessionId = null;
 let currentTranscription = '';
-let pendingTypedPrompt = '';
 let conversationHistory = [];
 let screenAnalysisHistory = [];
 let currentProfile = null;
@@ -48,7 +55,6 @@ module.exports.formatSpeakerResults = formatSpeakerResults;
 // Audio capture variables
 let systemAudioProc = null;
 let messageBuffer = '';
-let groqRequestStartedForTurn = false;
 
 const GROQ_MAX_COMPLETION_TOKENS = 2048;
 const GROQ_MAX_HISTORY_MESSAGES = 8;
@@ -70,10 +76,11 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY = 2000;
 
-function sendToRenderer(channel, data) {
+function sendToRenderer(channel, data, metadata = getRequestMetadata()) {
+    if (!requestIsCurrent()) return;
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
-        windows[0].webContents.send(channel, data);
+        if (!windows[0].isDestroyed()) windows[0].webContents.send(channel, data, metadata);
     }
 }
 
@@ -91,11 +98,10 @@ function buildContextMessage() {
 
 // Conversation management functions
 function initializeNewSession(profile = null, customPrompt = null) {
-    currentSessionId = Date.now().toString();
+    currentSessionId = String(Math.max(Date.now(), Number(currentSessionId || 0) + 1));
+    messageBuffer = '';
     startTransportLog(currentSessionId);
     currentTranscription = '';
-    pendingTypedPrompt = '';
-    groqRequestStartedForTurn = false;
     conversationHistory = [];
     screenAnalysisHistory = [];
     groqConversationHistory = [];
@@ -114,6 +120,7 @@ function initializeNewSession(profile = null, customPrompt = null) {
 }
 
 function saveConversationTurn(transcription, aiResponse) {
+    if (!requestIsCurrent()) return;
     if (!currentSessionId) {
         initializeNewSession();
     }
@@ -125,7 +132,7 @@ function saveConversationTurn(transcription, aiResponse) {
     };
 
     conversationHistory.push(conversationTurn);
-    console.log('Saved conversation turn:', conversationTurn);
+
 
     // Send to renderer to save in IndexedDB
     sendToRenderer('save-conversation-turn', {
@@ -136,6 +143,7 @@ function saveConversationTurn(transcription, aiResponse) {
 }
 
 function saveScreenAnalysis(prompt, response, model) {
+    if (!requestIsCurrent()) return;
     if (!currentSessionId) {
         initializeNewSession();
     }
@@ -148,7 +156,7 @@ function saveScreenAnalysis(prompt, response, model) {
     };
 
     screenAnalysisHistory.push(analysisEntry);
-    console.log('Saved screen analysis:', analysisEntry);
+
 
     // Send to renderer to save
     sendToRenderer('save-screen-analysis', {
@@ -188,21 +196,7 @@ function hasGroqKey() {
     return key && key.trim() != '';
 }
 
-function sendFinalTranscriptionToGroq() {
-    if (currentProviderMode !== 'groq' || !hasGroqKey() || groqRequestStartedForTurn) {
-        return;
-    }
-
-    const transcription = currentTranscription.trim();
-    if (transcription === '') {
-        return;
-    }
-
-    groqRequestStartedForTurn = true;
-    sendToGroq(transcription);
-}
-
-function trimConversationHistoryForGemma(history, maxChars = 42000) {
+function trimConversationHistory(history, maxChars = 42000) {
     if (!history || history.length === 0) return [];
     let totalChars = 0;
     const trimmed = [];
@@ -286,18 +280,21 @@ async function getGeminiLivePreflightError(apiKey, liveModel) {
     try {
         const catalog = await listProviderModels('gemini', apiKey);
         const liveModels = Array.isArray(catalog?.live) ? catalog.live : [];
-        if (!liveModels.some(model => model.id === liveModel)) {
+        if (!catalog?.stale && liveModels.length && !liveModels.some(model => model.id === liveModel)) {
             const suggested = catalog?.recommended?.live || liveModels[0]?.id || 'a Live-compatible model';
             return `Gemini API key is valid, but ${liveModel} is not available as a Live model for this key. Choose ${suggested} and try again.`;
         }
         return '';
     } catch (error) {
-        return `Gemini API preflight failed: ${getGeminiErrorDetail(error)}`;
+        const detail = getGeminiErrorDetail(error);
+        if (/\b(401|403)\b/.test(detail)) return `Gemini API preflight failed: ${detail}`;
+        return ''; // Allow the actual Live connection to decide on discovery outages.
     }
 }
 
 function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000) {
     let setupFinished = false;
+    let abandoned = false;
     let rejectEarly = () => {};
     let timer = null;
     const earlyFailure = new Promise((_, reject) => { rejectEarly = reject; });
@@ -321,7 +318,10 @@ function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000) {
         },
     };
     return Promise.race([
-        client.live.connect({ ...params, callbacks: wrappedCallbacks }),
+        client.live.connect({ ...params, callbacks: wrappedCallbacks }).then(session => {
+            if (abandoned) { session.close(); throw new Error('Live setup was cancelled'); }
+            return session;
+        }),
         earlyFailure,
         timeout,
     ]).then(session => {
@@ -329,6 +329,7 @@ function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000) {
         if (timer) clearTimeout(timer);
         return session;
     }, error => {
+        abandoned = true;
         setupFinished = true;
         if (timer) clearTimeout(timer);
         throw error;
@@ -469,7 +470,11 @@ async function processGroqAudioQueue(sampleRate, language) {
     }
 }
 
-async function sendToGroq(transcription) {
+function sendToGroq(transcription) {
+    return runSessionRequest('voice', () => sendToGroqNow(transcription));
+}
+
+async function sendToGroqNow(transcription) {
     const groqApiKey = getGroqApiKey();
     if (!groqApiKey) {
         console.log('No Groq API key configured, skipping Groq response');
@@ -484,21 +489,21 @@ async function sendToGroq(transcription) {
     const config = getConfig();
     const modelToUse = config.groqModel;
 
-    console.log(`Sending to Groq (${modelToUse}):`, transcription.substring(0, 100) + '...');
     logTransportEvent('groq.text.request', {
         model: modelToUse,
         transcription,
     });
 
-    groqConversationHistory.push({
+    let requestHistory = [...requestHistory];
+    requestHistory.push({
         role: 'user',
         content: transcription.trim(),
     });
 
-    if (groqConversationHistory.length > GROQ_MAX_HISTORY_MESSAGES) {
-        groqConversationHistory = groqConversationHistory.slice(-GROQ_MAX_HISTORY_MESSAGES);
+    if (requestHistory.length > GROQ_MAX_HISTORY_MESSAGES) {
+        requestHistory = requestHistory.slice(-GROQ_MAX_HISTORY_MESSAGES);
     }
-    groqConversationHistory = trimConversationHistoryForGemma(groqConversationHistory, GROQ_MAX_HISTORY_CHARS);
+    requestHistory = trimConversationHistory(requestHistory, GROQ_MAX_HISTORY_CHARS);
 
     try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -509,7 +514,7 @@ async function sendToGroq(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                messages: [{ role: 'system', content: (currentSystemPrompt || 'You are a helpful assistant.').slice(0, GROQ_MAX_SYSTEM_PROMPT_CHARS) }, ...groqConversationHistory],
+                messages: [{ role: 'system', content: (currentSystemPrompt || 'You are a helpful assistant.').slice(0, GROQ_MAX_SYSTEM_PROMPT_CHARS) }, ...requestHistory],
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -528,7 +533,6 @@ async function sendToGroq(transcription) {
             const message = formatGroqError(response.status, errorText, response.headers);
             sendToRenderer('update-status', message);
             sendToRenderer('new-response', message);
-            groqConversationHistory = groqConversationHistory.slice(0, -1);
             return { success: false, error: message };
         }
 
@@ -536,67 +540,33 @@ async function sendToGroq(transcription) {
             status: response.status,
         });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.text.stream_chunk', { chunkLength: chunk.length });
-            sseBuffer += chunk;
-            const lines = sseBuffer.split(/\r?\n/);
-            sseBuffer = lines.pop() || '';
-            const completeLines = lines.filter(line => line.trim() !== '');
-
-            for (const line of completeLines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
-
-                    try {
-                        const json = JSON.parse(data);
-                        logTransportEvent('groq.text.stream_event', json);
-                        finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                        const token = json.choices?.[0]?.delta?.content || '';
-                        if (token) {
-                            fullText += token;
-                            const displayText = stripThinkingTags(fullText);
-                            if (displayText) {
-                                sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                                isFirst = false;
-                            }
-                        }
-                    } catch (parseError) {
-                        logTransportEvent('groq.text.stream_parse_error', {
-                            data,
-                            error: parseError.message,
-                        });
-                    }
-                }
+        for await (const event of readSseJson(response.body, getRequestSignal())) {
+            assertCurrentRequest();
+            finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            fullText += event.choices?.[0]?.delta?.content || '';
+            const displayText = stripThinkingTags(fullText);
+            if (displayText) {
+                sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
+                isFirst = false;
             }
         }
 
+        assertCurrentRequest();
         const cleanedResponse = stripThinkingTags(fullText);
         const modelKey = modelToUse.split('/').pop();
 
         const systemPromptChars = (currentSystemPrompt || 'You are a helpful assistant.').length;
-        const historyChars = groqConversationHistory.reduce((sum, msg) => sum + (msg.content || '').length, 0);
+        const historyChars = requestHistory.reduce((sum, msg) => sum + (msg.content || '').length, 0);
         const inputChars = systemPromptChars + historyChars;
         const outputChars = cleanedResponse.length;
 
         incrementCharUsage('groq', modelKey, inputChars + outputChars);
 
         if (cleanedResponse) {
-            groqConversationHistory.push({
-                role: 'assistant',
-                content: cleanedResponse,
-            });
+            groqConversationHistory = [...requestHistory, { role: 'assistant', content: cleanedResponse }];
 
             saveConversationTurn(transcription, cleanedResponse);
         } else {
@@ -626,7 +596,6 @@ async function sendToGroq(transcription) {
         });
         const message = 'Groq error: ' + error.message;
         sendToRenderer('update-status', message);
-        groqConversationHistory = groqConversationHistory.slice(0, -1);
         return { success: false, error: message };
     }
 }
@@ -688,49 +657,17 @@ async function sendImageToGroq(base64Data, prompt) {
             status: response.status,
         });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
         let fullText = '';
         let isFirst = true;
         let finishReason = null;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            logTransportEvent('groq.image.stream_chunk', { chunkLength: chunk.length });
-            sseBuffer += chunk;
-            const lines = sseBuffer.split(/\r?\n/);
-            sseBuffer = lines.pop() || '';
-            const completeLines = lines.filter(line => line.trim() !== '');
-
-            for (const line of completeLines) {
-                if (!line.startsWith('data: ')) continue;
-
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-
-                try {
-                    const json = JSON.parse(data);
-                    logTransportEvent('groq.image.stream_event', json);
-                    finishReason = json.choices?.[0]?.finish_reason || finishReason;
-                    const token = json.choices?.[0]?.delta?.content || '';
-                    if (!token) continue;
-
-                    fullText += token;
-                    const displayText = stripThinkingTags(fullText);
-                    if (displayText) {
-                        sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
-                        isFirst = false;
-                    }
-                } catch (parseError) {
-                    logTransportEvent('groq.image.stream_parse_error', {
-                        data,
-                        error: parseError.message,
-                    });
-                }
+        for await (const event of readSseJson(response.body, getRequestSignal())) {
+            assertCurrentRequest();
+            finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            fullText += event.choices?.[0]?.delta?.content || '';
+            const displayText = stripThinkingTags(fullText);
+            if (displayText) {
+                sendToRenderer(isFirst ? 'new-response' : 'update-response', displayText);
+                isFirst = false;
             }
         }
 
@@ -760,93 +697,13 @@ async function sendImageToGroq(base64Data, prompt) {
     }
 }
 
-async function sendToGemma(transcription) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        console.log('No Gemini API key configured');
-        return;
-    }
-
-    if (!transcription || transcription.trim() === '') {
-        console.log('Empty transcription, skipping Gemma');
-        return;
-    }
-
-    console.log('Sending to Gemma:', transcription.substring(0, 100) + '...');
-
-    groqConversationHistory.push({
-        role: 'user',
-        content: transcription.trim(),
-    });
-
-    const trimmedHistory = trimConversationHistoryForGemma(groqConversationHistory, 42000);
-
-    try {
-        const ai = new GoogleGenAI({ apiKey: apiKey });
-
-        const messages = trimmedHistory.map(msg => ({
-            role: msg.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: msg.content }],
-        }));
-
-        const systemPrompt = currentSystemPrompt || 'You are a helpful assistant.';
-        const messagesWithSystem = [
-            { role: 'user', parts: [{ text: systemPrompt }] },
-            { role: 'model', parts: [{ text: 'Understood. I will follow these instructions.' }] },
-            ...messages,
-        ];
-
-        const response = await ai.models.generateContentStream({
-            model: 'gemma-4-26b-a4b-it',
-            contents: messagesWithSystem,
-        });
-
-        let fullText = '';
-        let isFirst = true;
-
-        for await (const chunk of response) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                fullText += chunkText;
-                sendToRenderer(isFirst ? 'new-response' : 'update-response', fullText);
-                isFirst = false;
-            }
-        }
-
-        const systemPromptChars = (currentSystemPrompt || 'You are a helpful assistant.').length;
-        const historyChars = trimmedHistory.reduce((sum, msg) => sum + (msg.content || '').length, 0);
-        const inputChars = systemPromptChars + historyChars;
-        const outputChars = fullText.length;
-
-        incrementCharUsage('gemini', 'gemma-4-26b-a4b-it', inputChars + outputChars);
-
-        if (fullText.trim()) {
-            groqConversationHistory.push({
-                role: 'assistant',
-                content: fullText.trim(),
-            });
-
-            if (groqConversationHistory.length > 40) {
-                groqConversationHistory = groqConversationHistory.slice(-40);
-            }
-
-            saveConversationTurn(transcription, fullText);
-        }
-
-        console.log('Gemma response completed');
-        sendToRenderer('update-status', 'Listening...');
-    } catch (error) {
-        console.error('Error calling Gemma API:', error);
-        sendToRenderer('update-status', 'Gemma error: ' + error.message);
-    }
-}
-
 async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', isReconnect = false) {
     if (isInitializingSession) {
         console.log('Session initialization already in progress');
         return false;
     }
 
+    const generation = liveGeneration;
     isInitializingSession = true;
     if (!isReconnect) {
         geminiSessionResumptionHandle = null;
@@ -891,6 +748,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         }
     }
 
+    let liveResponseId = randomUUID();
+    let modelTextBuffer = '';
+    let audioTextBuffer = '';
     let liveSessionReady = false;
     let connectedWithoutSearch = false;
 
@@ -901,7 +761,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     sendToRenderer('update-status', 'Live session connected');
                 },
                 onmessage: function (message) {
-                    console.log('----------------', message);
+                    if (generation !== liveGeneration || isUserClosing) return;
                     logTransportEvent('gemini.live.message', message);
 
                     // Handle input transcription (what was spoken)
@@ -914,43 +774,38 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         }
                     }
 
-                    const modelParts = message.serverContent?.modelTurn?.parts || [];
-                    for (const part of modelParts) {
-                        if (part?.text && currentProviderMode !== 'groq') {
-                            const isFirstChunk = messageBuffer === '';
-                            messageBuffer += part.text;
-                            sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
-                        }
+                    const content = message.serverContent || {};
+                    for (const part of content.modelTurn?.parts || []) {
+                        if (part?.text && !part.thought) modelTextBuffer += part.text;
                     }
-
-                    const resumeHandle = message.sessionResumptionUpdate?.newHandle
-                        || message.serverContent?.sessionResumptionUpdate?.newHandle;
-                    if (resumeHandle) geminiSessionResumptionHandle = resumeHandle;
-
-                    if (currentProviderMode !== 'groq' && message.serverContent?.outputTranscription?.text) {
+                    if (content.outputTranscription?.text) audioTextBuffer += content.outputTranscription.text;
+                    // Some Live models emit both text parts and an audio transcript.
+                    // They are alternative views, not two strings to concatenate.
+                    const visible = audioTextBuffer || modelTextBuffer;
+                    if (visible && visible !== messageBuffer) {
                         const isFirstChunk = messageBuffer === '';
-                        messageBuffer += message.serverContent.outputTranscription.text;
-                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer);
+                        messageBuffer = visible;
+                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer,
+                            { requestId: liveResponseId, kind: 'voice' });
                     }
-
-                    if (message.serverContent?.generationComplete) {
-                        const turnInput = pendingTypedPrompt.trim() || currentTranscription.trim();
-                        if (turnInput && currentProviderMode !== 'groq' && messageBuffer.trim() !== '') {
-                            saveConversationTurn(turnInput, messageBuffer);
+                    const resumeHandle = message.sessionResumptionUpdate?.newHandle;
+                    if (resumeHandle) geminiSessionResumptionHandle = resumeHandle;
+                    // generationComplete can precede the final transcription. Save
+                    // once at turnComplete (or interruption), not at generationComplete.
+                    if (content.turnComplete || content.interrupted) {
+                        if (currentTranscription.trim() && messageBuffer.trim()) {
+                            saveConversationTurn(currentTranscription, messageBuffer);
                         }
                         currentTranscription = '';
-                        pendingTypedPrompt = '';
                         messageBuffer = '';
-                    }
-
-                    if (message.serverContent?.turnComplete) {
-                        currentTranscription = '';
-                        messageBuffer = '';
-                        groqRequestStartedForTurn = false;
-                        sendToRenderer('update-status', 'Listening...');
+                        modelTextBuffer = '';
+                        audioTextBuffer = '';
+                        liveResponseId = randomUUID();
+                                            sendToRenderer('update-status', content.interrupted ? 'Response interrupted' : 'Listening...');
                     }
                 },
                 onerror: function (e) {
+                    if (generation !== liveGeneration) return;
                     const detail = formatGeminiError(e);
                     console.log('Session error:', getGeminiErrorDetail(e));
                     logTransportEvent('gemini.live.error', { error: getGeminiErrorDetail(e) });
@@ -958,6 +813,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     sendToRenderer('update-status', detail);
                 },
                 onclose: function (e) {
+                    if (generation !== liveGeneration) return;
                     const closeDetail = `Gemini Live closed${Number.isFinite(e?.code) ? ` (code ${e.code})` : ''}${e?.reason ? `: ${e.reason}` : ''}`;
                     console.log('Session closed:', closeDetail);
                     logTransportEvent('gemini.live.closed', { reason: closeDetail });
@@ -978,7 +834,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
                     // Attempt reconnection
                     if (sessionParams && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                        attemptReconnect();
+                        if (!reconnectPromise) {
+                            reconnectPromise = attemptReconnect().finally(() => { reconnectPromise = null; });
+                        }
                     } else {
                         closeTransportLog();
                         sendToRenderer('update-status', 'Session closed');
@@ -1012,6 +870,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             connectedWithoutSearch = true;
         }
 
+        if (generation !== liveGeneration || isUserClosing) {
+            session.close();
+            return null;
+        }
         liveSessionReady = true;
         if (!isReconnect) initializeNewSession(profile, customPrompt);
         lastGeminiInitializationError = '';
@@ -1049,19 +911,21 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 }
 
 async function attemptReconnect() {
+    const generation = liveGeneration;
+    if (!sessionParams || isUserClosing) return false;
     reconnectAttempts++;
     console.log(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
 
     // Clear stale buffers
     messageBuffer = '';
     currentTranscription = '';
-    pendingTypedPrompt = '';
     // Don't reset groqConversationHistory to preserve context across reconnects
 
     sendToRenderer('update-status', `Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
 
     // Wait before attempting
     await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
+    if (generation !== liveGeneration || isUserClosing || !sessionParams) return false;
 
     try {
         const session = await initializeGeminiSession(
@@ -1072,7 +936,7 @@ async function attemptReconnect() {
             true // isReconnect
         );
 
-        if (session && global.geminiSessionRef) {
+        if (session && generation === liveGeneration && !isUserClosing && global.geminiSessionRef) {
             global.geminiSessionRef.current = session;
 
             // Restore context from conversation history via text message
@@ -1097,7 +961,7 @@ async function attemptReconnect() {
     }
 
     // If we still have attempts left, try again
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    if (generation === liveGeneration && !isUserClosing && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         return attemptReconnect();
     }
 
@@ -1332,11 +1196,62 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     }
 }
 
+async function sendTypedGeminiText(text) {
+    const apiKey = getApiKey();
+    if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
+    const model = getAvailableModel();
+    const session = require('../storage').getSession(currentSessionId);
+    const transcript = (session?.liveTranscript || []).slice(-30).map(item => item.text).join('\n').slice(-16000);
+    const history = conversationHistory.slice(-12).flatMap(turn => [
+        { role: 'user', parts: [{ text: String(turn.transcription || '').slice(-4000) }] },
+        { role: 'model', parts: [{ text: String(turn.ai_response || '').slice(-4000) }] },
+    ]);
+    const screenContext = screenAnalysisHistory.slice(-1).map(item => item.response).join('');
+    const instruction = appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.')
+        + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
+        + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-8000) : '');
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+        model,
+        contents: [...history, { role: 'user', parts: [{ text }] }],
+        config: { systemInstruction: instruction, maxOutputTokens: 4096, tools: await getEnabledTools(),
+            httpOptions: { timeout: 55000 }, abortSignal: getRequestSignal() },
+    });
+    assertCurrentRequest();
+    const answer = response.text?.trim();
+    if (!answer) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
+    sendToRenderer('new-response', answer);
+    saveConversationTurn(text, answer);
+    incrementLimitCount(model);
+    return { success: true, text: answer, model };
+}
+
 function setupGeminiIpcHandlers(geminiSessionRef) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
+    const register = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
+        const mainWindow = BrowserWindow.getAllWindows().find(window => !window.isDestroyed()
+            && window.webContents.id === event?.sender?.id
+            && /(?:^|\/)index\.html$/.test(window.webContents.getURL()));
+        if (!mainWindow || event.senderFrame !== mainWindow.webContents.mainFrame) {
+            return { success: false, error: 'Untrusted renderer' };
+        }
+        if (channel.startsWith('initialize-')) {
+            liveGeneration += 1;
+            isUserClosing = false;
+            resetSessionRequests();
+        }
+        try {
+            const result = await handler(event, ...args);
+            if (channel.startsWith('initialize-') && (result === false || result?.success === false)) closeSessionRequests();
+            return result;
+        } catch (error) {
+            if (channel.startsWith('initialize-')) { closeSessionRequests(); isInitializingSession = false; }
+            return { success: false, error: error?.message || String(error) };
+        }
+    });
 
-    ipcMain.handle('initialize-cloud', async (event, token, profile, userContext) => {
+    register('initialize-cloud', async (event, token, profile, userContext) => {
         try {
             currentProviderMode = 'cloud';
             initializeNewSession(profile);
@@ -1355,7 +1270,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok') => {
+    register('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok') => {
         const selectedProvider = provider === 'groq' ? 'groq' : 'byok';
 
         // Provider choice is explicit. A saved Groq key must never override a
@@ -1394,7 +1309,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return { success: false, error: lastGeminiInitializationError || 'Gemini session could not be initialized.' };
     });
 
-    ipcMain.handle('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt, language = 'en-US') => {
+    register('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt, language = 'en-US') => {
         currentProviderMode = 'local';
         const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt, language);
         if (!success) {
@@ -1403,7 +1318,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return success;
     });
 
-    ipcMain.handle('cancel-local-initialization', async () => {
+    register('cancel-local-initialization', async () => {
         const cancelled = await getLocalAi().cancelLocalInitialization();
         if (cancelled) {
             currentProviderMode = 'byok';
@@ -1411,7 +1326,11 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return cancelled;
     });
 
-    ipcMain.handle('send-audio-content', async (event, { data, mimeType }) => {
+    register('send-audio-content', async (event, payload) => {
+        const { data, mimeType } = payload || {};
+        if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
+            return { success: false, error: 'Invalid PCM audio payload' };
+        }
         if (currentProviderMode === 'cloud') {
             try {
                 const pcmBuffer = Buffer.from(data, 'base64');
@@ -1449,7 +1368,11 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     // Handle microphone audio on a separate channel
-    ipcMain.handle('send-mic-audio-content', async (event, { data, mimeType }) => {
+    register('send-mic-audio-content', async (event, payload) => {
+        const { data, mimeType } = payload || {};
+        if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
+            return { success: false, error: 'Invalid PCM audio payload' };
+        }
         if (currentProviderMode === 'cloud') {
             try {
                 const pcmBuffer = Buffer.from(data, 'base64');
@@ -1485,7 +1408,11 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('send-image-content', async (event, { data, prompt }) => {
+    register('send-image-content', async (event, payload) => {
+        const { data, prompt } = payload || {};
+        if (typeof data !== 'string' || data.length > 20000000 || typeof prompt !== 'string' || prompt.length > 32000) {
+            return { success: false, error: 'Invalid image request' };
+        }
         try {
             if (!data || typeof data !== 'string') {
                 console.error('Invalid image data received');
@@ -1522,55 +1449,19 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('send-text-message', async (event, text) => {
-        if (!text || typeof text !== 'string' || text.trim().length === 0) {
-            return { success: false, error: 'Invalid text message' };
+    register('send-text-message', async (event, text) => {
+        if (typeof text !== 'string' || !text.trim() || text.length > 32000) {
+            return { success: false, error: 'Enter a message between 1 and 32,000 characters' };
         }
-
-        if (currentProviderMode === 'cloud') {
-            try {
-                console.log('Sending text to cloud:', text);
-                sendCloudText(text.trim());
-                return { success: true };
-            } catch (error) {
-                console.error('Error sending cloud text:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        if (currentProviderMode === 'local') {
-            try {
-                console.log('Sending text to local Llama:', text);
-                return await getLocalAi().sendLocalText(text.trim());
-            } catch (error) {
-                console.error('Error sending local text:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        if (currentProviderMode === 'groq') {
-            console.log('Sending text message to Groq:', text);
-            groqRequestStartedForTurn = true;
-            return await sendToGroq(text.trim());
-        }
-
-        if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
-
         const cleanText = text.trim();
-        pendingTypedPrompt = cleanText;
-        try {
-            console.log('Sending text message:', cleanText);
-
-            await geminiSessionRef.current.sendRealtimeInput({ text: cleanText });
-            return { success: true };
-        } catch (error) {
-            if (pendingTypedPrompt === cleanText) pendingTypedPrompt = '';
-            console.error('Error sending text:', error);
-            return { success: false, error: error.message };
-        }
+        return runSessionRequest('text', async () => {
+            if (currentProviderMode === 'local') return getLocalAi().sendLocalText(cleanText);
+            if (currentProviderMode === 'groq') return sendToGroq(cleanText);
+            return sendTypedGeminiText(cleanText);
+        }, { timeoutMs: currentProviderMode === 'local' ? 180000 : 65000 });
     });
 
-    ipcMain.handle('start-macos-audio', async event => {
+    register('start-macos-audio', async event => {
         if (process.platform !== 'darwin') {
             return {
                 success: false,
@@ -1587,7 +1478,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('stop-macos-audio', async event => {
+    register('stop-macos-audio', async event => {
         try {
             stopMacOSAudioCapture();
             return { success: true };
@@ -1597,7 +1488,13 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('close-session', async event => {
+    register('close-session', async event => {
+        liveGeneration += 1;
+        isUserClosing = true;
+        sessionParams = null;
+        currentTranscription = '';
+        messageBuffer = '';
+        closeSessionRequests();
         try {
             stopMacOSAudioCapture();
 
@@ -1644,7 +1541,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     // Conversation history IPC handlers
-    ipcMain.handle('get-current-session', async event => {
+    register('get-current-session', async event => {
         try {
             return { success: true, data: getCurrentSessionData() };
         } catch (error) {
@@ -1653,7 +1550,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('start-new-session', async event => {
+    register('start-new-session', async event => {
         try {
             initializeNewSession();
             return { success: true, sessionId: currentSessionId };
@@ -1663,7 +1560,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('update-google-search-setting', async (event, enabled) => {
+    register('update-google-search-setting', async (event, enabled) => {
         try {
             console.log('Google Search setting updated to:', enabled);
             // The setting is already saved in localStorage by the renderer

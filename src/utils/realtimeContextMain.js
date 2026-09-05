@@ -1,5 +1,4 @@
-const fs = require('node:fs');
-const path = require('node:path');
+const { requestIsCurrent } = require('./sessionRequests');
 const { BrowserWindow } = require('electron');
 const storage = require('../storage');
 const {
@@ -14,6 +13,7 @@ let fetchPatched = false;
 let googleGenAiPatched = false;
 
 function emitLiveTranscript(payload) {
+    if (!requestIsCurrent()) return;
     const event = normalizeTranscriptEvent(payload);
     if (!event) return;
 
@@ -156,10 +156,12 @@ function patchGeminiLive() {
 
                 live.connect = async params => {
                     const mode = getResponseMode();
+                    let connectedSession = null;
                     const originalOnMessage = params?.callbacks?.onmessage;
                     const callbacks = {
                         ...(params?.callbacks || {}),
                         onmessage(message) {
+                            if (connectedSession && global.geminiSessionRef?.current !== connectedSession) return;
                             const interim = extractGeminiTranscript(message, 'interimInputTranscription');
                             if (interim) {
                                 emitLiveTranscript({ provider: 'gemini', text: interim, final: false, timestamp: Date.now() });
@@ -182,7 +184,8 @@ function patchGeminiLive() {
                         systemInstruction: tuneLiveSystemInstruction(params?.config?.systemInstruction, mode),
                     };
 
-                    return originalConnect({ ...params, callbacks, config });
+                    connectedSession = await originalConnect({ ...params, callbacks, config });
+                    return connectedSession;
                 };
             }
         }
@@ -197,66 +200,10 @@ function patchGeminiLive() {
     }
 }
 
-function sanitizeTranscriptHistory(value) {
-    if (!Array.isArray(value)) return [];
-    return value
-        .map(item => normalizeTranscriptEvent(item))
-        .filter(Boolean)
-        .slice(-1000);
-}
-
-function sanitizeMarkers(value) {
-    if (!Array.isArray(value)) return [];
-    const allowed = new Set(['important', 'decision', 'action', 'question']);
-    return value
-        .filter(item => item && typeof item === 'object' && allowed.has(item.type))
-        .map(item => ({
-            type: item.type,
-            timestamp: Number.isFinite(Number(item.timestamp)) ? Number(item.timestamp) : Date.now(),
-            transcript: typeof item.transcript === 'string' ? item.transcript.slice(0, 2000) : '',
-        }))
-        .slice(-500);
-}
-
-function patchSessionStorage() {
-    if (storage.saveSession.__realtimeContextPatched) return;
-
-    const originalSaveSession = storage.saveSession.bind(storage);
-    const wrappedSaveSession = (sessionId, data = {}) => {
-        const previous = storage.getSession(sessionId) || {};
-        const result = originalSaveSession(sessionId, data);
-        if (!result) return result;
-
-        const liveTranscript = Object.prototype.hasOwnProperty.call(data, 'liveTranscript')
-            ? sanitizeTranscriptHistory(data.liveTranscript)
-            : sanitizeTranscriptHistory(previous.liveTranscript);
-        const markers = Object.prototype.hasOwnProperty.call(data, 'markers')
-            ? sanitizeMarkers(data.markers)
-            : sanitizeMarkers(previous.markers);
-
-        if (liveTranscript.length || markers.length || previous.liveTranscript || previous.markers) {
-            const session = storage.getSession(sessionId) || { sessionId };
-            session.liveTranscript = liveTranscript;
-            session.markers = markers;
-            try {
-                const historyPath = path.join(storage.getConfigDir(), 'history', `${sessionId}.json`);
-                fs.writeFileSync(historyPath, JSON.stringify(session, null, 2), 'utf8');
-            } catch (error) {
-                console.error('Could not persist realtime session context:', error.message);
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    Object.defineProperty(wrappedSaveSession, '__realtimeContextPatched', { value: true });
-    storage.saveSession = wrappedSaveSession;
-}
+const { sanitizeTranscriptHistory, sanitizeMarkers } = require('./sessionData');
 
 function installRealtimeContextMain() {
     if (installed) return;
-    patchSessionStorage();
     patchProviderFetch();
     patchGeminiLive();
     installed = true;
@@ -267,4 +214,6 @@ module.exports = {
     emitLiveTranscript,
     extractGeminiTranscript,
     tuneLiveSystemInstruction,
+    sanitizeTranscriptHistory,
+    sanitizeMarkers,
 };

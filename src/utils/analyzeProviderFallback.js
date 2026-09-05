@@ -20,6 +20,7 @@ const RETRYABLE_ANALYZE_PATTERNS = [
     /timed?\s*out/i,
     /timeout/i,
     /deadline/i,
+    /empty analyze screen response/i,
 ];
 
 function delay(ms) {
@@ -98,10 +99,6 @@ function installAnalyzeProviderFallback() {
                                     Number(params?.config?.maxOutputTokens) || MAX_OUTPUT_TOKENS,
                                     MAX_OUTPUT_TOKENS
                                 ),
-                                thinkingConfig: {
-                                    ...(params?.config?.thinkingConfig || {}),
-                                    thinkingLevel: genai.ThinkingLevel?.LOW || 'low',
-                                },
                                 httpOptions: {
                                     ...(params?.config?.httpOptions || {}),
                                     timeout: REQUEST_TIMEOUT_MS,

@@ -14,12 +14,14 @@ let providerMode = 'byok';
 let systemAudioQueue = [];
 let microphoneAudioQueue = [];
 let mixedAudioDispatch = Promise.resolve();
+let mixerGeneration = 0;
 let lastAudioFallbackNoticeAt = 0;
 
 const MAX_UNPAIRED_AUDIO_CHUNKS = 12;
 const ANALYZE_SCOPE_MS = 58000;
 
 function resetAudioMixer() {
+    mixerGeneration += 1;
     systemAudioQueue = [];
     microphoneAudioQueue = [];
     mixedAudioDispatch = Promise.resolve();
@@ -50,8 +52,9 @@ function dispatchMixedPayload(event, payload) {
     const systemHandler = windowsHandlers.get('send-audio-content');
     if (!systemHandler) return;
 
+    const generation = mixerGeneration;
     mixedAudioDispatch = mixedAudioDispatch
-        .then(() => systemHandler(event, payload))
+        .then(() => generation === mixerGeneration ? systemHandler(event, payload) : undefined)
         .catch(error => {
             console.error('Mixed Windows audio dispatch failed:', error);
             sendRendererStatus('Audio error: ' + error.message);
@@ -183,6 +186,7 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
         return async (event, payload, ...rest) => {
+            if (!payload || typeof payload.data !== 'string' || payload.data.length > 262144) return { success: false, error: 'Invalid audio payload' };
             const mode = storage.getPreferences().audioMode || 'speaker_only';
             if (process.platform === 'win32' && mode === 'both') {
                 return enqueueMixedWindowsAudio(channel, event, payload);

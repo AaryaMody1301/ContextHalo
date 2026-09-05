@@ -2,6 +2,7 @@ const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session } = requir
 const { spawn } = require('child_process');
 const path = require('path');
 const storage = require('../storage');
+const { runSessionRequest, assertCurrentRequest } = require('./sessionRequests');
 
 const RETRYABLE_PROVIDER_PATTERNS = [
     /\b409\b/i,
@@ -22,8 +23,6 @@ const RETRYABLE_PROVIDER_PATTERNS = [
 const PROVIDER_STREAM_TIMEOUT_MS = 30000;
 
 let runtimeProviderMode = 'byok';
-let imageRequestQueue = Promise.resolve();
-let groqUtteranceQueue = Promise.resolve();
 let originalIpcHandle = null;
 let googleGenAiPatched = false;
 let runtimeMacAudioProc = null;
@@ -324,9 +323,9 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
 function queueGroqUtterance(event, pcm, sampleRate) {
     if (!pcm.length) return;
 
-    groqUtteranceQueue = groqUtteranceQueue
-        .then(async () => {
+    runSessionRequest('voice', async () => {
             const transcript = await transcribeGroqUtterance(pcm, sampleRate);
+            assertCurrentRequest();
             if (!transcript) return;
             const textHandler = registeredHandlers.get('send-text-message');
             if (!textHandler) throw new Error('Groq text handler is not ready');
@@ -334,6 +333,7 @@ function queueGroqUtterance(event, pcm, sampleRate) {
             if (result?.success === false) throw new Error(result.error || 'Groq response failed');
         })
         .catch(error => {
+            if (error.name === 'AbortError') return;
             console.error('Groq utterance processing failed:', error);
             const windows = BrowserWindow.getAllWindows();
             if (windows.length > 0 && !windows[0].isDestroyed()) {
@@ -542,10 +542,10 @@ function wrapIpcHandler(channel, handler) {
     if (channel === 'send-image-content') {
         return (event, ...args) => {
             sendScreenAnalysisLifecycle(event, 'screen-analysis-started');
-            const queued = imageRequestQueue.then(() =>
-                callWithProviderRetry(async () => normalizeImageResult(await handler(event, ...args)))
+            const queued = runSessionRequest('screen', () =>
+                callWithProviderRetry(async () => normalizeImageResult(await handler(event, ...args))),
+                { timeoutMs: 58000 }
             );
-            imageRequestQueue = queued.catch(() => {});
 
             return queued.then(
                 result => {
@@ -578,7 +578,24 @@ function installIpcHandlerHardening() {
     if (originalIpcHandle) return () => {};
 
     originalIpcHandle = ipcMain.handle.bind(ipcMain);
-    ipcMain.handle = (channel, handler) => originalIpcHandle(channel, wrapIpcHandler(channel, handler));
+    ipcMain.handle = (channel, handler) => {
+        const wrapped = wrapIpcHandler(channel, handler);
+        return originalIpcHandle(channel, (event, ...args) => {
+            const window = BrowserWindow.getAllWindows().find(candidate => !candidate.isDestroyed()
+                && candidate.webContents.id === event?.sender?.id);
+            if (!window || event.senderFrame !== window.webContents.mainFrame) {
+                return { success: false, error: 'Untrusted renderer' };
+            }
+            if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
+                const payload = args[0];
+                if (typeof payload?.data !== 'string' || payload.data.length > 262144
+                    || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(payload.mimeType || '')) {
+                    return { success: false, error: 'Invalid audio payload' };
+                }
+            }
+            return wrapped(event, ...args);
+        });
+    };
 
     return () => {
         if (originalIpcHandle) {

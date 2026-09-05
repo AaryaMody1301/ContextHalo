@@ -300,6 +300,11 @@ async function resolveSessionId() {
         const sessionId = result?.success ? result.data?.sessionId : null;
         if (!sessionId) return null;
         if (currentSessionId !== sessionId) {
+            clearTimeout(persistTimer);
+            transcriptEntries = [];
+            markers = [];
+            interimTranscript = null;
+            loadedSessionId = null;
             currentSessionId = sessionId;
             await loadSessionState(sessionId);
         }
@@ -314,7 +319,7 @@ async function loadSessionState(sessionId) {
     loadedSessionId = sessionId;
     try {
         const session = await contextHalo.storage.getSession(sessionId);
-        if (session) {
+        if (session && currentSessionId === sessionId) {
             transcriptEntries = mergeByTimestamp(session.liveTranscript || [], transcriptEntries);
             if (Array.isArray(session.markers)) markers = session.markers.slice(-500);
         }
@@ -601,6 +606,19 @@ async function patchViews() {
 
     await refreshPreferences();
     ipcRenderer.on('live-transcript', handleTranscript);
+    window.contextHalo.flushSessionContext = async () => {
+        clearTimeout(persistTimer);
+        await persistRealtimeState();
+    };
+    ipcRenderer.on('save-session-context', async (_event, data) => {
+        clearTimeout(persistTimer);
+        currentSessionId = data.sessionId;
+        loadedSessionId = null;
+        transcriptEntries = [];
+        markers = [];
+        interimTranscript = null;
+        decorateAll();
+    });
     decorateAll();
 }
 

@@ -243,6 +243,7 @@ export class ContextHaloApp extends LitElement {
         /* ── Main content area ── */
 
         .content {
+            min-width: 0;
             flex: 1;
             overflow: hidden;
             display: flex;
@@ -424,9 +425,9 @@ export class ContextHaloApp extends LitElement {
         selectedScreenshotInterval: { type: String },
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
-        _viewInstances: { type: Object, state: true },
+
         _isClickThrough: { state: true },
-        _awaitingNewResponse: { state: true },
+
         shouldAnimateResponse: { type: Boolean },
         _storageLoaded: { state: true },
         _updateAvailable: { state: true },
@@ -449,14 +450,17 @@ export class ContextHaloApp extends LitElement {
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
         this.responses = [];
+        this._responseIds = [];
+        this._responseRequestIndex = new Map();
         this.currentResponseIndex = -1;
-        this._viewInstances = new Map();
+
         this._isClickThrough = false;
-        this._awaitingNewResponse = false;
-        this._currentResponseIsComplete = true;
+
+
         this.shouldAnimateResponse = false;
         this._storageLoaded = false;
         this._timerInterval = null;
+        this._ipcSubscriptions = [];
         this._updateAvailable = false;
         this._whisperDownloading = false;
         this._localAiDownloadProgress = { active: false, label: '', percentage: null };
@@ -504,22 +508,23 @@ export class ContextHaloApp extends LitElement {
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.on('new-response', (_, response) => this.addNewResponse(response));
-            ipcRenderer.on('update-response', (_, response) => this.updateCurrentResponse(response));
-            ipcRenderer.on('update-status', (_, status) => this.setStatus(status));
-            ipcRenderer.on('session-initializing', (_, active) => {
+            const listen = (channel, handler) => { ipcRenderer.on(channel, handler); this._ipcSubscriptions.push([channel, handler]); };
+            listen('new-response', (_, response, metadata) => this.addNewResponse(response, metadata));
+            listen('update-response', (_, response, metadata) => this.updateCurrentResponse(response, metadata));
+            listen('update-status', (_, status) => this.setStatus(status));
+            listen('session-initializing', (_, active) => {
                 this.isInitializing = Boolean(active);
                 if (active) this.startError = '';
                 this.requestUpdate();
             });
-            ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
+            listen('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            ipcRenderer.on('reconnect-failed', (_, data) => this.addNewResponse(data.message));
-            ipcRenderer.on('whisper-downloading', (_, downloading) => {
+            listen('reconnect-failed', (_, data) => this.addNewResponse(data.message));
+            listen('whisper-downloading', (_, downloading) => {
                 this._whisperDownloading = downloading;
             });
-            ipcRenderer.on('local-ai-download-progress', (_, progress) => {
+            listen('local-ai-download-progress', (_, progress) => {
                 this._localAiDownloadProgress = progress;
             });
         }
@@ -530,14 +535,8 @@ export class ContextHaloApp extends LitElement {
         this._stopTimer();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            ipcRenderer.removeAllListeners('new-response');
-            ipcRenderer.removeAllListeners('update-response');
-            ipcRenderer.removeAllListeners('update-status');
-            ipcRenderer.removeAllListeners('session-initializing');
-            ipcRenderer.removeAllListeners('click-through-toggled');
-            ipcRenderer.removeAllListeners('reconnect-failed');
-            ipcRenderer.removeAllListeners('whisper-downloading');
-            ipcRenderer.removeAllListeners('local-ai-download-progress');
+            for (const [channel, handler] of this._ipcSubscriptions) ipcRenderer.removeListener(channel, handler);
+            this._ipcSubscriptions = [];
         }
     }
 
@@ -570,29 +569,27 @@ export class ContextHaloApp extends LitElement {
 
     // ── Status & Responses ──
 
-    setStatus(text) {
-        this.statusText = text;
-        if (text.includes('Ready') || text.includes('Listening') || text.includes('Error')) {
-            this._currentResponseIsComplete = true;
-        }
-    }
+    setStatus(text) { this.statusText = String(text || ''); }
 
-    addNewResponse(response) {
+    addNewResponse(response, metadata) {
+        const id = metadata?.requestId;
+        if (id && this._responseRequestIndex.has(id)) return this.updateCurrentResponse(response, metadata);
         const wasOnLatest = this.currentResponseIndex === this.responses.length - 1;
-        this.responses = [...this.responses, response];
-        if (wasOnLatest || this.currentResponseIndex === -1) {
-            this.currentResponseIndex = this.responses.length - 1;
-        }
-        this._awaitingNewResponse = false;
+        this.responses = [...this.responses, String(response || '')];
+        this._responseIds.push(id || null);
+        if (id) this._responseRequestIndex.set(id, this.responses.length - 1);
+        if (wasOnLatest || this.currentResponseIndex === -1) this.currentResponseIndex = this.responses.length - 1;
         this.requestUpdate();
     }
 
-    updateCurrentResponse(response) {
-        if (this.responses.length > 0) {
-            this.responses = [...this.responses.slice(0, -1), response];
-        } else {
-            this.addNewResponse(response);
-        }
+    updateCurrentResponse(response, metadata) {
+        const id = metadata?.requestId;
+        if (id && !this._responseRequestIndex.has(id)) return this.addNewResponse(response, metadata);
+        const index = id ? this._responseRequestIndex.get(id) : this.responses.length - 1;
+        if (index < 0) return this.addNewResponse(response, metadata);
+        const next = [...this.responses];
+        next[index] = String(response || '');
+        this.responses = next;
         this.requestUpdate();
     }
 
@@ -614,21 +611,19 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleClose() {
-        if (this.currentView === 'assistant') {
-            contextHalo.stopCapture();
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('close-session');
+        this._uiSessionEpoch = (this._uiSessionEpoch || 0) + 1;
+        if (this.sessionActive || this.currentView === 'assistant') {
+            try {
+                try { await window.contextHalo.flushSessionContext?.(); }
+                catch (error) { this.setStatus('Could not save the final transcript: ' + error.message); }
+                try { contextHalo.stopCapture(); }
+                finally { await window.electronAPI.invoke('close-session'); }
+            } finally {
+                this.sessionActive = false;
+                this._stopTimer();
+                this.currentView = 'main';
             }
-            this.sessionActive = false;
-            this._stopTimer();
-            this.currentView = 'main';
-        } else {
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('quit-application');
-            }
-        }
+        } else { await window.electronAPI.invoke('quit-application'); }
     }
 
     async _handleMinimize() {
@@ -656,6 +651,7 @@ export class ContextHaloApp extends LitElement {
 
     async handleStart() {
         if (this.isInitializing || this.sessionActive) return;
+        this._uiSessionEpoch = (this._uiSessionEpoch || 0) + 1;
 
         this.isInitializing = true;
         this.startError = '';
@@ -716,6 +712,8 @@ export class ContextHaloApp extends LitElement {
             }
 
             this.responses = [];
+            this._responseIds = [];
+            this._responseRequestIndex.clear();
             this.currentResponseIndex = -1;
             this.startTime = Date.now();
             this.sessionActive = true;
@@ -791,12 +789,16 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleSendText(message) {
-        const result = await window.contextHalo.sendTextMessage(message);
-        if (!result.success) {
-            this.setStatus('Error sending message: ' + result.error);
-        } else {
-            this.setStatus('Message sent...');
-            this._awaitingNewResponse = true;
+        const epoch = this._uiSessionEpoch || 0;
+        try {
+            const result = await window.contextHalo.sendTextMessage(message);
+            if ((this._uiSessionEpoch || 0) !== epoch) return { success: false, error: 'Session ended' };
+            if (result?.success !== true) this.setStatus('Error sending message: ' + (result?.error || 'Unknown provider error'));
+            else this.setStatus('Response received');
+            return result;
+        } catch (error) {
+            if ((this._uiSessionEpoch || 0) === epoch) this.setStatus('Error sending message: ' + error.message);
+            return { success: false, error: error.message };
         }
     }
 
@@ -898,7 +900,7 @@ export class ContextHaloApp extends LitElement {
                         @response-index-changed=${this.handleResponseIndexChanged}
                         @response-animation-complete=${() => {
                             this.shouldAnimateResponse = false;
-                            this._currentResponseIsComplete = true;
+
                             this.requestUpdate();
                         }}
                     ></assistant-view>

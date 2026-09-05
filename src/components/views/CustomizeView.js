@@ -603,13 +603,8 @@ export class CustomizeView extends LitElement {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Screenshot Interval</label>
-                        <select class="control" .value=${this.selectedScreenshotInterval} @change=${this.handleScreenshotIntervalSelect}>
-                            <option value="3">3 seconds</option>
-                            <option value="5">5 seconds</option>
-                            <option value="10">10 seconds</option>
-                            <option value="30">30 seconds</option>
-                        </select>
+                        <label class="form-label">Screen capture</label>
+                        <div class="form-hint">On demand only. Use Analyze Screen or the capture shortcut; no automatic image requests are sent.</div>
                     </div>
                 </div>
             </section>

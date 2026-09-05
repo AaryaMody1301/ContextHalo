@@ -466,6 +466,7 @@ function decorateMainView() {
         card.className = 'phase3-session-context-card';
         startButton.parentNode.insertBefore(card, startButton);
     }
+    if (card.contains(root.activeElement)) return;
     card.replaceChildren();
 
     const heading = document.createElement('div');
@@ -686,14 +687,15 @@ async function patchViews() {
             return result;
         };
         AssistantView.prototype.handleSendText = async function (...args) {
+            if (this.sending) return;
             const input = this.shadowRoot?.querySelector('#textInput');
             const raw = input?.value?.trim() || '';
             if (raw === '/screen') {
-                input.value = '';
+                input.value = ''; this.draft = '';
                 return this.handleScreenAnswer();
             }
             if (raw === '/region') {
-                input.value = '';
+                input.value = ''; this.draft = '';
                 return selectAndAnalyzeRegion(this);
             }
             const expanded = expandQuickCommand(raw);
