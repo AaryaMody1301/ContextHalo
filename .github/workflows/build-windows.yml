@@ -19,49 +19,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Preserve transfer for byte-for-byte verification
-        uses: actions/upload-artifact@v4
-        with:
-          name: Repair-Transfer-Verification
-          path: .github/repair-transfer-*.b64
-          include-hidden-files: true
-          retention-days: 3
-          if-no-files-found: error
-      - name: Apply checksum-verified source repair
-        shell: python
-        run: |
-          import base64, gzip, hashlib, json
-          from pathlib import Path
-          parts = [Path(f'.github/repair-transfer-{i}.b64').read_text().strip() for i in range(4)]
-          corrections = [{'part':0,'before':'f08af46767afe7d985f13bfa4dc2044639226ea7c30a07af428b2e2371be42a3','edits':[[574,575,''],[971,972,''],[3084,3086,'+'],[8910,8911,'']]},{'part':2,'before':'d2746c59ce3fb00a4d4d36b261cbf4c498c77109407c0d24a06b02eeebc8056c','edits':[[1284,1285,'']]}]
-          for correction in corrections:
-              i = correction['part']
-              assert hashlib.sha256(parts[i].encode()).hexdigest() == correction['before']
-              for start, end, text in reversed(correction['edits']):
-                  parts[i] = parts[i][:start] + text + parts[i][end:]
-          data = gzip.decompress(base64.b64decode(''.join(parts), validate=True))
-          assert hashlib.sha256(data).hexdigest() == 'aff396112a6d0d37d3b9294a80e8af5fb8f47d1f69a5f5e8e1841504e2489b13', 'Repair checksum mismatch'
-          pending = []
-          for item in json.loads(data):
-              name = item['path']
-              path = Path(name)
-              assert not path.is_absolute() and '..' not in path.parts
-              assert name in ['package.json', 'preload.js', 'README.md'] or name.startswith(('src/', 'tests/', 'scripts/', 'docs/'))
-              old = path.read_bytes().replace(b'\r\n', b'\n') if path.exists() else b''
-              if item['before'] is None:
-                  assert not path.exists(), 'New path already exists: ' + name
-              else:
-                  assert hashlib.sha256(old).hexdigest() == item['before'], 'Source changed: ' + name
-              for start, end, text in reversed(item['edits']):
-                  assert 0 <= start <= end <= len(old)
-                  old = old[:start] + text.encode('utf-8') + old[end:]
-              pending.append((path, item['delete'], old))
-          for path, delete, content in pending:
-              if delete: path.unlink()
-              else:
-                  path.parent.mkdir(parents=True, exist_ok=True)
-                  path.write_bytes(content)
-          print('Applied', len(pending), 'verified source changes')
+      - name: Apply visual acceptance corrections
+        run: python .github/finish-repair.py
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -74,7 +33,7 @@ jobs:
         run: npm run check
       - name: Run all regression tests
         run: npm test
-      - name: Run real Electron behavior and IPC tests
+      - name: Run real Electron behavior and geometry tests
         shell: pwsh
         run: |
           & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
@@ -102,14 +61,14 @@ jobs:
           path: dist/ContextHalo-Windows-x64.exe
           if-no-files-found: error
           retention-days: 30
-      - name: Commit only validated source changes to the repair branch
+      - name: Commit validated visual and packaging fixes
         shell: pwsh
         run: |
           git config user.name "ContextHalo validation"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- src tests scripts docs README.md package.json preload.js
-          git rm -- .github/repair-transfer-0.b64 .github/repair-transfer-1.b64 .github/repair-transfer-2.b64 .github/repair-transfer-3.b64
-          git commit -m "fix: repair session requests, UI, persistence and security with behavioral regression tests"
+          git add -- src tests scripts package.json
+          git rm -- .github/finish-repair.py
+          git commit -m "fix: improve HUD reading space, navigation and window restoration"
           if ($LASTEXITCODE -ne 0) { throw "Could not commit validated repair" }
           git push origin HEAD:refs/heads/fix/typed-session-input-ui-model-guard
           if ($LASTEXITCODE -ne 0) { throw "Repair branch changed; refusing to overwrite it" }
