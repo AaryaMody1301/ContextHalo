@@ -4,6 +4,7 @@ import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 export class AssistantView extends LitElement {
     static styles = css`
         :host {
+            box-sizing: border-box;
             height: 100%;
             min-height: 0;
             min-width: 0;
@@ -12,6 +13,7 @@ export class AssistantView extends LitElement {
         }
 
         * {
+            box-sizing: border-box;
             font-family: var(--font);
             cursor: default;
         }

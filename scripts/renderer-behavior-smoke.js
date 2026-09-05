@@ -6,7 +6,9 @@ async function rendererBehaviorSmoke() {
     const settle = async element => { await element.updateComplete; await new Promise(resolve => setTimeout(resolve, 25)); };
     const waitUntil = async condition => {
         for (let n=0;n<100;n++) { if (condition()) return; await new Promise(resolve=>setTimeout(resolve,20)); }
-        throw new Error('Renderer condition did not settle');
+        const view=document.querySelector('context-halo-app')?.shadowRoot?.querySelector('assistant-view');
+        const sizes=[...(view?.shadowRoot?.children || [])].filter(e=>e.tagName!=='STYLE').map(e=>[e.className,e.clientHeight]);
+        throw new Error('Renderer condition did not settle after '+checks.join(', ')+'; viewport='+innerWidth+'x'+innerHeight+'; layout='+JSON.stringify(sizes));
     };
     const app = document.querySelector('context-halo-app');
     const api = window.contextHalo;
@@ -24,7 +26,12 @@ async function rendererBehaviorSmoke() {
         let release;
         let calls=0;
         api.sendTextMessage=()=>{calls++;return new Promise(resolve=>{release=resolve;});};
+        app.addNewResponse('Earlier answer'); app.addNewResponse('Latest answer');
+        app.currentResponseIndex=0;
         await setDraft('First question'); button.click(); await settle(assistant);
+        verify(app.currentResponseIndex===app.responses.length-1,'New typed question returns to the newest response');
+        await waitUntil(()=>root.querySelector('#responseContainer').clientHeight>=100);
+        verify(root.querySelector('#responseContainer').clientHeight>=100,'Default HUD reserves a usable answer area');
         verify(assistant.sending && button.disabled && calls===1,'Pending send is disabled');
         app.addNewResponse('Unrelated voice answer',{requestId:'voice-smoke',kind:'voice'});
         await settle(app);
@@ -77,7 +84,8 @@ async function rendererBehaviorSmoke() {
     verify(Boolean(review && typeof review==='object'),'Session review reads persisted context');
     await call('storage:delete-session',sessionId);
     verify((await ipc.invoke('storage:get-session','../escape')).success===false,'IPC rejects invalid session paths');
-    app.currentView='main';app.requestUpdate();await settle(app);
+    app.navigate('main');await settle(app);
+    verify(getComputedStyle(app.shadowRoot.querySelector('.sidebar-nav')).overflowY==='auto','Sidebar navigation remains scrollable in short windows');
     for (const id of ['phase4-knowledge-nav','phase4-practice-nav','phase4-review-nav']) {
         await waitUntil(()=>app.shadowRoot.getElementById(id));
         app.shadowRoot.getElementById(id).click();

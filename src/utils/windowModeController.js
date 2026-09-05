@@ -26,7 +26,7 @@ function clampBoundsToWorkArea(bounds, workArea) {
 function getHudBounds(display) {
     const workArea = display.workArea;
     const width = clamp(Math.round(workArea.width * HUD_WIDTH_RATIO), HUD_MINIMUM_SIZE.width, Math.min(HUD_MAXIMUM_SIZE.width, workArea.width));
-    const height = clamp(Math.round(workArea.height * HUD_HEIGHT_RATIO), HUD_MINIMUM_SIZE.height, Math.min(HUD_MAXIMUM_SIZE.height, workArea.height));
+    const height = clamp(Math.round(workArea.height * HUD_HEIGHT_RATIO), Math.min(520, workArea.height), Math.min(HUD_MAXIMUM_SIZE.height, workArea.height));
     const x = workArea.x + Math.round((workArea.width - width) / 2);
     const maxY = workArea.y + workArea.height - height;
     const y = Math.min(maxY, workArea.y + HUD_TOP_MARGIN);
@@ -62,6 +62,7 @@ function setBackgroundMaterial(mainWindow, material) {
 function createWindowModeController(mainWindow, screen) {
     let hudActive = false;
     let normalBounds = mainWindow.getBounds();
+    let normalWasMaximized = false;
 
     const reassertHudMode = () => {
         if (!hudActive || mainWindow.isDestroyed()) return;
@@ -76,8 +77,10 @@ function createWindowModeController(mainWindow, screen) {
         if (mainWindow.isDestroyed()) return;
 
         if (!hudActive) {
-            if (mainWindow.isMaximized()) mainWindow.unmaximize();
-            normalBounds = mainWindow.getBounds();
+            normalWasMaximized = mainWindow.isMaximized();
+            normalBounds = normalWasMaximized && typeof mainWindow.getNormalBounds === 'function'
+                ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+            if (normalWasMaximized) mainWindow.unmaximize();
         }
 
         const display = getDisplayForBounds(screen, mainWindow.getBounds());
@@ -104,6 +107,7 @@ function createWindowModeController(mainWindow, screen) {
         if (hudActive && normalBounds) {
             const display = getDisplayForBounds(screen, normalBounds);
             mainWindow.setBounds(clampBoundsToWorkArea(normalBounds, display.workArea), false);
+            if (normalWasMaximized) mainWindow.maximize();
         }
 
         hudActive = false;

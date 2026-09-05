@@ -135,6 +135,8 @@ export class ContextHaloApp extends LitElement {
 
         .sidebar-nav {
             flex: 1;
+            min-height: 0;
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
             gap: var(--space-xs);
@@ -178,6 +180,7 @@ export class ContextHaloApp extends LitElement {
         }
 
         .sidebar-footer {
+            flex-shrink: 0;
             padding: var(--space-sm);
             margin-top: var(--space-sm);
             -webkit-app-region: no-drag;
@@ -789,6 +792,9 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleSendText(message) {
+        // A new question returns to the newest card, unlike background updates.
+        this.currentResponseIndex = this.responses.length - 1;
+        this.requestUpdate();
         const epoch = this._uiSessionEpoch || 0;
         try {
             const result = await window.contextHalo.sendTextMessage(message);

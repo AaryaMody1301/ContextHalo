@@ -74,6 +74,13 @@
             "enableNodeCliInspectArguments": false,
             "enableEmbeddedAsarIntegrityValidation": true,
             "onlyLoadAppFromAsar": true
-        }
+        },
+        "files": [
+            "**/*",
+            "!qa-results/**",
+            "!tests/**",
+            "!docs/**",
+            "!.github/**"
+        ]
     }
 }

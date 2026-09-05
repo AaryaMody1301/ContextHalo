@@ -107,6 +107,8 @@ const MAIN_STYLES = `
 const ASSISTANT_STYLES = `
     .phase3-context-panel {
         flex: 0 0 auto;
+        max-height: clamp(72px, 20vh, 144px);
+        overflow-y: auto;
         margin: 8px 0 0;
         padding: 8px 10px;
         border: 1px solid rgba(255, 255, 255, 0.08);

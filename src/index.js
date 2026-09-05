@@ -157,7 +157,11 @@ function installWindowsSmokeCheck(window) {
             for (const view of ['main', 'customize', 'assistant']) {
                 await window.webContents.executeJavaScript(`(async () => {
                     const app = document.querySelector('context-halo-app');
-                    app.currentView = ${JSON.stringify(view)};
+                    app.navigate(${JSON.stringify(view)});
+                    if (${JSON.stringify(view)} === 'assistant') {
+                        app.responses = ['## Session assistance ready\\n\\nTyped answers, live audio, and screen context stay separate.\\n\\nUse the composer below to ask a question.'];
+                        app.currentResponseIndex = 0;
+                    }
                     app.requestUpdate(); await app.updateComplete;
                     await new Promise(resolve => setTimeout(resolve, 150));
                 })()`);
@@ -166,6 +170,14 @@ function installWindowsSmokeCheck(window) {
             fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks }, null, 2));
             finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {
+            try {
+                const fs = require('node:fs');
+                const path = require('node:path');
+                const directory = path.join(process.cwd(), 'qa-results');
+                fs.mkdirSync(directory, { recursive: true });
+                fs.writeFileSync(path.join(directory, 'failure.txt'), error.stack || error.message);
+                fs.writeFileSync(path.join(directory, 'failure.png'), (await window.webContents.capturePage()).toPNG());
+            } catch {}
             finish(false, error.message);
         }
     });
