@@ -107,6 +107,8 @@ const MAIN_STYLES = `
 const ASSISTANT_STYLES = `
     .phase3-context-panel {
         flex: 0 0 auto;
+        max-height: clamp(72px, 20vh, 144px);
+        overflow-y: auto;
         margin: 8px 0 0;
         padding: 8px 10px;
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -300,6 +302,11 @@ async function resolveSessionId() {
         const sessionId = result?.success ? result.data?.sessionId : null;
         if (!sessionId) return null;
         if (currentSessionId !== sessionId) {
+            clearTimeout(persistTimer);
+            transcriptEntries = [];
+            markers = [];
+            interimTranscript = null;
+            loadedSessionId = null;
             currentSessionId = sessionId;
             await loadSessionState(sessionId);
         }
@@ -314,7 +321,7 @@ async function loadSessionState(sessionId) {
     loadedSessionId = sessionId;
     try {
         const session = await contextHalo.storage.getSession(sessionId);
-        if (session) {
+        if (session && currentSessionId === sessionId) {
             transcriptEntries = mergeByTimestamp(session.liveTranscript || [], transcriptEntries);
             if (Array.isArray(session.markers)) markers = session.markers.slice(-500);
         }
@@ -480,7 +487,15 @@ function decorateAssistant() {
         responseContainer.parentNode.insertBefore(panel, responseContainer);
     }
 
-    panel.replaceChildren();
+    // Only rebuild the transcript-owned subtree. Capture tools and the context
+    // inspector have separate owners and must survive transcript/status updates.
+    let content = panel.querySelector(':scope > .phase3-transcript-content');
+    if (!content) {
+        content = document.createElement('div');
+        content.className = 'phase3-transcript-content';
+        panel.prepend(content);
+    }
+    content.replaceChildren();
     const row = document.createElement('div');
     row.className = 'phase3-context-row';
     const mode = RESPONSE_MODES.find(item => item.id === responseMode) || RESPONSE_MODES[1];
@@ -522,7 +537,7 @@ function decorateAssistant() {
         notice.textContent = markerNotice;
         row.appendChild(notice);
     }
-    panel.appendChild(row);
+    content.appendChild(row);
 
     const latest = interimTranscript || transcriptEntries[transcriptEntries.length - 1];
     if (latest) {
@@ -535,7 +550,7 @@ function decorateAssistant() {
         text.className = `phase3-transcript-text${latest.final === false ? ' interim' : ''}`;
         text.textContent = latest.text;
         preview.append(provider, text);
-        panel.appendChild(preview);
+        content.appendChild(preview);
     }
 
     if (transcriptExpanded && transcriptEntries.length) {
@@ -552,7 +567,7 @@ function decorateAssistant() {
             item.append(time, text);
             history.appendChild(item);
         }
-        panel.appendChild(history);
+        content.appendChild(history);
     }
 }
 
@@ -601,6 +616,19 @@ async function patchViews() {
 
     await refreshPreferences();
     ipcRenderer.on('live-transcript', handleTranscript);
+    window.contextHalo.flushSessionContext = async () => {
+        clearTimeout(persistTimer);
+        await persistRealtimeState();
+    };
+    ipcRenderer.on('save-session-context', async (_event, data) => {
+        clearTimeout(persistTimer);
+        currentSessionId = data.sessionId;
+        loadedSessionId = null;
+        transcriptEntries = [];
+        markers = [];
+        interimTranscript = null;
+        decorateAll();
+    });
     decorateAll();
 }
 

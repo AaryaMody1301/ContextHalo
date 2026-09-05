@@ -2,7 +2,7 @@ import { html } from '../assets/lit-core-2.7.4.min.js';
 
 const GEMINI_DEFAULTS = {
     live: 'gemini-3.1-flash-live-preview',
-    screen: 'gemini-3.7-flash',
+    screen: 'gemini-3.8-flash',
 };
 
 const GROQ_DEFAULTS = {
@@ -148,12 +148,13 @@ async function patchDynamicModelRegistry() {
             const { ipcRenderer } = window.require('electron');
             const result = await ipcRenderer.invoke('provider-models:list', provider, forceRefresh === true);
             if (!result?.success) throw new Error(result?.error || 'Model discovery failed');
+            if (!this.isConnected) return;
             this[catalogKey] = result.data;
-            if (isGemini && Array.isArray(result.data?.live) && result.data.live.length) {
-                const currentLive = this._geminiLiveModel || GEMINI_DEFAULTS.live;
-                if (!result.data.live.some(model => model.id === currentLive)) {
-                    await this._saveGeminiLiveModel(result.data.recommended?.live || GEMINI_DEFAULTS.live);
-                }
+            // Discovery must not silently overwrite manual IDs, especially from a stale catalog.
+            // The provider's request result is authoritative; the catalog is advisory.
+            const selectedId = isGemini ? this._geminiLiveModel : this._groqModel;
+            if (selectedId && !result.data?.all?.some(model => model.id === selectedId)) {
+                this[errorKey] = 'The selected model is not in this catalog. Review your model ID or refresh the catalog.';
             }
             if (result.data?.warning) this[errorKey] = `Using cached catalog: ${result.data.warning}`;
         } catch (error) {
@@ -239,7 +240,7 @@ async function patchDynamicModelRegistry() {
                     })}
 
                     ${renderModelPicker(this, {
-                        label: 'Screen / Analysis Model',
+                        label: 'Text / Screen Analysis Model',
                         value: this._geminiHttpModel || GEMINI_DEFAULTS.screen,
                         preferred: catalog?.screen,
                         all,

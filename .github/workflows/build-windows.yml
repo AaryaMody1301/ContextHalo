@@ -18,10 +18,31 @@ jobs:
   build:
     name: Build ContextHalo Windows x64 EXE
     runs-on: windows-2022
-
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Upload validation source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextHalo-Validation-Source
+          path: |
+            src/
+            tests/
+            scripts/
+            docs/
+            preload.js
+            package.json
+            package-lock.json
+            README.md
+            AGENTS.md
+            LICENSE
+            CREDITS.md
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -34,16 +55,13 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
 
       - name: Install locked dependencies
-        shell: pwsh
         run: npm ci --no-audit --no-fund
 
       - name: Audit production dependencies
         shell: pwsh
         run: |
-          # Retry only to tolerate transient npm advisory endpoint timeouts; a real vulnerability still fails every attempt.
           $env:npm_config_fetch_timeout = "60000"
           for ($attempt = 1; $attempt -le 3; $attempt++) {
-            Write-Host "Production dependency audit attempt $attempt of 3"
             npm audit --omit=dev --audit-level=high
             if ($LASTEXITCODE -eq 0) { exit 0 }
             if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
@@ -51,42 +69,47 @@ jobs:
           throw "Production dependency audit failed after 3 attempts."
 
       - name: Run source validation
-        shell: pwsh
         run: npm run check
 
-      - name: Run tests
-        shell: pwsh
-        run: npm test --if-present
+      - name: Run all regression tests
+        run: npm test
 
-      - name: Run Electron renderer smoke test
+      - name: Run Electron behavior and layout smoke test
         shell: pwsh
         run: |
           & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
           if ($LASTEXITCODE -ne 0) {
-            throw "Electron renderer smoke test failed with exit code $LASTEXITCODE"
+            throw "Electron behavior smoke test failed with exit code $LASTEXITCODE"
           }
+
+      - name: Upload behavior evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextHalo-Behavior-Evidence
+          path: qa-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build portable Windows EXE
-        shell: pwsh
         run: npm run build:portable -- --publish never
 
-      - name: Verify portable EXE
+      - name: Verify portable EXE and record checksum
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path "dist" -File -Filter "ContextHalo-Windows-x64.exe" | Select-Object -First 1
-          if (-not $exe) {
-            Write-Host "Contents of dist/:"
-            Get-ChildItem -Path "dist" -Recurse | Select-Object FullName, Length
-            throw "Portable Windows EXE was not produced."
-          }
-          Write-Host "Portable EXE: $($exe.FullName)"
-          Write-Host "Size: $([math]::Round($exe.Length / 1MB, 2)) MB"
+          $exe = Get-Item "dist/ContextHalo-Windows-x64.exe"
+          if ($exe.Length -lt 1MB) { throw "Portable EXE is unexpectedly small." }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ContextHalo-Windows-x64.exe" | Set-Content -Encoding utf8 "dist/SHA256SUMS.txt"
+          Write-Host "Portable EXE SHA-256: $hash"
 
       - name: Upload portable EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: ContextHalo-Windows-x64-Portable
-          path: dist/ContextHalo-Windows-x64.exe
+          path: |
+            dist/ContextHalo-Windows-x64.exe
+            dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
 
@@ -95,35 +118,15 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-2022
+    timeout-minutes: 10
     permissions:
       contents: write
-
     steps:
       - name: Download portable EXE
         uses: actions/download-artifact@v5
         with:
           name: ContextHalo-Windows-x64-Portable
           path: release
-
-      - name: Remove stale pre-ContextHalo releases
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $legacyProductFirst = -join (67, 104, 101, 97, 116, 105, 110, 103 | ForEach-Object { [char]$_ })
-          $legacyProductSecond = -join (68, 97, 100, 100, 121 | ForEach-Object { [char]$_ })
-          $legacyRepoA = -join (85, 112, 100, 97, 116, 101, 100, 95, 80, 117, 98, 108, 105, 99, 95, 82, 101, 112, 111 | ForEach-Object { [char]$_ })
-          $legacyRepoB = -join (76, 105, 118, 101, 95, 72, 101, 108, 112, 101, 114 | ForEach-Object { [char]$_ })
-          $pattern = "(?i)$([regex]::Escape($legacyProductFirst))[ _-]?$([regex]::Escape($legacyProductSecond))|$([regex]::Escape($legacyRepoA))|$([regex]::Escape($legacyRepoB))"
-          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
-          foreach ($release in $releases) {
-            $assetNames = ($release.assets | ForEach-Object { $_.name }) -join ' '
-            $searchText = "$($release.name)`n$($release.body)`n$assetNames"
-            if ($searchText -match $pattern) {
-              Write-Host "Deleting stale release id $($release.id)"
-              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)"
-            }
-          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -132,4 +135,6 @@ jobs:
           name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: release/ContextHalo-Windows-x64.exe
+          files: |
+            release/ContextHalo-Windows-x64.exe
+            release/SHA256SUMS.txt

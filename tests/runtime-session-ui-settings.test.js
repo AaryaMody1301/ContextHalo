@@ -44,7 +44,8 @@ test('model selectors are readable and capability restricted', () => {
     assert.ok(shared.includes('select.control option'));
     assert.ok(registry.includes('allowAdvanced: false'));
     assert.ok(registry.includes('all: catalog?.live || []'));
-    assert.ok(registry.includes('result.data.recommended?.live'));
+    assert.ok(registry.includes('Discovery must not silently overwrite manual IDs'));
+    assert.ok(!registry.includes('await this._saveGeminiLiveModel(result.data.recommended'));
 });
 
 test('Settings exposes session, AI behavior and emergency erase controls', () => {

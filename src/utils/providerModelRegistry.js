@@ -71,7 +71,7 @@ function buildGeminiCatalog(rawModels) {
         screen,
         recommended: {
             live: pick(live, ['gemini-3.1-flash-live-preview', 'gemini-omni-1.1-flash']),
-            screen: pick(screen, ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
+            screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
         },
     };
 }

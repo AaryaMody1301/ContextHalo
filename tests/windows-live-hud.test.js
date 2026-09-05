@@ -23,7 +23,7 @@ test('live HUD respects an offset work area and remains inside the display', () 
     const workArea = { x: 100, y: 50, width: 1366, height: 728 };
     const bounds = getHudBounds({ workArea });
 
-    assert.deepEqual(bounds, { x: 387, y: 74, width: 792, height: 364 });
+    assert.deepEqual(bounds, { x: 387, y: 74, width: 792, height: 520 });
     assert.ok(bounds.x >= workArea.x);
     assert.ok(bounds.y >= workArea.y);
     assert.ok(bounds.x + bounds.width <= workArea.x + workArea.width);
@@ -75,11 +75,32 @@ test('renderer loads the Windows HUD layer before runtime hardening', () => {
     assert.match(hudSource, /currentView === 'assistant'/);
 });
 
-test('existing renderer hardening can still bind the maximize caption button', () => {
+test('maximize caption has one Lit handler, not a second imperative toggle', () => {
     const hardeningSource = read('src/utils/runtimeHardeningRenderer.js');
-    const hudSource = read('src/utils/windowsHudRenderer.js');
+    const appSource = read('src/components/app/ContextHaloApp.js');
+    assert.doesNotMatch(hardeningSource, /maximizeButton.addEventListener/);
+    assert.match(appSource, /@click=\$\{\(\) => this._handleMaximize\(\)\}/);
+});
 
-    assert.match(hardeningSource, /querySelector\('\.traffic-light\.maximize'\)/);
-    assert.match(hardeningSource, /window-toggle-maximize/);
-    assert.match(hudSource, /\.traffic-light\.maximize/);
+
+test('returning from HUD restores the maximized state and original normal bounds', () => {
+    const { createWindowModeController } = require('../src/utils/windowModeController');
+    const original = { x: 50, y: 60, width: 900, height: 650 };
+    let bounds = { x: 0, y: 0, width: 1920, height: 1040 };
+    let maximized = true;
+    const window = {
+        getBounds: () => bounds, getNormalBounds: () => original,
+        isDestroyed: () => false, isMaximized: () => maximized,
+        unmaximize() { maximized = false; bounds = { width: 700, height: 320, x: 0, y: 0 }; },
+        maximize() { maximized = true; }, setBounds(value) { bounds = value; },
+        setContentProtection() {}, setBackgroundMaterial() {}, setMinimumSize() {},
+        setResizable() {}, setSkipTaskbar() {}, setAlwaysOnTop() {}, setIgnoreMouseEvents() {}, moveTop() {},
+    };
+    const display = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+    const controller = createWindowModeController(window, { getDisplayMatching: () => display });
+    controller.enterHudMode();
+    assert.equal(maximized, false);
+    controller.enterNormalMode();
+    assert.equal(maximized, true);
+    assert.deepEqual(bounds, original);
 });

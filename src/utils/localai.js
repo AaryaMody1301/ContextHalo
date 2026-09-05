@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { readSseJson } = require('./sse');
+const { runSessionRequest, assertCurrentRequest, requestIsCurrent, getRequestSignal } = require('./sessionRequests');
 const { getSystemPrompt } = require('./prompts');
 const { sendToRenderer, initializeNewSession, saveConversationTurn } = require('./gemini');
 const {
@@ -29,6 +31,7 @@ let isSpeaking = false;
 let speechBuffers = [];
 let silenceFrameCount = 0;
 let speechFrameCount = 0;
+let speechBytes = 0;
 
 const VAD_MODES = {
     NORMAL: { energyThreshold: 0.01, speechFramesRequired: 3, silenceFramesRequired: 30 },
@@ -87,6 +90,7 @@ function processVad(pcm16kBuffer) {
         if (!isSpeaking && speechFrameCount >= vadConfig.speechFramesRequired) {
             isSpeaking = true;
             speechBuffers = [];
+            speechBytes = 0;
             console.log('[LocalAI] Speech started (RMS:', rms.toFixed(4), ')');
             sendToRenderer('update-status', 'Listening... (speech detected)');
         }
@@ -98,6 +102,7 @@ function processVad(pcm16kBuffer) {
             isSpeaking = false;
             const audioData = Buffer.concat(speechBuffers);
             speechBuffers = [];
+            speechBytes = 0;
             console.log('[LocalAI] Speech ended, accumulated', audioData.length, 'bytes');
             sendToRenderer('update-status', 'Transcribing...');
             handleSpeechEnd(audioData);
@@ -107,6 +112,15 @@ function processVad(pcm16kBuffer) {
 
     if (isSpeaking) {
         speechBuffers.push(Buffer.from(pcm16kBuffer));
+        speechBytes += pcm16kBuffer.length;
+        if (speechBytes >= 16000 * 2 * 35) {
+            const audio = Buffer.concat(speechBuffers);
+            speechBuffers = [];
+            speechBytes = 0;
+            isSpeaking = false;
+            speechFrameCount = 0;
+            void handleSpeechEnd(audio);
+        }
     }
 }
 
@@ -154,11 +168,16 @@ async function transcribeAudio(pcm16kBuffer) {
 
     const result = await response.json();
     const text = result.text?.trim() || '';
-    console.log('[LocalAI] Transcription:', text);
     return text;
 }
 
-async function handleSpeechEnd(audioData) {
+function handleSpeechEnd(audioData) {
+    return runSessionRequest('voice', () => handleSpeechEndNow(audioData), { timeoutMs: 180000 }).catch(error => {
+        if (error.name !== 'AbortError') sendToRenderer('update-status', error.message);
+    });
+}
+
+async function handleSpeechEndNow(audioData) {
     if (!isLocalActive) return;
 
     if (audioData.length < 16000) {
@@ -169,6 +188,7 @@ async function handleSpeechEnd(audioData) {
 
     try {
         const transcription = await transcribeAudio(audioData);
+        assertCurrentRequest();
 
         if (!transcription || transcription.length < 2) {
             console.log('[LocalAI] Empty transcription, skipping');
@@ -185,30 +205,13 @@ async function handleSpeechEnd(audioData) {
 }
 
 async function readStreamingResponse(response, onText) {
-    const decoder = new TextDecoder();
-    let pendingText = '';
     let fullText = '';
-
-    for await (const chunk of response.body) {
-        pendingText += decoder.decode(chunk, { stream: true });
-        const lines = pendingText.split('\n');
-        pendingText = lines.pop() || '';
-
-        for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-
-            const data = line.slice(6).trim();
-            if (!data || data === '[DONE]') continue;
-
-            const event = JSON.parse(data);
-            const token = event.choices?.[0]?.delta?.content || '';
-            if (!token) continue;
-
-            fullText += token;
-            onText(fullText);
-        }
+    for await (const event of readSseJson(response.body, getRequestSignal())) {
+        assertCurrentRequest();
+        const token = event.choices?.[0]?.delta?.content || '';
+        if (token) { fullText += token; onText(fullText); }
     }
-
+    if (!fullText.trim()) throw new Error('Local model returned no text. Try a shorter prompt or another model.');
     return fullText;
 }
 
@@ -240,17 +243,18 @@ async function requestLlama(messages, onText) {
 }
 
 async function sendToLlama(transcription) {
-    localConversationHistory.push({
+    let requestHistory = [...requestHistory];
+    requestHistory.push({
         role: 'user',
         content: transcription.trim(),
     });
 
-    if (localConversationHistory.length > 20) {
-        localConversationHistory = localConversationHistory.slice(-20);
+    if (requestHistory.length > 20) {
+        requestHistory = requestHistory.slice(-20);
     }
 
     try {
-        const messages = [{ role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' }, ...localConversationHistory];
+        const messages = [{ role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' }, ...requestHistory];
 
         let isFirst = true;
         const fullText = await requestLlama(messages, text => {
@@ -258,16 +262,14 @@ async function sendToLlama(transcription) {
             isFirst = false;
         });
 
+        assertCurrentRequest();
         if (fullText.trim()) {
-            localConversationHistory.push({
-                role: 'assistant',
-                content: fullText.trim(),
-            });
+            localConversationHistory = [...requestHistory, { role: 'assistant', content: fullText.trim() }];
             saveConversationTurn(transcription, fullText);
         }
 
-        console.log('[LocalAI] Llama response completed');
         sendToRenderer('update-status', 'Listening...');
+        return fullText;
     } catch (error) {
         console.error('[LocalAI] Llama error:', error);
         sendToRenderer('update-status', 'Local AI error: ' + error.message);
@@ -424,30 +426,35 @@ async function startLlamaServer(executablePath, modelPath, projectorPath) {
 }
 
 async function initializeLocalSession(model, whisperModel, profile, customPrompt, language = 'en-US') {
-    currentLanguage = String(language || 'en').split('-')[0] || 'en';
     console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile, language: currentLanguage });
     sendToRenderer('session-initializing', true);
 
     try {
         closeLocalSession();
+        currentLanguage = String(language || 'en').split('-')[0] || 'en';
         initializationController = new AbortController();
         llamaCacheSnapshot = getDirectoryEntries(path.join(getModelsDirectory(), 'llama'));
         currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
         llamaModel = model;
 
-        const nativeFiles = await prepareNativeFiles(model, whisperModel, initializationController.signal);
+        const controller = initializationController;
+        const nativeFiles = await prepareNativeFiles(model, whisperModel, controller.signal);
+        controller.signal.throwIfAborted();
         validatePreparedNativeFiles(nativeFiles);
 
         sendToRenderer('update-status', 'Starting Whisper...');
         sendDownloadProgress('Starting Whisper');
         await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath);
+        controller.signal.throwIfAborted();
 
         sendToRenderer('update-status', 'Loading local language model...');
         sendDownloadProgress('Loading language model');
         await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath);
+        controller.signal.throwIfAborted();
 
         isSpeaking = false;
         speechBuffers = [];
+        speechBytes = 0;
         silenceFrameCount = 0;
         speechFrameCount = 0;
         resampleRemainder = Buffer.alloc(0);
@@ -501,6 +508,7 @@ function closeLocalSession() {
     llamaModel = null;
     isSpeaking = false;
     speechBuffers = [];
+    speechBytes = 0;
     silenceFrameCount = 0;
     speechFrameCount = 0;
     resampleRemainder = Buffer.alloc(0);
@@ -534,8 +542,8 @@ async function sendLocalText(text) {
     }
 
     try {
-        await sendToLlama(text);
-        return { success: true };
+        const answer = await sendToLlama(text);
+        return { success: true, text: answer, model: llamaModel };
     } catch (error) {
         return { success: false, error: error.message };
     }
@@ -559,16 +567,17 @@ async function sendLocalImage(base64Data, prompt) {
         ],
     };
 
-    localConversationHistory.push({ role: 'user', content: prompt });
-    if (localConversationHistory.length > 20) {
-        localConversationHistory = localConversationHistory.slice(-20);
+    let requestHistory = [...requestHistory];
+    requestHistory.push({ role: 'user', content: prompt });
+    if (requestHistory.length > 20) {
+        requestHistory = requestHistory.slice(-20);
     }
 
     try {
         sendToRenderer('update-status', 'Analyzing image...');
         const messages = [
             { role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' },
-            ...localConversationHistory.slice(0, -1),
+            ...requestHistory.slice(0, -1),
             userMessage,
         ];
 
@@ -578,8 +587,9 @@ async function sendLocalImage(base64Data, prompt) {
             isFirst = false;
         });
 
+        assertCurrentRequest();
         if (fullText.trim()) {
-            localConversationHistory.push({ role: 'assistant', content: fullText.trim() });
+            localConversationHistory = [...requestHistory, { role: 'assistant', content: fullText.trim() }];
             saveConversationTurn(prompt, fullText);
         }
 

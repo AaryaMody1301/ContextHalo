@@ -1,5 +1,5 @@
 const REQUEST_TIMEOUT_MS = 27000;
-const FALLBACK_MODEL = 'gemini-3.6-flash';
+const FALLBACK_MODEL = 'gemini-3.7-flash';
 const MAX_OUTPUT_TOKENS = 4096;
 
 const RETRYABLE_ANALYZE_PATTERNS = [
@@ -20,6 +20,7 @@ const RETRYABLE_ANALYZE_PATTERNS = [
     /timed?\s*out/i,
     /timeout/i,
     /deadline/i,
+    /empty analyze screen response/i,
 ];
 
 function delay(ms) {
@@ -81,7 +82,7 @@ function installAnalyzeProviderFallback() {
             // to the existing async-iterator contract. This avoids a stream that can
             // hang while preserving the renderer's current response handling.
             models.generateContentStream = async params => {
-                const requestedModel = params?.model || 'gemini-3.7-flash';
+                const requestedModel = params?.model || 'gemini-3.8-flash';
                 const modelChain = [...new Set([requestedModel, FALLBACK_MODEL])];
                 let lastError = null;
                 global.__lastAnalyzeActualModel = null;
@@ -98,10 +99,6 @@ function installAnalyzeProviderFallback() {
                                     Number(params?.config?.maxOutputTokens) || MAX_OUTPUT_TOKENS,
                                     MAX_OUTPUT_TOKENS
                                 ),
-                                thinkingConfig: {
-                                    ...(params?.config?.thinkingConfig || {}),
-                                    thinkingLevel: genai.ThinkingLevel?.LOW || 'low',
-                                },
                                 httpOptions: {
                                     ...(params?.config?.httpOptions || {}),
                                     timeout: REQUEST_TIMEOUT_MS,

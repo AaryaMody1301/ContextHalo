@@ -26,12 +26,11 @@ test('capture selections and regions are normalized before main-process use', ()
     });
     assert.equal(sanitizeSelection({ kind: 'unsafe', sourceId: 'x' }).kind, 'active-display');
 
-    assert.deepEqual(normalizeRegion({ x: 0.1, y: 0.2, width: 0.5, height: 0.4 }), {
-        x: 0.1,
-        y: 0.2,
-        width: 0.5,
-        height: 0.4,
-    });
+    const region = normalizeRegion({ x: 0.1, y: 0.2, width: 0.5, height: 0.4 });
+    assert.ok(Math.abs(region.width - 0.5) < 1e-10);
+    assert.ok(Math.abs(region.height - 0.4) < 1e-10);
+    assert.equal(normalizeRegion({ x: 1, y: 0, width: 0.5, height: 0.4 }), null);
+    assert.equal(normalizeRegion({ x: -2, y: 0, width: 0.5, height: 0.4 }), null);
     assert.equal(normalizeRegion({ x: 0, y: 0, width: 0.001, height: 0.4 }), null);
 });
 
@@ -102,5 +101,6 @@ test('session pack runtime injects context into Gemini, Groq, and local chat wit
     assert.match(packMain, /live\.connect/);
     assert.match(packMain, /systemInstruction/);
     assert.match(packMain, /sessionPack/);
-    assert.match(packMain, /previousSaveSession/);
+    assert.doesNotMatch(packMain, /previousSaveSession/);
+    assert.match(read('src/storage.js'), /sanitizeSessionPack\(data.sessionPack\)/);
 });

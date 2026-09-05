@@ -67,8 +67,8 @@ test('realtime context runtime observes all supported transcript paths without r
     assert.match(main, /audio\/transcriptions/);
     assert.match(main, /pathname\.includes\('\/inference'\)/);
     assert.match(main, /tuneChatRequestBody/);
-    assert.match(main, /liveTranscript/);
-    assert.match(main, /markers/);
+    assert.match(read('src/storage.js'), /liveTranscript/);
+    assert.match(read('src/storage.js'), /markers/);
     assert.match(preload, /live-transcript/);
     assert.ok(index.indexOf('installProviderRuntimeHardening();') < index.indexOf('installRealtimeContextMain();'));
     assert.ok(index.indexOf('installRealtimeContextMain();') < index.indexOf("require('./utils/gemini')"));

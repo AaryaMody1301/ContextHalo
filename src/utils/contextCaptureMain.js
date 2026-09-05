@@ -40,7 +40,7 @@ function getStoredSelection() {
 
 function saveSelection(selection) {
     const normalized = sanitizeSelection(selection);
-    storage.updatePreference('captureSource', normalized);
+    if (!storage.updatePreference('captureSource', normalized)) throw new Error('Could not save capture source');
     return normalized;
 }
 
@@ -159,12 +159,12 @@ function normalizeRegion(region) {
     if (![x, y, width, height].every(Number.isFinite)) return null;
     if (width < 0.01 || height < 0.01) return null;
 
-    return {
-        x: Math.max(0, Math.min(1, x)),
-        y: Math.max(0, Math.min(1, y)),
-        width: Math.max(0.01, Math.min(1 - Math.max(0, x), width)),
-        height: Math.max(0.01, Math.min(1 - Math.max(0, y), height)),
-    };
+    const left = Math.max(0, Math.min(1, x));
+    const top = Math.max(0, Math.min(1, y));
+    const right = Math.max(0, Math.min(1, x + width));
+    const bottom = Math.max(0, Math.min(1, y + height));
+    if (right - left < 0.01 || bottom - top < 0.01) return null;
+    return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function selectRegion(mainWindow) {
@@ -252,7 +252,7 @@ function setupContextCaptureMain(mainWindow, ipcMain) {
     if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
     installDisplayCaptureHandler(mainWindow);
 
-    const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
+    const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
     const installHandler = (channel, handler) => {
         try { ipcMain.removeHandler(channel); } catch {}
         ipcMain.handle(channel, async (event, ...args) => {

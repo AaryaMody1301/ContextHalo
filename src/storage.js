@@ -1,15 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { randomUUID } = require('node:crypto');
 
-const CONFIG_VERSION = 5;
+const CONFIG_VERSION = 6;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
     onboarded: false,
     layout: 'normal',
     geminiLiveModel: 'gemini-3.1-flash-live-preview',
-    geminiHttpModel: 'gemini-3.7-flash',
+    geminiHttpModel: 'gemini-3.8-flash',
     groqModel: 'openai/gpt-oss-120b',
     groqImageModel: 'qwen/qwen3.6-27b',
     groqTranscriptionModel: 'whisper-large-v3-turbo',
@@ -91,11 +92,14 @@ function readJsonFile(filePath, defaultValue) {
 }
 
 function writeJsonFile(filePath, data) {
+    const temporary = `${filePath}.${randomUUID()}.tmp`;
     try {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(temporary, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+        fs.renameSync(temporary, filePath);
         return true;
     } catch (error) {
+        try { fs.unlinkSync(temporary); } catch {}
         console.error(`Error writing ${filePath}:`, error.message);
         return false;
     }
@@ -165,6 +169,15 @@ function writeCredentialsFile(credentials) {
         });
     }
 
+    if (os.platform() === 'win32') {
+        try {
+            if (require('electron').app?.isPackaged) {
+                throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
+            }
+        } catch (error) {
+            if (error.code !== 'MODULE_NOT_FOUND') throw error;
+        }
+    }
     // Plain JSON remains only as a development/test fallback when Electron's
     // Windows DPAPI-backed safeStorage API is not available (for example node:test).
     return writeJsonFile(getCredentialsPath(), normalized);
@@ -186,6 +199,9 @@ function migrateConfig(rawConfig = {}) {
         config.geminiLiveModel = DEFAULT_CONFIG.geminiLiveModel;
     }
     if (!config.geminiHttpModel || RETIRED_GEMINI_HTTP_MODELS.has(config.geminiHttpModel)) {
+        config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
+    }
+    if (previousVersion < 6 && source.geminiHttpModel === 'gemini-3.7-flash') {
         config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
     }
     if (previousVersion < 4 && source.groqModel === 'qwen/qwen3.6-27b') {
@@ -298,15 +314,22 @@ function incrementCharUsage(provider, model, charCount) {
 }
 function getAvailableModel() { return getConfig().geminiHttpModel || DEFAULT_CONFIG.geminiHttpModel; }
 function getModelForToday() { return getConfig().groqModel; }
-function getSessionPath(sessionId) { return path.join(getHistoryDir(), `${sessionId}.json`); }
+function getSessionPath(sessionId) {
+    if (typeof sessionId !== 'string' || !/^\d{1,30}$/.test(sessionId)) throw new Error('Invalid session ID');
+    return path.join(getHistoryDir(), `${sessionId}.json`);
+}
 function saveSession(sessionId, data) {
     const existing = readJsonFile(getSessionPath(sessionId), null);
     return writeJsonFile(getSessionPath(sessionId), {
+        ...(existing || {}),
         sessionId,
         createdAt: existing?.createdAt || Number(sessionId) || Date.now(),
         lastUpdated: Date.now(),
-        profile: data.profile || existing?.profile || null,
-        customPrompt: data.customPrompt || existing?.customPrompt || null,
+        profile: data.profile ?? existing?.profile ?? null,
+        customPrompt: data.customPrompt ?? existing?.customPrompt ?? null,
+        ...(Object.hasOwn(data, 'liveTranscript') ? { liveTranscript: require('./utils/sessionData').sanitizeTranscriptHistory(data.liveTranscript) } : {}),
+        ...(Object.hasOwn(data, 'markers') ? { markers: require('./utils/sessionData').sanitizeMarkers(data.markers) } : {}),
+        ...(Object.hasOwn(data, 'sessionPack') ? { sessionPack: require('./utils/sessionData').sanitizeSessionPack(data.sessionPack) } : {}),
         conversationHistory: data.conversationHistory || existing?.conversationHistory || [],
         screenAnalysisHistory: data.screenAnalysisHistory || existing?.screenAnalysisHistory || [],
     });

@@ -108,109 +108,19 @@ function patchContextHaloFacade() {
     api.__runtimeHardened = true;
 }
 
-function sanitizeRenderedHtml(html) {
-    const parser = new DOMParser();
-    const parsed = parser.parseFromString(String(html || ''), 'text/html');
-    const blockedTags = new Set([
-        'SCRIPT',
-        'STYLE',
-        'IFRAME',
-        'OBJECT',
-        'EMBED',
-        'FORM',
-        'INPUT',
-        'BUTTON',
-        'TEXTAREA',
-        'SELECT',
-        'OPTION',
-        'META',
-        'LINK',
-        'BASE',
-        'SVG',
-        'MATH',
-    ]);
-    const allowedAttributes = new Set(['class', 'data-word']);
-
-    for (const element of Array.from(parsed.body.querySelectorAll('*'))) {
-        if (blockedTags.has(element.tagName)) {
-            element.replaceWith(parsed.createTextNode(element.textContent || ''));
-            continue;
-        }
-
-        for (const attribute of Array.from(element.attributes)) {
-            const name = attribute.name.toLowerCase();
-            if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
-                element.removeAttribute(attribute.name);
-                continue;
-            }
-
-            if (element.tagName === 'A' && name === 'href') {
-                try {
-                    const url = new URL(attribute.value);
-                    if (!['http:', 'https:'].includes(url.protocol)) {
-                        element.removeAttribute('href');
-                    } else {
-                        element.setAttribute('rel', 'noopener noreferrer');
-                    }
-                } catch {
-                    element.removeAttribute('href');
-                }
-                continue;
-            }
-
-            if (!allowedAttributes.has(name)) element.removeAttribute(attribute.name);
-        }
-    }
-
-    return parsed.body.innerHTML;
-}
-
-function waitForIpcEvent(channel, timeoutMs, timeoutMessage) {
-    return new Promise(resolve => {
-        let settled = false;
-        const finish = value => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            ipcRenderer.removeListener(channel, listener);
-            resolve(value);
-        };
-        const listener = (_event, value) => finish(value ?? true);
-        const timer = setTimeout(() => finish({ success: false, error: timeoutMessage }), timeoutMs);
-        ipcRenderer.on(channel, listener);
-    });
-}
-
 async function runAnalyzeScreen() {
     if (analyzePromise) return analyzePromise;
-
-    analyzePromise = (async () => {
-        if (displayCaptureEnded) {
-            return { success: false, error: 'Screen sharing has stopped. End the session and start a new one.' };
-        }
-        if (typeof window.captureManualScreenshot !== 'function') {
-            return { success: false, error: 'Screen capture is not ready.' };
-        }
-
-        const started = waitForIpcEvent('screen-analysis-started', 5000, 'Could not capture a usable screen image.');
-        const completed = waitForIpcEvent('screen-analysis-complete', 60000, 'Analyze Screen timed out after 60 seconds.');
-
-        try {
-            await Promise.resolve(window.captureManualScreenshot());
-        } catch (error) {
-            return { success: false, error: error?.message || String(error) };
-        }
-
-        const startedResult = await started;
-        if (startedResult?.success === false) return startedResult;
-        return await completed;
-    })();
-
-    try {
-        return await analyzePromise;
-    } finally {
-        analyzePromise = null;
-    }
+    let timer;
+    analyzePromise = Promise.race([
+        (async () => {
+            if (displayCaptureEnded) throw new Error('Screen sharing has stopped. Start a new session.');
+            if (typeof window.captureManualScreenshot !== 'function') throw new Error('Screen capture is not ready.');
+            return await window.captureManualScreenshot();
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Analyze Screen timed out after 60 seconds.')), 60000); }),
+    ]).catch(error => ({ success: false, error: error?.message || String(error) }));
+    try { return await analyzePromise; }
+    finally { clearTimeout(timer); analyzePromise = null; }
 }
 
 async function patchAssistantView() {
@@ -219,12 +129,7 @@ async function patchAssistantView() {
     if (!AssistantView || AssistantView.prototype.__runtimeHardened) return;
 
     const proto = AssistantView.prototype;
-    const originalRenderMarkdown = proto.renderMarkdown;
     const originalUpdated = proto.updated;
-
-    proto.renderMarkdown = function (content) {
-        return sanitizeRenderedHtml(originalRenderMarkdown.call(this, content));
-    };
 
     proto.handleScreenAnswer = async function () {
         if (this.isAnalyzing || analyzePromise) return;
@@ -310,8 +215,6 @@ async function patchAppLifecycle() {
 
     const proto = App.prototype;
     const originalHandleStart = proto.handleStart;
-    const originalUpdated = proto.updated;
-
     proto.handleStart = async function (...args) {
         if (this._runtimeStartPromise) return this._runtimeStartPromise;
 
@@ -332,18 +235,6 @@ async function patchAppLifecycle() {
                 currentMainView.requestUpdate();
             }
         }
-    };
-
-    proto.updated = function (changedProperties) {
-        const result = originalUpdated.call(this, changedProperties);
-        const maximizeButton = this.shadowRoot?.querySelector('.traffic-light.maximize');
-        if (maximizeButton && !maximizeButton.dataset.runtimeBound) {
-            maximizeButton.dataset.runtimeBound = 'true';
-            maximizeButton.addEventListener('click', () => {
-                ipcRenderer.invoke('window-toggle-maximize').catch(error => console.error('Maximize failed:', error));
-            });
-        }
-        return result;
     };
 
     proto.__runtimeHardened = true;

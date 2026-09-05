@@ -1,7 +1,6 @@
 const { ipcRenderer } = window.require('electron');
 
 let analysisActive = false;
-
 function localAiSupported() {
     const platform = window.process?.platform;
     const arch = window.process?.arch;

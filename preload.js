@@ -93,6 +93,28 @@ function assertAllowed(list, channel) {
     }
 }
 
+const subscriptions = new Map();
+function subscribe(channel, listener, once = false) {
+    assertAllowed(allowedChannels.on, channel);
+    if (typeof listener !== 'function') throw new TypeError('Listener must be a function');
+    const records = subscriptions.get(channel) || [];
+    const wrapped = (_event, ...args) => {
+        if (once) removeSubscription(channel, listener, wrapped);
+        listener(undefined, ...args);
+    };
+    records.push({ listener, wrapped });
+    subscriptions.set(channel, records);
+    ipcRenderer.on(channel, wrapped);
+}
+function removeSubscription(channel, listener, exact) {
+    const records = subscriptions.get(channel) || [];
+    const index = records.findLastIndex(record => record.listener === listener && (!exact || record.wrapped === exact));
+    if (index < 0) return;
+    ipcRenderer.removeListener(channel, records[index].wrapped);
+    records.splice(index, 1);
+    if (!records.length) subscriptions.delete(channel);
+}
+
 const safeIpcRenderer = {
     invoke(channel, ...args) {
         assertAllowed(allowedChannels.invoke, channel);
@@ -104,22 +126,23 @@ const safeIpcRenderer = {
     },
     on(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        ipcRenderer.on(channel, listener);
+        subscribe(channel, listener);
         return safeIpcRenderer;
     },
     once(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        ipcRenderer.once(channel, listener);
+        subscribe(channel, listener, true);
         return safeIpcRenderer;
     },
     removeListener(channel, listener) {
         assertAllowed(allowedChannels.on, channel);
-        ipcRenderer.removeListener(channel, listener);
+        removeSubscription(channel, listener);
         return safeIpcRenderer;
     },
     removeAllListeners(channel) {
         assertAllowed(allowedChannels.on, channel);
-        ipcRenderer.removeAllListeners(channel);
+        for (const record of subscriptions.get(channel) || []) ipcRenderer.removeListener(channel, record.wrapped);
+        subscriptions.delete(channel);
         return safeIpcRenderer;
     },
 };

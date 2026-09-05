@@ -11,7 +11,7 @@ const {
 test('Analyze fallback remains inside the renderer 60 second watchdog', () => {
     const maximumTwoModelWindow = REQUEST_TIMEOUT_MS * 2 + 1000;
     assert.ok(maximumTwoModelWindow < 60000, `fallback window ${maximumTwoModelWindow}ms must stay below 60s`);
-    assert.equal(FALLBACK_MODEL, 'gemini-3.6-flash');
+    assert.equal(FALLBACK_MODEL, 'gemini-3.7-flash');
 });
 
 test('Analyze fallback recognizes provider capacity and timeout failures', () => {

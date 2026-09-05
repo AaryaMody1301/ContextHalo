@@ -14,9 +14,10 @@ function isTrustedEvent(event, mainWindow) {
 }
 
 function createWindow(sendToRenderer, geminiSessionRef) {
+    const workArea = screen.getPrimaryDisplay().workArea;
     const mainWindow = new BrowserWindow({
-        width: DEFAULT_MAIN_WINDOW_SIZE.width,
-        height: DEFAULT_MAIN_WINDOW_SIZE.height,
+        width: Math.min(DEFAULT_MAIN_WINDOW_SIZE.width, workArea.width),
+        height: Math.min(DEFAULT_MAIN_WINDOW_SIZE.height, workArea.height),
         minWidth: MIN_WINDOW_SIZE.width,
         minHeight: MIN_WINDOW_SIZE.height,
         resizable: true,

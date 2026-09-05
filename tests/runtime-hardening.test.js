@@ -12,7 +12,7 @@ test('Analyze Screen uses serialized retries, stream guards, and lifecycle event
     const renderer = read('src/utils/runtimeHardeningRenderer.js');
     const preload = read('preload.js');
 
-    assert.match(main, /imageRequestQueue/);
+    assert.match(main, /runSessionRequest\('screen'/);
     assert.match(main, /callWithProviderRetry/);
     assert.equal(main.includes('/\\b409\\b/i'), true);
     assert.match(main, /Empty provider response/);
@@ -21,7 +21,7 @@ test('Analyze Screen uses serialized retries, stream guards, and lifecycle event
     assert.match(main, /screen-analysis-started/);
     assert.match(main, /screen-analysis-complete/);
     assert.match(renderer, /runAnalyzeScreen/);
-    assert.match(renderer, /Could not capture a usable screen image/);
+    assert.match(read('src/utils/renderer.js'), /Could not capture a usable screen image/);
     assert.match(renderer, /Analyze Screen timed out after 60 seconds/);
     assert.match(preload, /screen-analysis-started/);
     assert.match(preload, /screen-analysis-complete/);
@@ -62,9 +62,10 @@ test('audio modes and Groq voice use VAD without interleaving microphone and sys
 test('renderer sanitizes model output and tracks capture resources', () => {
     const renderer = read('src/utils/runtimeHardeningRenderer.js');
 
-    assert.match(renderer, /sanitizeRenderedHtml/);
-    assert.match(renderer, /blockedTags/);
-    assert.match(renderer, /name\.startsWith\('on'\)/);
+    const sanitizer = read('src/utils/responseSanitizerRenderer.js');
+    assert.match(sanitizer, /sanitizeAssistantHtml/);
+    assert.match(sanitizer, /DROP_WITH_CONTENT/);
+    assert.match(sanitizer, /name\.startsWith\('on'\)/);
     assert.match(renderer, /trackedMicStreams/);
     assert.match(renderer, /trackedAudioContexts/);
     assert.match(renderer, /Screen sharing stopped/);

@@ -179,7 +179,7 @@ function panelShell(app, tab) {
     title.append(el('span', 'phase4-subtitle', tab === 'knowledge'
         ? 'Local retrieval for Gemini, Groq, and Local AI'
         : tab === 'practice'
-            ? 'Dependency-free recall and mastery checks'
+            ? 'Local recall practice with keyword-based feedback'
             : 'Decisions, actions, questions, topics, and follow-up practice'));
     const close = el('button', 'phase4-close', '×');
     close.type = 'button';

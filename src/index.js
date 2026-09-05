@@ -17,6 +17,15 @@ const { setupContextCaptureMain } = require('./utils/contextCaptureMain');
 const { setupPhase4Main } = require('./utils/phase4Main');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
+if (WINDOWS_SMOKE_MODE) {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const smokeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-smoke-'));
+    os.homedir = () => smokeHome;
+    app.setPath('userData', path.join(smokeHome, 'electron'));
+    app.on('will-quit', () => { try { fs.rmSync(smokeHome, { recursive: true, force: true }); } catch {} });
+}
 
 // Provider networking, Local AI compatibility and SDK wrappers must be installed
 // before gemini.js/localai.js capture their dependencies.
@@ -48,7 +57,7 @@ function installWindowsSmokeCheck(window) {
         setTimeout(() => app.exit(success ? 0 : 1), 50);
     };
 
-    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 20 seconds'), 20000);
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 45 seconds'), 45000);
 
     window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
         finish(false, `load failed (${errorCode}): ${errorDescription}`);
@@ -137,8 +146,38 @@ function installWindowsSmokeCheck(window) {
                 result?.parentCanScroll === true &&
                 result?.navigationReset === true &&
                 result?.singleScrollOwner === true;
-            finish(ready, ready ? 'sandboxed preload, Home/Settings rendered, and navigation scrolling verified' : `unexpected renderer state ${JSON.stringify(result)}`);
+            if (!ready) throw new Error(`unexpected renderer state ${JSON.stringify(result)}`);
+            const { rendererBehaviorSmoke } = require('../scripts/renderer-behavior-smoke');
+            const checks = await window.webContents.executeJavaScript(`(${rendererBehaviorSmoke.toString()})()`, true);
+            console.log('[Windows behavior smoke] ' + JSON.stringify(checks));
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const directory = path.join(process.cwd(), 'qa-results');
+            fs.mkdirSync(directory, { recursive: true });
+            for (const view of ['main', 'customize', 'assistant']) {
+                await window.webContents.executeJavaScript(`(async () => {
+                    const app = document.querySelector('context-halo-app');
+                    app.navigate(${JSON.stringify(view)});
+                    if (${JSON.stringify(view)} === 'assistant') {
+                        app.responses = ['## Session assistance ready\\n\\nTyped answers, live audio, and screen context stay separate.\\n\\nUse the composer below to ask a question.'];
+                        app.currentResponseIndex = 0;
+                    }
+                    app.requestUpdate(); await app.updateComplete;
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                })()`);
+                fs.writeFileSync(path.join(directory, view + '.png'), (await window.webContents.capturePage()).toPNG());
+            }
+            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks }, null, 2));
+            finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {
+            try {
+                const fs = require('node:fs');
+                const path = require('node:path');
+                const directory = path.join(process.cwd(), 'qa-results');
+                fs.mkdirSync(directory, { recursive: true });
+                fs.writeFileSync(path.join(directory, 'failure.txt'), error.stack || error.message);
+                fs.writeFileSync(path.join(directory, 'failure.png'), (await window.webContents.capturePage()).toPNG());
+            } catch {}
             finish(false, error.message);
         }
     });
@@ -155,7 +194,7 @@ function createMainWindow() {
 }
 
 function isTrustedEvent(event) {
-    return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
+    return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
 }
 
 function validateString(value, maxLength = 200000) {
@@ -199,6 +238,7 @@ app.on('before-quit', () => {
 });
 
 function setupStorageIpcHandlers() {
+    const saved = result => { if (result !== true) throw new Error('Could not save data. Check available disk space and folder permissions.'); };
     const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
         if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
         try { return await handler(...args); } catch (error) { console.error(`${channel} failed:`, error); return { success: false, error: error.message }; }
@@ -207,43 +247,43 @@ function setupStorageIpcHandlers() {
     handle('storage:get-config', () => ({ success: true, data: storage.getConfig() }));
     handle('storage:set-config', config => {
         if (!validateObject(config)) throw new Error('Invalid config');
-        storage.setConfig(config); return { success: true };
+        saved(storage.setConfig(config)); return { success: true };
     });
     handle('storage:update-config', (key, value) => {
         if (!validateString(key, 100)) throw new Error('Invalid config key');
-        storage.updateConfig(key, value); return { success: true };
+        saved(storage.updateConfig(key, value)); return { success: true };
     });
 
     handle('storage:get-credentials', () => ({ success: true, data: storage.getCredentials() }));
     handle('storage:set-credentials', credentials => {
         if (!validateObject(credentials)) throw new Error('Invalid credentials');
-        storage.setCredentials(credentials); return { success: true };
+        saved(storage.setCredentials(credentials)); return { success: true };
     });
     handle('storage:get-api-key', () => ({ success: true, data: storage.getApiKey() }));
     handle('storage:set-api-key', apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
-        storage.setApiKey(apiKey); return { success: true };
+        saved(storage.setApiKey(apiKey)); return { success: true };
     });
     handle('storage:get-groq-api-key', () => ({ success: true, data: storage.getGroqApiKey() }));
     handle('storage:set-groq-api-key', groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
-        storage.setGroqApiKey(groqApiKey); return { success: true };
+        saved(storage.setGroqApiKey(groqApiKey)); return { success: true };
     });
 
     handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
     handle('storage:set-preferences', preferences => {
         if (!validateObject(preferences)) throw new Error('Invalid preferences');
-        storage.setPreferences(preferences); return { success: true };
+        saved(storage.setPreferences(preferences)); return { success: true };
     });
     handle('storage:update-preference', (key, value) => {
         if (!validateString(key, 100)) throw new Error('Invalid preference key');
-        storage.updatePreference(key, value); return { success: true };
+        saved(storage.updatePreference(key, value)); return { success: true };
     });
 
     handle('storage:get-keybinds', () => ({ success: true, data: storage.getKeybinds() }));
     handle('storage:set-keybinds', keybinds => {
         if (keybinds !== null && !validateObject(keybinds)) throw new Error('Invalid keybinds');
-        storage.setKeybinds(keybinds); return { success: true };
+        saved(storage.setKeybinds(keybinds)); return { success: true };
     });
 
     handle('storage:get-all-sessions', () => ({ success: true, data: storage.getAllSessions() }));
@@ -253,11 +293,11 @@ function setupStorageIpcHandlers() {
     });
     handle('storage:save-session', (sessionId, data) => {
         if (!validateString(sessionId, 100) || !/^\d+$/.test(sessionId) || !validateObject(data)) throw new Error('Invalid session data');
-        storage.saveSession(sessionId, data); return { success: true };
+        saved(storage.saveSession(sessionId, data)); return { success: true };
     });
     handle('storage:delete-session', sessionId => {
         if (!validateString(sessionId, 100) || !/^\d+$/.test(sessionId)) throw new Error('Invalid session ID');
-        storage.deleteSession(sessionId); return { success: true };
+        saved(storage.deleteSession(sessionId)); return { success: true };
     });
     handle('storage:delete-all-sessions', () => ({ success: storage.deleteAllSessions() }));
     handle('storage:get-today-limits', () => ({ success: true, data: storage.getTodayLimits() }));

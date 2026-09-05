@@ -1,5 +1,3 @@
-const fs = require('node:fs');
-const path = require('node:path');
 const storage = require('../storage');
 
 const SESSION_PACK_MARKER = '[ContextHalo session pack]';
@@ -7,16 +5,7 @@ let installed = false;
 let fetchPatched = false;
 let googleGenAiPatched = false;
 
-function sanitizeSessionPack(value) {
-    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const clean = (field, maxLength) => typeof field === 'string' ? field.trim().slice(0, maxLength) : '';
-    return {
-        title: clean(source.title, 160),
-        goal: clean(source.goal, 1600),
-        notes: clean(source.notes, 6000),
-        clipboardText: clean(source.clipboardText, 12000),
-    };
-}
+const { sanitizeSessionPack } = require('./sessionData');
 
 function formatSessionPack(value) {
     const pack = sanitizeSessionPack(value);
@@ -147,36 +136,8 @@ function patchGeminiLive() {
     }
 }
 
-function patchSessionStorage() {
-    if (storage.saveSession.__sessionPackPatched) return;
-    const previousSaveSession = storage.saveSession.bind(storage);
-    const wrapped = (sessionId, data = {}) => {
-        const previous = storage.getSession(sessionId) || {};
-        const hasIncoming = Object.prototype.hasOwnProperty.call(data, 'sessionPack');
-        const pack = sanitizeSessionPack(hasIncoming ? data.sessionPack : previous.sessionPack);
-        const result = previousSaveSession(sessionId, data);
-        if (!result) return result;
-
-        if (hasIncoming || previous.sessionPack) {
-            try {
-                const session = storage.getSession(sessionId) || { sessionId };
-                session.sessionPack = pack;
-                const historyPath = path.join(storage.getConfigDir(), 'history', `${sessionId}.json`);
-                fs.writeFileSync(historyPath, JSON.stringify(session, null, 2), 'utf8');
-            } catch (error) {
-                console.error('Could not persist session pack:', error.message);
-                return false;
-            }
-        }
-        return true;
-    };
-    Object.defineProperty(wrapped, '__sessionPackPatched', { value: true });
-    storage.saveSession = wrapped;
-}
-
 function installSessionPackMain() {
     if (installed) return;
-    patchSessionStorage();
     patchProviderFetch();
     patchGeminiLive();
     installed = true;

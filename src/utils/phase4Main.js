@@ -124,7 +124,7 @@ function setupPhase4Main(mainWindow, ipcMain) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     initializeKnowledgeStore();
 
-    const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
+    const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
     const installHandler = (channel, handler) => {
         try { ipcMain.removeHandler(channel); } catch {}
         ipcMain.handle(channel, async (event, ...args) => {

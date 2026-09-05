@@ -20,6 +20,11 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             supportedGenerationMethods: ['generateContent', 'countTokens'],
         },
         {
+            name: 'models/gemini-3.8-flash',
+            displayName: 'Gemini 3.8 Flash',
+            supportedGenerationMethods: ['generateContent', 'countTokens'],
+        },
+        {
             name: 'models/gemini-embedding-2',
             displayName: 'Gemini Embedding 2',
             supportedGenerationMethods: ['embedContent'],
@@ -27,9 +32,9 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     ]);
 
     assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.1-flash-live-preview']);
-    assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash']);
+    assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
     assert.equal(catalog.recommended.live, 'gemini-3.1-flash-live-preview');
-    assert.equal(catalog.recommended.screen, 'gemini-3.7-flash');
+    assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
 });
 
 test('Groq catalog keeps all active models while grouping task models conservatively', () => {
@@ -63,4 +68,5 @@ test('Phase 1 wiring preserves manual fallback and makes Groq transcription conf
     assert.match(hardening, /groqTranscriptionModel/);
     assert.match(dynamicUi, /Manual model IDs remain available/i);
     assert.match(dynamicUi, /All provider models \(advanced\)/);
+    assert.match(dynamicUi, /gemini-3\.8-flash/);
 });
