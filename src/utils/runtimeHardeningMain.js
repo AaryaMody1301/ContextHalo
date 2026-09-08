@@ -258,22 +258,6 @@ function shouldForwardAudioChannel(channel) {
     return channel === 'send-audio-content';
 }
 
-function sendScreenAnalysisLifecycle(event, channel, result = null) {
-    if (!event?.sender || event.sender.isDestroyed?.()) return;
-    try {
-        event.sender.send(channel, result);
-    } catch (error) {
-        console.warn(`Could not report ${channel}:`, error.message);
-    }
-}
-
-function normalizeImageResult(result) {
-    if (result?.success === true && Object.prototype.hasOwnProperty.call(result, 'text') && !String(result.text || '').trim()) {
-        return { success: false, error: '503 Empty provider response' };
-    }
-    return result;
-}
-
 function wrapIpcHandler(channel, handler) {
     registeredHandlers.set(channel, handler);
 
@@ -303,28 +287,6 @@ function wrapIpcHandler(channel, handler) {
         return async (event, ...args) => {
             stopRuntimeMacAudio();
             return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'send-image-content') {
-        return (event, ...args) => {
-            sendScreenAnalysisLifecycle(event, 'screen-analysis-started');
-            const queued = runSessionRequest('screen', () =>
-                Promise.resolve(handler(event, ...args)).then(normalizeImageResult),
-                { timeoutMs: 58000 }
-            );
-
-            return queued.then(
-                result => {
-                    sendScreenAnalysisLifecycle(event, 'screen-analysis-complete', result);
-                    return result;
-                },
-                error => {
-                    const result = { success: false, error: error?.message || String(error) };
-                    sendScreenAnalysisLifecycle(event, 'screen-analysis-complete', result);
-                    throw error;
-                }
-            );
         };
     }
 

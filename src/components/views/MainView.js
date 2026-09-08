@@ -71,68 +71,6 @@ export class MainView extends LitElement {
 
         /* ── Cloud promo card ── */
 
-        .cloud-promo {
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            padding: 14px 16px;
-            border-radius: var(--radius-md);
-            border: 1px solid rgba(59, 130, 246, 0.45);
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.09) 100%);
-            cursor: pointer;
-            transition:
-                border-color 0.2s,
-                background 0.2s;
-        }
-
-        .cloud-promo:hover {
-            border-color: rgba(59, 130, 246, 0.65);
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(139, 92, 246, 0.12) 100%);
-            box-shadow:
-                0 0 20px rgba(59, 130, 246, 0.15),
-                0 0 40px rgba(139, 92, 246, 0.08);
-        }
-
-        .cloud-promo-glow {
-            position: absolute;
-            top: -40%;
-            right: -20%;
-            width: 120px;
-            height: 120px;
-            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
-            pointer-events: none;
-        }
-
-        .cloud-promo-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .cloud-promo-title {
-            font-size: var(--font-size-sm);
-            font-weight: var(--font-weight-semibold);
-            color: var(--text-primary);
-        }
-
-        .cloud-promo-arrow {
-            color: var(--accent);
-            font-size: 16px;
-            transition: transform 0.2s;
-        }
-
-        .cloud-promo:hover .cloud-promo-arrow {
-            transform: translateX(2px);
-        }
-
-        .cloud-promo-desc {
-            font-size: var(--font-size-xs);
-            color: var(--text-secondary);
-            line-height: var(--line-height);
-        }
-
         /* ── Form controls ── */
 
         .form-group {
@@ -279,9 +217,8 @@ export class MainView extends LitElement {
 
         select {
             cursor: pointer;
-            appearance: none;
-            color-scheme: dark;
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23999' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            appearance: auto;
+            color-scheme: var(--control-color-scheme, dark);
             background-position: right 8px center;
             background-repeat: no-repeat;
             background-size: 14px;
@@ -290,8 +227,8 @@ export class MainView extends LitElement {
 
         select option,
         select optgroup {
-            background: #191919;
-            color: #f5f5f5;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
         }
 
         textarea {
@@ -382,34 +319,6 @@ export class MainView extends LitElement {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: var(--space-sm);
-        }
-
-        .start-button canvas.btn-aurora {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-        }
-
-        .start-button canvas.btn-dither {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-            opacity: 0.1;
-            mix-blend-mode: overlay;
-            pointer-events: none;
-            image-rendering: pixelated;
-        }
-
-        .start-button .btn-label {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            align-items: center;
             gap: var(--space-sm);
         }
 
@@ -597,17 +506,6 @@ export class MainView extends LitElement {
             pointer-events: none;
         }
 
-        .help-dialog-backdrop {
-            position: fixed;
-            inset: 0;
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: var(--space-lg);
-            background: rgba(0, 0, 0, 0.62);
-        }
-
         .help-dialog {
             width: min(680px, 100%);
             max-height: calc(100vh - 48px);
@@ -663,7 +561,7 @@ export class MainView extends LitElement {
 
         .help-code {
             font-family: var(--font-mono);
-            font-size: 11px;
+            font-size: 13px;
             background: var(--bg-hover);
             padding: 6px 8px;
             border-radius: var(--radius-sm);
@@ -696,7 +594,7 @@ export class MainView extends LitElement {
 
         .help-model-name {
             font-family: var(--font-mono);
-            font-size: 11px;
+            font-size: 13px;
             color: var(--text-primary);
         }
 
@@ -729,10 +627,41 @@ export class MainView extends LitElement {
             color: var(--warning);
             line-height: var(--line-height);
         }
+        .launch-card { padding:20px; border:1px solid var(--border-strong); border-radius:12px; background:var(--bg-surface); display:grid; gap:12px; }
+        .launch-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; }
+        .launch-heading h2 { font-size:20px; line-height:1.35; margin:0; color:var(--text-primary); }
+        .primary-action { flex-shrink:0; min-width:172px; text-align:center; }
+        .start-button { background:var(--accent); color:var(--bg-app); min-height:44px; }
+        .readiness, .launch-summary { margin:0; font-size:14px; line-height:1.6; color:var(--text-secondary); }
+        .setup-choices { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+        .provider-fields { border:0; padding:0; margin:0; min-width:0; }
+        .key-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; margin-top:12px; }
+        .key-actions button { min-height:32px; padding:6px 10px; border:1px solid var(--border); border-radius:6px; }
+        .advanced-models { padding:12px 0; }
+        .advanced-models > summary { cursor:pointer; padding:8px 0; font-size:14px; font-weight:600; }
+        .advanced-models .form-group { margin-top:16px; }
+        button, summary, a { cursor:pointer; }
+        :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+        input, textarea { cursor:text; user-select:text; }
+        .session-status { flex-wrap:wrap; max-height:none; overflow:visible; }
+        .session-status > span:not(.session-status-dot) { flex:1 1 250px; overflow-wrap:anywhere; }
+        .help-dialog:not([open]) { display:none; }
+        .help-dialog::backdrop { background:rgb(0 0 0 / .4); }
+        .help-dialog { max-height:calc(100vh - 32px); max-width:calc(100vw - 32px); }
+        @media (max-width:800px) {
+            :host { padding:48px 20px 28px; }
+            .launch-card { padding:16px; }
+            .launch-heading { flex-wrap:wrap; gap:12px; }
+            .setup-choices { grid-template-columns:1fr; gap:16px; }
+        }
+        @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
     `;
 
     static properties = {
-        unsavedSession: { type: Boolean },
+        unsavedSession: { type: Boolean }, sessionActive: { type: Boolean },
+        onOpenSettings: { type: Function },
+        _configurationLoading: { state: true }, _setupOpen: { state: true },
+        _saveState: { state: true }, _saveError: { state: true },
         onRetrySave: { attribute: false },
         onStart: { type: Function },
         onExternalLink: { type: Function },
@@ -773,6 +702,17 @@ export class MainView extends LitElement {
     constructor() {
         super();
         this.onStart = () => {};
+        this.onOpenSettings = () => {};
+        this.sessionActive = false;
+        this._configurationLoading = true;
+        this._setupOpen = true;
+        this._saveState = '';
+        this._saveError = '';
+        this._configurationWrites = Promise.resolve();
+        this._configurationVersion = 0;
+        this._failedConfigurationWrites = new Map();
+        this._audioMode = 'speaker_only';
+        this._searchRequested = false;
         this.onExternalLink = () => {};
         this.selectedProfile = 'interview';
         this.onProfileChange = () => {};
@@ -817,6 +757,8 @@ export class MainView extends LitElement {
                 contextHalo.storage.getCredentials().catch(() => ({})),
             ]);
 
+            this._audioMode = prefs.audioMode || 'speaker_only';
+            this._searchRequested = prefs.googleSearchEnabled === true;
             const storedMode = prefs.providerMode || 'byok';
             this._mode = storedMode === 'cloud' ? 'byok' : storedMode;
 
@@ -843,10 +785,11 @@ export class MainView extends LitElement {
             if (this._geminiKey.trim()) void this._refreshProviderModels('gemini');
             if (this._groqKey.trim()) void this._refreshProviderModels('groq');
 
+            this._setupOpen = !this._hasConfiguredProvider();
             this.requestUpdate();
-        } catch (e) {
-            console.error('Error loading MainView storage:', e);
-        }
+        } catch {
+            this._saveError = 'Configuration could not be loaded. Retry loading before starting.';
+        } finally { this._configurationLoading = false; }
     }
 
     connectedCallback() {
@@ -863,6 +806,7 @@ export class MainView extends LitElement {
         window.removeEventListener('session-context-changed', this._contextChanged);
         window.removeEventListener('realtime-context-changed', this._contextChanged);
         document.removeEventListener('keydown', this.boundKeydownHandler);
+        this.shadowRoot.querySelector('.help-dialog')?.close();
         for (const timer of Object.values(this._catalogTimers)) clearTimeout(timer);
         this._catalogEpochs.gemini++;
         this._catalogEpochs.groq++;
@@ -885,25 +829,47 @@ export class MainView extends LitElement {
     }
 
     async _saveMode(mode) {
+        if (this.sessionActive || this.isInitializing || !['byok', 'groq', 'local'].includes(mode)) return;
         if (mode === 'local' && !this._localAiSupported()) {
-            this.startError = `Local AI is unavailable on ${window.process?.platform}/${window.process?.arch}. Choose Gemini or Groq.`;
+            this.startError = 'Local AI is unavailable on this platform. Choose Gemini or Groq.';
             return;
         }
         this._mode = mode;
-        this._tokenError = false;
         this._keyError = false;
-        await contextHalo.storage.updatePreference('providerMode', mode);
-        this.requestUpdate();
+        this._setupOpen = !this._hasConfiguredProvider();
+        return this._persistConfiguration('preference', 'providerMode', mode);
     }
 
-    async _saveToken(val) {
-        this._token = val;
-        this._tokenError = false;
-        try {
-            const creds = await contextHalo.storage.getCredentials().catch(() => ({}));
-            await contextHalo.storage.setCredentials({ ...creds, cloudToken: val });
-        } catch (e) {}
-        this.requestUpdate();
+    _persistConfiguration(kind, key, value) {
+        const version = ++this._configurationVersion;
+        this._saveState = 'saving';
+        this._saveError = '';
+        const write = () => kind === 'profile' ? this.onProfileChange(value)
+            : kind === 'config' ? contextHalo.storage.updateConfig(key, value) : contextHalo.storage.updatePreference(key, value);
+        const pending = this._configurationWrites.catch(() => {}).then(async () => {
+            try {
+                const result = await write();
+                if (result?.success === false) throw new Error('Write failed');
+                this._failedConfigurationWrites.delete(key);
+                return true;
+            } catch {
+                this._failedConfigurationWrites.set(key, { kind, key, value });
+                return false;
+            } finally {
+                if (version === this._configurationVersion) {
+                    this._saveState = this._failedConfigurationWrites.size ? 'failed' : 'saved';
+                    this._saveError = this._failedConfigurationWrites.size ? 'Configuration changes were not saved. Your edits are retained; retry before starting.' : '';
+                }
+            }
+        });
+        this._configurationWrites = pending;
+        return pending;
+    }
+
+    _retryConfiguration() {
+        if (this._failedConfigurationWrites.size) return Promise.all([...this._failedConfigurationWrites.values()].map(({ kind, key, value }) => this._persistConfiguration(kind, key, value)));
+        this._configurationLoading = true;
+        return this._loadFromStorage();
     }
 
     _saveGeminiKey(value) { return this._saveProviderKey('gemini', value); }
@@ -961,55 +927,46 @@ export class MainView extends LitElement {
         }
     }
 
-    async _saveGeminiHttpModel(value) {
+    _saveGeminiHttpModel(value) {
         this._geminiHttpModel = value;
-        await contextHalo.storage.updateConfig('geminiHttpModel', value);
         this.requestUpdate();
+        return this._persistConfiguration('config', 'geminiHttpModel', value);
     }
 
-    async _saveGroqTranscriptionModel(value) {
+    _saveGroqTranscriptionModel(value) {
         this._groqTranscriptionModel = value;
-        await contextHalo.storage.updateConfig('groqTranscriptionModel', value);
         this.requestUpdate();
+        return this._persistConfiguration('config', 'groqTranscriptionModel', value);
     }
 
-    async _saveGeminiLiveModel(val) {
-        this._geminiLiveModel = val;
-        await contextHalo.storage.updateConfig('geminiLiveModel', val);
+    _saveGeminiLiveModel(value) {
+        this._geminiLiveModel = value;
         this.requestUpdate();
+        return this._persistConfiguration('config', 'geminiLiveModel', value);
     }
 
-    async _saveGroqModel(val) {
-        this._groqModel = val;
-        await contextHalo.storage.updateConfig('groqModel', val);
+    _saveGroqModel(value) {
+        this._groqModel = value;
         this.requestUpdate();
+        return this._persistConfiguration('config', 'groqModel', value);
     }
 
-    async _saveGroqImageModel(val) {
-        this._groqImageModel = val;
-        await contextHalo.storage.updateConfig('groqImageModel', val);
+    _saveGroqImageModel(value) {
+        this._groqImageModel = value;
         this.requestUpdate();
+        return this._persistConfiguration('config', 'groqImageModel', value);
     }
 
-    async _saveDisableGroqThinking(disabled) {
-        this._disableGroqThinking = disabled;
-        await contextHalo.storage.updateConfig('disableGroqThinking', disabled);
+    _saveDisableGroqThinking(value) {
+        this._disableGroqThinking = value;
         this.requestUpdate();
+        return this._persistConfiguration('config', 'disableGroqThinking', value);
     }
 
-    async _saveOpenaiKey(val) {
-        this._openaiKey = val;
-        try {
-            const creds = await contextHalo.storage.getCredentials().catch(() => ({}));
-            await contextHalo.storage.setCredentials({ ...creds, openaiKey: val });
-        } catch (e) {}
+    _saveLocalLlmModel(value) {
+        this._localLlmModel = value;
         this.requestUpdate();
-    }
-
-    async _saveLocalLlmModel(val) {
-        this._localLlmModel = val;
-        await contextHalo.storage.updatePreference('localLlmModel', val);
-        this.requestUpdate();
+        return this._persistConfiguration('preference', 'localLlmModel', value);
     }
 
     async _selectLocalLlmModel(value) {
@@ -1023,53 +980,75 @@ export class MainView extends LitElement {
         await this._saveLocalLlmModel(value);
     }
 
-    async _saveWhisperModel(val) {
-        this._whisperModel = val;
-        await contextHalo.storage.updatePreference('whisperModel', val);
+    _saveWhisperModel(value) {
+        this._whisperModel = value;
         this.requestUpdate();
+        return this._persistConfiguration('preference', 'whisperModel', value);
     }
 
     _handleProfileChange(e) {
-        this.onProfileChange(e.target.value);
+        this.selectedProfile = e.target.value;
+        return this._persistConfiguration('profile', 'selectedProfile', this.selectedProfile);
     }
 
-    _openLocalHelp() {
+    async _openLocalHelp() {
         this._showLocalHelp = true;
+        await this.updateComplete;
+        const dialog = this.shadowRoot.querySelector('.help-dialog');
+        if (this.isConnected && dialog && !dialog.open) dialog.showModal();
     }
 
     _closeLocalHelp() {
+        this.shadowRoot.querySelector('.help-dialog')?.close();
         this._showLocalHelp = false;
-    }
-
-    _handleHelpDialogClick(e) {
-        e.stopPropagation();
     }
 
     // ── Start ──
 
     async _handleStart() {
-        if (this.isInitializing || this.downloadProgress.active || this.retryBlocked) return;
-        await this._keySavePromise;
-        if (this._keyError || this.isInitializing) return;
-
-        if (this._mode === 'byok') {
-            if (!this._geminiKey.trim()) {
-                this._keyError = true;
-                this.requestUpdate();
-                return;
-            }
-        } else if (this._mode === 'groq' && !this._groqKey.trim()) {
-            this._keyError = true;
-            this.startError = 'Enter a Groq API key before starting.';
+        if (this.sessionActive) return this.onStart();
+        if (this._configurationLoading || this.isInitializing || this.downloadProgress.active || this.retryBlocked) return;
+        await Promise.all([this._keySavePromise, this._configurationWrites]);
+        if (this._saveError || this._keyError || this.isInitializing) { this._setupOpen = true; return; }
+        if (!this._hasConfiguredProvider()) {
+            this.startError = this._mode === 'local' ? 'Choose a local language model and transcription model before starting.' : `Enter a ${this._mode === 'groq' ? 'Groq' : 'Gemini'} API key and review model settings before starting.`;
+            this._setupOpen = true;
+            this._keyError = this._mode !== 'local';
+            await this.updateComplete;
+            this.shadowRoot.querySelector('#provider-api-key')?.focus();
             return;
-        } else if (this._mode === 'local') {
-            if (!this._localAiSupported()) { this.startError = 'Local AI requires Windows x64 or supported macOS hardware.'; return; }
-            if (!this._localLlmModel.trim()) {
-                return;
-            }
         }
+        if (this._mode === 'local' && !this._localAiSupported()) { this.startError = 'Local AI is unavailable on this platform.'; return; }
+        return this.onStart();
+    }
 
-        this.onStart();
+    _hasConfiguredProvider() {
+        if (this._mode === 'local') return Boolean(this._localLlmModel.trim() && this._whisperModel.trim());
+        return this._mode === 'groq' ? Boolean(this._groqKey.trim() && this._groqModel.trim() && this._groqImageModel.trim() && this._groqTranscriptionModel.trim())
+            : Boolean(this._geminiKey.trim() && this._geminiLiveModel.trim() && this._geminiHttpModel.trim());
+    }
+
+    _readinessSummary() {
+        if (this.sessionActive) return 'A session is active. Return to your answer workspace; capture is unchanged.';
+        if (this._configurationLoading) return 'Loading your saved configuration...';
+        if (this._saveState === 'saving') return 'Saving configuration. Start will wait for it to finish.';
+        if (this._saveError || this._keyError) return 'Resolve the unsaved configuration below before starting.';
+        if (!this._hasConfiguredProvider()) return 'First-time setup: add a provider key below, or choose Local AI.';
+        return this._mode === 'local' ? 'Local setup selected. Runners and models are checked on start; first use may require downloads.'
+            : 'Provider settings saved locally. Credentials and model access are checked when connecting, not verified by this summary.';
+    }
+
+    _renderLaunch() {
+        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI' }[this._mode] || 'Provider';
+        const audio = { speaker_only: 'Speaker audio', mic_only: 'Microphone', both: 'Microphone and speaker audio' }[this._audioMode] || 'Audio input';
+        const { captureState } = getContextState();
+        return html`<section class="launch-card" aria-label="Start or return to session">
+            <div class="launch-heading"><h2>${this.sessionActive ? 'Your session is running' : 'Ready for your next conversation?'}</h2>${this._renderStartButton()}</div>
+            <p class="readiness" role="status">${this._readinessSummary()}</p>
+            <p class="launch-summary">${provider} · ${this.selectedProfile} · ${audio}<br />
+                ${captureState?.label || 'Display hosting ContextHalo'} · ${this._mode !== 'byok' ? 'Search is not supported by this provider' : this._searchRequested ? 'Google Search requested for the next session' : 'Google Search off'}</p>
+            <button type="button" class="mode-link" @click=${this.onOpenSettings}>Change audio, appearance or Search in Settings</button>
+        </section>`;
     }
 
     triggerApiKeyError() {
@@ -1093,26 +1072,13 @@ export class MainView extends LitElement {
             ['negotiation', 'Negotiation'],
             ['exam', 'Exam Assistant'],
         ];
-        return html`
-            <details class="config-section" open>
-                <summary class="config-summary">
-                    <span class="config-summary-text">
-                        <span class="config-summary-title">Session</span>
-                        <span class="config-summary-description">Choose how ContextHalo should assist you</span>
-                    </span>
-                    ${this._renderConfigChevron()}
-                </summary>
-                <div class="config-content">
-                    <div class="form-group">
-                        <label class="form-label">Session Profile</label>
-                        <select .value=${this.selectedProfile} @change=${event => this.onProfileChange(event.target.value)}>
-                            ${profiles.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
-                        </select>
-                        <div class="form-hint">The profile changes the live system prompt for the session.</div>
-                    </div>
-                </div>
-            </details>
-        `;
+        return html`<div class="form-group profile-choice">
+            <label class="form-label" for="session-profile">Session profile</label>
+            <select id="session-profile" .value=${this.selectedProfile} ?disabled=${this.sessionActive || this.isInitializing || this._configurationLoading} @change=${this._handleProfileChange}>
+                ${profiles.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
+            </select>
+            <span class="form-hint">Applied when the next session connects.</span>
+        </div>`;
     }
 
     _renderSessionStatus() {
@@ -1157,96 +1123,15 @@ export class MainView extends LitElement {
     }
 
     _renderStartButton() {
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const isDownloading = this._mode === 'local' && this.downloadProgress.active;
-        const percentage = this.downloadProgress.percentage;
-        const hasPercentage = Number.isFinite(percentage);
-
-        const cmdIcon = html`<svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-        >
-            <path
-                d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"
-            />
-        </svg>`;
-        const ctrlIcon = html`<svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-        >
-            <path d="M6 15l6-6 6 6" />
-        </svg>`;
-        const enterIcon = html`<svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-        >
-            <path d="M9 10l-5 5 5 5" />
-            <path d="M20 4v7a4 4 0 0 1-4 4H4" />
-        </svg>`;
-
-        return html`
-            <button
-                class="start-button ${this.isInitializing || isDownloading ? 'disabled' : ''}"
-                ?disabled=${this.isInitializing || isDownloading || this.retryBlocked}
-                @click=${() => this._handleStart()}
-            >
-                <canvas class="btn-aurora"></canvas>
-                <canvas class="btn-dither"></canvas>
-                ${
-                    isDownloading
-                        ? html`<span
-                              class="download-progress-fill ${hasPercentage ? '' : 'indeterminate'}"
-                              style=${hasPercentage ? `width: ${percentage}%` : ''}
-                          ></span>`
-                        : ''
-                }
-                <span class="btn-label">
-                    ${isDownloading ? (hasPercentage ? `${percentage}%` : 'Preparing...') : this.isInitializing ? 'Starting…' : 'Start Session'}
-                    ${isDownloading ? '' : html`<span class="shortcut-hint">${isMac ? cmdIcon : ctrlIcon}${enterIcon}</span>`}
-                </span>
-            </button>
-            ${
-                isDownloading
-                    ? html`
-                          <div class="download-controls">
-                              <span>Downloading: ${this.downloadProgress.label || 'Local AI files'}</span>
-                              <button class="download-cancel" @click=${() => this.onCancelDownload()}>Cancel</button>
-                          </div>
-                      `
-                    : ''
-            }
-        `;
-    }
-
-    _renderDivider() {
-        return html`
-            <div class="divider">
-                <div class="divider-line"></div>
-                <span class="divider-text">or</span>
-                <div class="divider-line"></div>
-            </div>
-        `;
+        const downloading = this._mode === 'local' && this.downloadProgress.active;
+        return html`<div class="primary-action">
+            <button type="button" class="start-button" aria-describedby="start-shortcut"
+                ?disabled=${!this.sessionActive && (this._configurationLoading || this.isInitializing || downloading || this.retryBlocked)}
+                @click=${this._handleStart}>${this.sessionActive ? 'Return to Session' : downloading ? 'Preparing local AI...' : this.isInitializing ? 'Starting...' : 'Start Session'}</button>
+            <span id="start-shortcut" class="form-hint">${this.shortcut || 'Ctrl+Enter'}</span>
+            ${downloading ? html`<div class="download-controls"><span>${this.downloadProgress.label || 'Downloading local AI files'}${Number.isFinite(this.downloadProgress.percentage) ? `: ${this.downloadProgress.percentage}%` : ''}</span>
+                <button type="button" class="download-cancel" @click=${this.onCancelDownload}>Cancel download</button></div>` : ''}
+        </div>`;
     }
 
     // ── Cloud mode ──
@@ -1263,8 +1148,6 @@ export class MainView extends LitElement {
         `;
     }
 
-    _renderByokMode() { return this._renderHostedProvider('gemini'); }
-    _renderGroqMode() { return this._renderHostedProvider('groq'); }
 
     _renderHostedProvider(provider) {
         const gemini = provider === 'gemini';
@@ -1286,7 +1169,7 @@ export class MainView extends LitElement {
         const loading = gemini ? this._geminiCatalogLoading : this._groqCatalogLoading;
         const error = gemini ? this._geminiCatalogError : this._groqCatalogError;
         return html`
-            <details class="config-section" open>
+            <details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
                 <summary class="config-summary"><span class="config-summary-text">
                     <span class="config-summary-title">${label}</span>
                     <span class="config-summary-description">${gemini ? 'Live audio, typed answers and screen analysis' : 'Transcription, reasoning and vision'}</span>
@@ -1298,21 +1181,19 @@ export class MainView extends LitElement {
                             placeholder="Required" .value=${gemini ? this._geminiKey : this._groqKey}
                             @input=${event => this._saveProviderKey(provider, event.target.value)}
                             aria-invalid=${this._keyError ? 'true' : 'false'} class=${this._keyError ? 'error' : ''} />
-                        <div class="form-hint">
-                            <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : 'https://console.groq.com/keys')}>Get ${label} key</button>
-                            <button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh models'}</button>
+                        <div class="key-actions">
+                            <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : 'https://console.groq.com/keys')}>Open ${label} key settings</button>
+                            <button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh available models'}</button>
                         </div>
                         ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
-                    ${fields.map(field => renderModelPicker(this, field))}
+                    <details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
+                        ${fields.map(field => renderModelPicker(this, field))}
+                    </details>
                     <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live, typed and screen requests share its effective Search setting.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
                 </div>
             </details>
-            ${this.renderPreparation()} ${this._renderStartButton()} ${this._renderDivider()}
-            <div class="mode-links">
-                <button class="mode-link" @click=${() => this._saveMode(gemini ? 'groq' : 'byok')}>Use ${gemini ? 'Groq' : 'Gemini'} API</button>
-                <button class="mode-link" @click=${() => this._saveMode('local')}>Use local AI</button>
-            </div>
+
         `;
     }
 
@@ -1328,8 +1209,8 @@ export class MainView extends LitElement {
                 </summary>
                 <div class="config-content">
                     <div class="form-group">
-                        <label class="form-label">Model</label>
-                        <select
+                        <label class="form-label" for="local-model">Model</label>
+                        <select id="local-model"
                             .value=${this._useCustomLocalLlmModel ? 'custom' : this._localLlmModel}
                             @change=${event => this._selectLocalLlmModel(event.target.value)}
                         >
@@ -1340,7 +1221,7 @@ export class MainView extends LitElement {
                             this._useCustomLocalLlmModel
                                 ? html`
                                       <input
-                                          type="text"
+                                          type="text" aria-label="Custom local model path or repository"
                                           placeholder="owner/repository:quant or /absolute/model.gguf"
                                           .value=${this._localLlmModel}
                                           @input=${event => this._saveLocalLlmModel(event.target.value)}
@@ -1364,10 +1245,10 @@ export class MainView extends LitElement {
                 <div class="config-content">
                     <div class="form-group">
                         <div class="whisper-label-row">
-                            <label class="form-label">Whisper Model</label>
+                            <label class="form-label" for="whisper-model">Whisper model</label>
                             ${this.whisperDownloading ? html`<div class="whisper-spinner"></div>` : ''}
                         </div>
-                        <select .value=${this._whisperModel} @change=${e => this._saveWhisperModel(e.target.value)}>
+                        <select id="whisper-model" .value=${this._whisperModel} @change=${e => this._saveWhisperModel(e.target.value)}>
                             <option value="tiny.en" ?selected=${this._whisperModel === 'tiny.en'}>Tiny English (75 MB, fastest)</option>
                             <option value="base.en" ?selected=${this._whisperModel === 'base.en'}>Base English (142 MB)</option>
                             <option value="small.en" ?selected=${this._whisperModel === 'small.en'}>Small English (466 MB, most accurate)</option>
@@ -1377,61 +1258,46 @@ export class MainView extends LitElement {
                 </div>
             </details>
 
-            ${this.renderPreparation()} ${this._renderStartButton()} ${this._renderDivider()}
+
 
             <!-- Cloud promo intentionally removed from the active UI. -->
 
-            <div class="mode-links">
-                <button class="mode-link" @click=${() => this._saveMode('byok')}>Use Gemini API</button>
-                <button class="mode-link" @click=${() => this._saveMode('groq')}>Use Groq API</button>
-            </div>
         `;
     }
 
     // ── Main render ──
 
     render() {
-        const helpIcon = html`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
-                <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0m9 5v.01" />
-                <path d="M12 13.5a1.5 1.5 0 0 1 1-1.5a2.6 2.6 0 1 0-3-4" />
-            </g>
-        </svg>`;
-        const closeIcon = html`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-            <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 6L6 18M6 6l12 12" />
-        </svg>`;
-
-        return html`
-            <div class="form-wrapper">
-                ${
-                    this._mode === 'local'
-                        ? html`
-                              <div class="title-row">
-                                  <div class="page-title">ContextHalo <span class="mode-suffix">Local AI</span></div>
-                                  <button class="help-btn" @click=${this._openLocalHelp} aria-label="Open Local AI help">${helpIcon}</button>
-                              </div>
-                          `
-                        : html` <div class="page-title">${html`ContextHalo <span class="mode-suffix">${this._mode === 'groq' ? 'Groq API' : 'Gemini API'}</span>`}</div> `
-                }
-                <div class="page-subtitle">${this._mode === 'local' ? 'Run models locally on your machine' : 'Choose your provider and prepare a session'}</div>
+        return html`<div class="form-wrapper">
+            <h1 class="page-title">ContextHalo</h1>
+            ${this._renderLaunch()}
+            ${this._renderSessionStatus()}
+            ${this.unsavedSession ? html`<button type="button" @click=${this.onRetrySave}>Retry saving final transcript</button>` : ''}
+            ${this._saveError ? html`<div class="session-status error" role="alert"><span>${this._saveError}</span><button type="button" class="mode-link" @click=${this._retryConfiguration}>Retry configuration save</button></div>` : ''}
+            <div class="setup-choices">
+                <div class="form-group"><label class="form-label" for="provider-choice">AI provider</label>
+                    <select id="provider-choice" .value=${this._mode} ?disabled=${this.sessionActive || this.isInitializing || this._configurationLoading} @change=${event => this._saveMode(event.target.value)}>
+                        <option value="byok">Gemini API</option><option value="groq">Groq API</option><option value="local">Local AI (on this computer)</option>
+                    </select><span class="form-hint">Uses your own account or local models.</span></div>
                 ${this._renderProfileSelector()}
-                ${this._renderSessionStatus()}
-                ${this.unsavedSession ? html`<button type="button" @click=${this.onRetrySave}>Retry saving final transcript</button>` : ''}
-
-                <!-- Cloud mode render branch intentionally disabled. -->
-                ${this._mode === 'byok' ? this._renderByokMode() : this._mode === 'groq' ? this._renderGroqMode() : this._renderLocalMode()}
             </div>
-            ${this._mode === 'local' && this._showLocalHelp ? this._renderLocalHelp(closeIcon) : ''}
-        `;
+            ${this.sessionActive ? html`<p class="form-hint">Provider and profile changes apply after this session ends.</p>` : ''}
+            <fieldset class="provider-fields" ?disabled=${this.isInitializing || this.sessionActive || this._configurationLoading}>
+                ${this._mode === 'local' ? html`<details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
+                    <summary class="config-summary">Local model setup (advanced)</summary><div class="config-content">
+                    <button type="button" class="mode-link" @click=${this._openLocalHelp}>Local AI setup help</button>${this._renderLocalMode()}</div></details>`
+                    : this._renderHostedProvider(this._mode === 'groq' ? 'groq' : 'gemini')}
+            </fieldset>
+            ${this.renderPreparation()}
+        </div>${this._renderLocalHelp()}`;
     }
 
-    _renderLocalHelp(closeIcon) {
+    _renderLocalHelp() {
         return html`
-            <div class="help-dialog-backdrop" @click=${this._closeLocalHelp}>
-                <section class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="local-help-title" @click=${this._handleHelpDialogClick}>
+            <dialog class="help-dialog" aria-labelledby="local-help-title" @close=${() => { this._showLocalHelp = false; }}>
                     <div class="help-dialog-header">
                         <div id="local-help-title" class="help-dialog-title">Local AI setup</div>
-                        <button class="help-btn" @click=${this._closeLocalHelp} aria-label="Close Local AI help">${closeIcon}</button>
+                        <button class="help-btn" @click=${this._closeLocalHelp} aria-label="Close Local AI help">Close</button>
                     </div>
 
                     <div class="help-content">
@@ -1455,7 +1321,7 @@ export class MainView extends LitElement {
                             <div class="help-section-title">Default model</div>
                             <div class="help-models">
                                 <div class="help-model">
-                                    <span class="help-model-name">Qwen3.5 4B Q4_K_M</span><span>About 2.7 GB — balanced local quality and speed</span>
+                                    <span class="help-model-name">Qwen3.5 4B Q4_K_M</span><span>Download size depends on model and quantization</span>
                                 </div>
                             </div>
                         </div>
@@ -1472,8 +1338,7 @@ export class MainView extends LitElement {
                         <div class="help-section">
                             <div class="help-section-title">Computer hanging or slow?</div>
                             <div class="help-section-text">
-                                Running models locally uses a lot of RAM and CPU. If your computer slows down or freezes, it's likely the LLM. Switch
-                                back to BYOK mode if you want to use a hosted provider instead.
+                                Running models locally uses a lot of RAM and CPU. If your computer slows down or freezes, it's likely the LLM. Choose Gemini or Groq on Home to use a hosted provider instead.
                             </div>
                         </div>
 
@@ -1484,11 +1349,10 @@ export class MainView extends LitElement {
                                 this._saveMode('byok');
                             }}
                         >
-                            Switch to BYOK
+                            Use Gemini instead
                         </button>
                     </div>
-                </section>
-            </div>
+            </dialog>
         `;
     }
 }

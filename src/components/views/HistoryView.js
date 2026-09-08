@@ -7,11 +7,11 @@ export class HistoryView extends LitElement {
         unifiedPageStyles,
         css`
             .unified-page {
-                overflow-y: hidden;
+                overflow: visible;
             }
 
             .unified-wrap {
-                height: 100%;
+                min-height: 100%;
             }
 
             .search-wrap {
@@ -46,8 +46,7 @@ export class HistoryView extends LitElement {
             }
 
             .sessions-list {
-                overflow-y: auto;
-                flex: 1;
+                overflow: visible;
             }
 
             .session-card {
@@ -72,7 +71,9 @@ export class HistoryView extends LitElement {
             .session-left {
                 display: flex;
                 flex-direction: column;
-                gap: 2px;
+                gap: 6px;
+                min-width: 0;
+                overflow-wrap: anywhere;
             }
 
             .session-profile {
@@ -150,8 +151,7 @@ export class HistoryView extends LitElement {
             }
 
             .details-scroll {
-                overflow-y: auto;
-                flex: 1;
+                overflow: visible;
                 min-height: 0;
                 display: flex;
                 flex-direction: column;
@@ -173,7 +173,7 @@ export class HistoryView extends LitElement {
             }
 
             .message {
-                max-width: 75%;
+                max-width: min(90%, 70ch);
                 border-radius: 16px;
                 padding: 8px 12px;
                 word-break: break-word;
@@ -188,9 +188,9 @@ export class HistoryView extends LitElement {
             }
 
             .message-meta {
-                font-size: 10px;
+                font-size: 13px;
                 margin-top: 4px;
-                opacity: 0.5;
+                color: var(--text-secondary);
             }
 
             .message-row.user .message {
@@ -266,6 +266,7 @@ export class HistoryView extends LitElement {
         loading: { type: Boolean },
         activeTab: { type: String },
         searchQuery: { type: String },
+        loadError: { state: true }, detailError: { state: true }, openingSession: { state: true },
     };
 
     constructor() {
@@ -276,40 +277,69 @@ export class HistoryView extends LitElement {
         this.loading = true;
         this.activeTab = 'conversation';
         this.searchQuery = '';
+        this.loadError = '';
+        this.detailError = '';
+        this.openingSession = '';
+        this._listEpoch = 0;
+        this._detailEpoch = 0;
         this.loadSessions();
     }
 
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        this._listEpoch++;
+        this._detailEpoch++;
+    }
+
     async loadSessions() {
+        const epoch = ++this._listEpoch;
+        this.loading = true;
+        this.loadError = '';
         try {
-            this.loading = true;
-            this.sessions = await contextHalo.storage.getAllSessions();
-        } catch (error) {
-            console.error('Error loading sessions:', error);
-            this.sessions = [];
+            const sessions = await contextHalo.storage.getAllSessions();
+            if (!Array.isArray(sessions)) throw new Error('Invalid history response');
+            if (epoch === this._listEpoch) this.sessions = sessions;
+            return true;
+        } catch {
+            if (epoch === this._listEpoch) this.loadError = 'History could not be loaded. Check folder permissions and retry. Previously loaded sessions are kept below.';
+            return false;
         } finally {
-            this.loading = false;
-            this.requestUpdate();
+            if (epoch === this._listEpoch) { this.loading = false; this.requestUpdate(); }
         }
     }
 
     async openSession(sessionId) {
+        const epoch = ++this._detailEpoch;
+        this._retrySessionId = sessionId;
+        this.openingSession = sessionId;
+        this.detailError = '';
         try {
             const session = await contextHalo.storage.getSession(sessionId);
-            if (session) {
-                this.selectedSession = session;
-                this.selectedSessionId = sessionId;
-                this.activeTab = 'conversation';
-                this.requestUpdate();
-            }
-        } catch (error) {
-            console.error('Error loading session:', error);
-        }
+            if (epoch !== this._detailEpoch) return false;
+            if (!session) throw new Error('Missing session');
+            this.selectedSession = session;
+            this.selectedSessionId = sessionId;
+            this.activeTab = 'conversation';
+            this.requestUpdate();
+            await this.updateComplete;
+            // The user chose to open this detail, but may have moved focus meanwhile.
+            const card = this.shadowRoot.activeElement;
+            if (!card || card.dataset?.sessionId === sessionId) this.shadowRoot.querySelector('.back-btn')?.focus();
+            return true;
+        } catch {
+            if (epoch === this._detailEpoch) this.detailError = 'This session could not be opened. It may be missing, unreadable or in an invalid format. Other history is unchanged.';
+            return false;
+        } finally { if (epoch === this._detailEpoch) this.openingSession = ''; }
     }
 
-    closeSession() {
+    async closeSession() {
+        const id = this.selectedSessionId;
+        this._detailEpoch++;
         this.selectedSession = null;
         this.selectedSessionId = null;
         this.activeTab = 'conversation';
+        await this.updateComplete;
+        this.shadowRoot.querySelector(`[data-session-id="${id}"]`)?.focus();
     }
 
     handleSearchInput(e) {
@@ -350,6 +380,11 @@ export class HistoryView extends LitElement {
         return 'Session';
     }
 
+    getSessionTitle(session) {
+        return String(session.title || session.sessionPack?.title || '').trim()
+            || `${this._getProfileLabel(session)} - ${this.formatDate(session.createdAt || Number(session.sessionId || this.selectedSessionId))}`;
+    }
+
     getSessionPreview(session) {
         const parts = [];
         if (session.messageCount > 0) parts.push(`${session.messageCount} messages`);
@@ -363,18 +398,18 @@ export class HistoryView extends LitElement {
 
     getFilteredSessions() {
         if (!this.searchQuery.trim()) return this.sessions;
-        const q = this.searchQuery.toLowerCase();
+        const q = this.searchQuery.trim().normalize('NFKC').toLocaleLowerCase();
         return this.sessions.filter(session => {
             const preview = this.getSessionPreview(session).toLowerCase();
             const date = this.formatDate(session.createdAt).toLowerCase();
-            return preview.includes(q) || date.includes(q);
+            return `${this.getSessionTitle(session)} ${preview} ${date}`.normalize('NFKC').toLocaleLowerCase().includes(q);
         });
     }
 
     collectConversation(session) {
         const messages = [];
-        const history = session.conversationHistory || [];
-        history.forEach(turn => {
+        const history = Array.isArray(session.conversationHistory) ? session.conversationHistory : [];
+        history.filter(turn => turn && typeof turn === 'object').forEach(turn => {
             if (turn.transcription) messages.push({ type: 'user', content: turn.transcription, timestamp: turn.timestamp });
             if (turn.ai_response) messages.push({ type: 'ai', content: turn.ai_response, timestamp: turn.timestamp, grounding: turn.grounding });
         });
@@ -398,7 +433,7 @@ export class HistoryView extends LitElement {
         }
 
         if (this.activeTab === 'screen') {
-            const screen = this.selectedSession.screenAnalysisHistory || [];
+            const screen = Array.isArray(this.selectedSession.screenAnalysisHistory) ? this.selectedSession.screenAnalysisHistory.filter(Boolean) : [];
             if (!screen.length) return html`<div class="empty">No screen analysis data.</div>`;
             return screen.map(entry => html`
                 <div class="message-row screen">
@@ -435,6 +470,7 @@ export class HistoryView extends LitElement {
         return html`
             <div class="page-title">History</div>
 
+            <label class="form-label" for="history-search">Search saved titles, profiles or dates</label>
             <div class="search-wrap">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"/>
@@ -443,25 +479,36 @@ export class HistoryView extends LitElement {
                 <input
                     class="control"
                     type="text"
+                    id="history-search"
                     placeholder="Search sessions..."
                     .value=${this.searchQuery}
                     @input=${this.handleSearchInput}
                 />
             </div>
 
-            <section class="list-shell">
+            <div class="save-feedback" role="status">
+                ${this.loading ? 'Loading sessions...' : this.loadError || ''}
+                ${this.loadError ? html`<button class="control" @click=${this.loadSessions} ?disabled=${this.loading}>Retry loading history</button>` : ''}
+            </div>
+            ${this.detailError ? html`<div class="save-feedback" role="alert"><span>${this.detailError}</span>
+                <button class="control" @click=${() => this.openSession(this._retrySessionId)} ?disabled=${Boolean(this.openingSession)}>Retry opening session</button></div>` : ''}
+            ${this.openingSession ? html`<p role="status">Opening session...</p>` : ''}
+            <section class="list-shell" aria-label="Saved sessions" aria-busy=${this.loading ? 'true' : 'false'}>
                 <div class="sessions-list">
                     ${this.loading ? html`<div class="empty" style="margin:var(--space-md);">Loading sessions...</div>` : ''}
-                    ${!this.loading && filteredSessions.length === 0 ? html`<div class="empty" style="margin:var(--space-md);">No matching sessions.</div>` : ''}
-                    ${!this.loading ? filteredSessions.map(session => html`
-                        <button class="session-card" @click=${() => this.openSession(session.sessionId)}>
+                    ${!this.loading && !this.loadError && filteredSessions.length === 0 ? html`<div class="empty" style="margin:var(--space-md);">
+                        ${this.searchQuery.trim() ? `No sessions match "${this.searchQuery}". Try another title, profile or date.` : 'Your saved sessions will appear here after your first session.'}
+                    </div>` : ''}
+                    ${filteredSessions.map(session => html`
+                        <button class="session-card" data-session-id=${session.sessionId} @click=${() => this.openSession(session.sessionId)}>
                             <div class="session-left">
-                                <span class="session-profile">${this._getProfileLabel(session)}</span>
-                                <span class="session-date">${this.formatDate(session.createdAt)} · ${this.formatTime(session.createdAt)}</span>
+                                <span class="session-profile">${this.getSessionTitle(session)}</span>
+                                <span class="session-date">${this.getSessionPreview(session)} · ${this.formatDate(session.createdAt)} · ${this.formatTime(session.createdAt)}</span>
+                                ${session.unreadable ? html`<span class="session-date">This entry needs attention. Open for recovery options.</span>` : ''}
                             </div>
-                            ${session.messageCount > 0 ? html`<span class="session-badge">${session.messageCount}</span>` : ''}
+                            ${session.messageCount > 0 ? html`<span class="session-badge">${session.messageCount} turns</span>` : ''}
                         </button>
-                    `) : ''}
+                    `)}
                 </div>
             </section>
         `;
@@ -472,9 +519,9 @@ export class HistoryView extends LitElement {
         const screenCount = this.selectedSession?.screenAnalysisHistory?.length || 0;
 
         return html`
-            <div class="page-title">Session Detail</div>
+            <h1 class="page-title">${this.getSessionTitle(this.selectedSession)}</h1>
             <div class="detail-top">
-                <button class="back-btn" @click=${this.closeSession}>
+                <button class="back-btn" aria-label="Back to session history" @click=${this.closeSession}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 18 9 12 15 6"/>
                     </svg>
@@ -482,13 +529,13 @@ export class HistoryView extends LitElement {
                 <span class="detail-info">${this._getProfileLabel(this.selectedSession)} · ${this.formatDate(this.selectedSession.createdAt)} · ${this.formatTime(this.selectedSession.createdAt)}</span>
             </div>
             <div class="tab-row">
-                <button class="tab-btn ${this.activeTab === 'conversation' ? 'active' : ''}" @click=${() => { this.activeTab = 'conversation'; }}>
+                <button aria-pressed=${this.activeTab === 'conversation' ? 'true' : 'false'} class="tab-btn ${this.activeTab === 'conversation' ? 'active' : ''}" @click=${() => { this.activeTab = 'conversation'; }}>
                     Conversation (${conversationCount})
                 </button>
-                <button class="tab-btn ${this.activeTab === 'screen' ? 'active' : ''}" @click=${() => { this.activeTab = 'screen'; }}>
+                <button aria-pressed=${this.activeTab === 'screen' ? 'true' : 'false'} class="tab-btn ${this.activeTab === 'screen' ? 'active' : ''}" @click=${() => { this.activeTab = 'screen'; }}>
                     Screen (${screenCount})
                 </button>
-                <button class="tab-btn ${this.activeTab === 'context' ? 'active' : ''}" @click=${() => { this.activeTab = 'context'; }}>
+                <button aria-pressed=${this.activeTab === 'context' ? 'true' : 'false'} class="tab-btn ${this.activeTab === 'context' ? 'active' : ''}" @click=${() => { this.activeTab = 'context'; }}>
                     Context
                 </button>
             </div>

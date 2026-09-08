@@ -68,7 +68,7 @@ test('model discovery leaves manual choices intact and late catalogs do not upda
 test('failed credential writes block Start until a newer value is securely saved',async()=>{
     const writes=[]; let fail=true;
     const {Target}=componentClass('src/components/views/MainView.js','MainView',{contextHalo:{storage:{setApiKey:async value=>{writes.push(value);return {success:!fail};}}}});
-    let starts=0; const view=Object.assign(Object.create(Target.prototype),{_mode:'byok',_catalogEpochs:{gemini:0},_catalogTimers:{},_keySavePromise:Promise.resolve(),downloadProgress:{active:false},requestUpdate(){},onStart(){starts++;}});
+    let starts=0; const view=Object.assign(Object.create(Target.prototype),{_mode:'byok',_geminiLiveModel:'live',_geminiHttpModel:'http',_catalogEpochs:{gemini:0},_catalogTimers:{},_keySavePromise:Promise.resolve(),downloadProgress:{active:false},requestUpdate(){},onStart(){starts++;}});
     await view._saveGeminiKey('fixture'); await view._handleStart(); assert.equal(starts,0); assert.equal(view._geminiKey,'fixture');
     fail=false; await view._saveGeminiKey('retry'); await view._handleStart(); assert.equal(starts,1); assert.deepEqual(writes,['fixture','retry']);
 });

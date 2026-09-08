@@ -319,7 +319,8 @@ function getSessionPath(sessionId) {
     return path.join(getHistoryDir(), `${sessionId}.json`);
 }
 function saveSession(sessionId, data) {
-    const existing = readJsonFile(getSessionPath(sessionId), null);
+    const existing = getSession(sessionId);
+    sessionMetadata.delete(`${sessionId}.json`);
     return writeJsonFile(getSessionPath(sessionId), {
         ...(existing || {}),
         sessionId,
@@ -334,30 +335,62 @@ function saveSession(sessionId, data) {
         screenAnalysisHistory: data.screenAnalysisHistory || existing?.screenAnalysisHistory || [],
     });
 }
-function getSession(sessionId) { return readJsonFile(getSessionPath(sessionId), null); }
-function getAllSessions() {
+// History reads must distinguish missing data from denied or corrupt data. Never
+// send filesystem paths or transcript contents to the renderer in an error.
+function historyReadError(code = 'HISTORY_UNAVAILABLE') {
+    const message = code === 'SESSION_UNREADABLE'
+        ? 'This session could not be read. It may be damaged or inaccessible. Other sessions are unchanged.'
+        : 'History could not be loaded. Check access to the ContextHalo data folder and retry.';
+    return Object.assign(new Error(message), { code });
+}
+function getSession(sessionId) {
+    const file = getSessionPath(sessionId);
     try {
-        if (!fs.existsSync(getHistoryDir())) return [];
-        return fs.readdirSync(getHistoryDir())
-            .filter(file => file.endsWith('.json'))
-            .sort((a, b) => Number(b.slice(0, -5)) - Number(a.slice(0, -5)))
-            .map(file => {
-                const data = readJsonFile(path.join(getHistoryDir(), file), null);
-                return data ? {
-                    sessionId: file.slice(0, -5),
-                    createdAt: data.createdAt,
-                    lastUpdated: data.lastUpdated,
-                    messageCount: data.conversationHistory?.length || 0,
-                    screenAnalysisCount: data.screenAnalysisHistory?.length || 0,
-                    profile: data.profile || null,
-                    customPrompt: data.customPrompt || null,
-                } : null;
-            })
-            .filter(Boolean);
+        const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid session');
+        return data;
     } catch (error) {
-        console.error('Error reading sessions:', error.message);
-        return [];
+        if (error.code === 'ENOENT') return null;
+        throw historyReadError('SESSION_UNREADABLE');
     }
+}
+// Cache list metadata only, not transcripts. Refresh a summary when the file
+// changes; legacy session files need no migration or extra index on disk.
+const sessionMetadata = new Map();
+function getAllSessions() {
+    let files;
+    try { files = fs.readdirSync(getHistoryDir()).filter(file => /^\d{1,30}\.json$/.test(file)); }
+    catch (error) { if (error.code === 'ENOENT') return []; throw historyReadError(); }
+    const present = new Set(files);
+    for (const name of sessionMetadata.keys()) if (!present.has(name)) sessionMetadata.delete(name);
+    return files.sort((a, b) => Number(b.slice(0, -5)) - Number(a.slice(0, -5))).map(file => {
+        const sessionId = file.slice(0, -5);
+        try {
+            const stat = fs.statSync(path.join(getHistoryDir(), file));
+            const version = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
+            const cached = sessionMetadata.get(file);
+            if (cached?.version === version) return { ...cached.summary };
+            const data = getSession(sessionId);
+            if (!data) return null; // Deleted by another process during this read.
+            const summary = {
+                sessionId,
+                title: String(data.sessionPack?.title || data.title || '').trim().slice(0, 160),
+                createdAt: data.createdAt || Number(sessionId),
+                lastUpdated: data.lastUpdated,
+                messageCount: Array.isArray(data.conversationHistory) ? data.conversationHistory.length : 0,
+                screenAnalysisCount: Array.isArray(data.screenAnalysisHistory) ? data.screenAnalysisHistory.length : 0,
+                profile: data.profile || null,
+            };
+            if (sessionMetadata.size >= 2000) sessionMetadata.delete(sessionMetadata.keys().next().value);
+            sessionMetadata.set(file, { version, summary });
+            return { ...summary };
+        } catch {
+            // Do not silently drop an unreadable entry and imply history is empty.
+            sessionMetadata.delete(file);
+            return { sessionId, createdAt: Number(sessionId), title: '', unreadable: true,
+                messageCount: 0, screenAnalysisCount: 0, profile: null };
+        }
+    }).filter(Boolean);
 }
 function deleteSession(sessionId) {
     try {
