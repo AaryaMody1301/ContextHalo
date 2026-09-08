@@ -631,6 +631,16 @@ export class AssistantView extends LitElement {
 
     }
 
+    canFollowResponse() {
+        const container = this.shadowRoot.querySelector('#responseContainer');
+        if (!container) return true;
+        const body = container.querySelector('.response-body');
+        const selection = document.getSelection?.();
+        const reading = body?.contains(this.shadowRoot.activeElement)
+            || (selection && !selection.isCollapsed && body?.contains(selection.anchorNode));
+        return !reading && container.scrollHeight - container.scrollTop - container.clientHeight < 24;
+    }
+
     updateResponseContent() {
         const container = this.shadowRoot.querySelector('#responseContainer');
         if (!container) return;

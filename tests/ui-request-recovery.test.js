@@ -92,3 +92,18 @@ for (const provider of ['byok', 'groq', 'local']) test(`${provider}: actual IPC 
     const stale = await f.call('send-text-message', 'stale request', { requestId: 'ui-36-test', uiEpoch: 36 });
     assert.notEqual(stale.success, true);
 });
+
+test('new background cards do not pull a reader away, but a deliberate current question can follow', async () => {
+    const { app } = requestApp(); await tick();
+    app.responses = ['A long answer being read']; app.currentResponseIndex = 0;
+    app.shadowRoot.querySelector = () => ({ canFollowResponse: () => false });
+    app.addNewResponse('New live voice answer', { requestId: 'voice-reading', kind: 'voice' });
+    assert.equal(app.currentResponseIndex, 0);
+    app.currentResponseIndex = app.responses.length - 1;
+    const owner = app._beginRequest('text', { text: 'deliberate question' });
+    app.addNewResponse('Answer to deliberate question', { requestId: owner.requestId, uiEpoch: owner.uiEpoch, kind: 'text' });
+    assert.equal(app.currentResponseIndex, 2);
+    app.currentResponseIndex = 0;
+    app.addNewResponse('Another response', { requestId: 'voice-older', kind: 'voice' });
+    assert.equal(app.currentResponseIndex, 0);
+});

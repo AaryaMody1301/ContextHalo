@@ -193,6 +193,11 @@ async function rendererBehaviorSmoke() {
     verify(scroll.scrollTop === position && body.firstChild === oldNode, 'Background responses preserve reading position and the current DOM');
     app.responses = [app.responses[0] + '\n\nAdditional streaming paragraph', app.responses[1]]; await settle(app); await settle(reading);
     verify(scroll.scrollTop === position, 'Streaming growth does not pull a reader away from older content');
+    app.responses = [app.responses[0]]; app.currentResponseIndex = 0; await settle(app); await settle(reading);
+    scroll.scrollTop = 90; const latestPosition = scroll.scrollTop;
+    app.addNewResponse('A newly arrived voice answer', {requestId:'reading-voice-new',kind:'voice'});
+    await settle(app); await settle(reading);
+    verify(app.currentResponseIndex === 0 && scroll.scrollTop === latestPosition, 'A new voice card does not replace the latest answer while its earlier paragraphs are being read');
     return checks;
 }
 
@@ -471,14 +476,18 @@ async function extendedWindowsAcceptance(window, directory) {
 
     // Capture clean and saved setup at the same actual window size as baseline.
     for (const theme of ['dark','light']) {
-        await evaluate(`(async()=>{const app=document.querySelector('context-halo-app');contextHalo.theme.apply(${JSON.stringify(theme)},0.5);app.layoutMode='normal';app.navigate('main');await app.updateComplete;const view=app.shadowRoot.querySelector('main-view');await view.updateComplete;})()`);
+        await evaluate(`(async()=>{const app=document.querySelector('context-halo-app');await contextHalo.storage.updatePreference('theme',${JSON.stringify(theme)});contextHalo.theme.apply(${JSON.stringify(theme)},0.5);app.layoutMode='normal';app.navigate('main');await app.updateComplete;const view=app.shadowRoot.querySelector('main-view');await view.updateComplete;})()`);
         await delay(150); await capture(`home-${theme}-clean`);
         await evaluate(`(async()=>{const view=document.querySelector('context-halo-app').shadowRoot.querySelector('main-view');view._mode='byok';view._geminiKey='controlled-fixture-not-an-account';view._setupOpen=false;await view.updateComplete;})()`);
         await capture(`home-${theme}-saved`);
         for (const layout of ['normal','compact']) {
             await evaluate(`(async()=>{const app=document.querySelector('context-halo-app');app.layoutMode=${JSON.stringify(layout)};await app.updateComplete;})()`);
             await capture(`home-${theme}-${layout}`);
-            await navigate('customize'); await capture(`settings-${theme}-${layout}`); await navigate('main');
+            await navigate('customize');
+            const palette = await evaluate(`(async()=>{const view=document.querySelector('context-halo-app').shadowRoot.querySelector('customize-view');for(let n=0;view.settingsLoading&&n<100;n++)await new Promise(r=>setTimeout(r,10));const root=view.shadowRoot;return {theme:view.theme,background:getComputedStyle(root.querySelector('.unified-page')).backgroundColor,text:getComputedStyle(root.querySelector('.page-title')).color,scheme:getComputedStyle(root.querySelector('select')).colorScheme};})()`);
+            const expected = theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(16, 16, 16)';
+            verify(palette.theme === theme && palette.background === expected && palette.text !== palette.background && palette.scheme === theme, `${theme}/${layout}: persisted Settings hydration keeps foreground, background and native palette consistent`);
+            await capture(`settings-${theme}-${layout}`); await navigate('main');
         }
     }
 
@@ -501,8 +510,9 @@ async function extendedWindowsAcceptance(window, directory) {
     const minimum = await evaluate(`(()=>{const app=document.querySelector('context-halo-app');const root=app.shadowRoot.querySelector('assistant-view').shadowRoot;
         const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight+1&&r.left>=0&&r.right<=innerWidth+1;};
         const answer=root.querySelector('#responseContainer');
-        return {width:innerWidth,height:innerHeight,answerHeight:answer.clientHeight,composer:visible(root.querySelector('#textInput')),analyze:visible(root.querySelector('.analyze-btn')),headerButtons:[...app.shadowRoot.querySelectorAll('.live-bar button')].every(visible),horizontalOverflow:answer.scrollWidth>answer.clientWidth+2,statusHeight:app.shadowRoot.querySelector('.session-state').clientHeight};})()`);
+        return {width:innerWidth,height:innerHeight,answerWidth:answer.clientWidth,sidebarWidth:app.shadowRoot.querySelector('.sidebar').getBoundingClientRect().width,answerHeight:answer.clientHeight,composer:visible(root.querySelector('#textInput')),analyze:visible(root.querySelector('.analyze-btn')),headerButtons:[...app.shadowRoot.querySelectorAll('.live-bar button')].every(visible),horizontalOverflow:answer.scrollWidth>answer.clientWidth+2,statusHeight:app.shadowRoot.querySelector('.session-state').clientHeight};})()`);
     verify(minimum.composer && minimum.analyze && minimum.headerButtons && minimum.answerHeight>=100 && !minimum.horizontalOverflow && minimum.statusHeight<=40, 'Minimum HUD keeps essential controls, at least 100px answer space, and one concise status row');
+    verify(minimum.sidebarWidth === 0 && minimum.answerWidth >= minimum.width - 40, 'Compact interview uses the full window width and removes hidden navigation from layout');
     await capture('hud-minimum-expanded'); // Matching baseline viewport/long-error state, tools are no longer cramped inline.
     await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('.live-bar button').focus()`);
     await key('Tab');

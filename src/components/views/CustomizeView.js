@@ -418,8 +418,8 @@ export class CustomizeView extends LitElement {
     }
 
     updateBackgroundAppearance() {
-        const colors = contextHalo.theme.get(this.theme);
-        contextHalo.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
+        // Hydration, opacity preview and reset must update one coherent palette.
+        contextHalo.theme.apply(this.theme, this.backgroundTransparency);
     }
 
     handleFontSizeChange(e) {

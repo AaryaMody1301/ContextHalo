@@ -124,3 +124,34 @@ test('Home loading, unsaved changes and initialization gate Start; active sessio
     f.view.sessionActive = true; await f.view._handleStart(); assert.equal(f.started(), 1);
     await f.view._saveMode('groq'); assert.equal(f.view._mode, 'byok');
 });
+
+test('all appearance palettes retain readable text and native control contrast without whole-window opacity', () => {
+    const f = rendererFixture();
+    const luminance = color => {
+        const values = color.startsWith('#') ? color.slice(1).match(/../g).map(value => parseInt(value, 16)) : color.match(/[\d.]+/g).slice(0, 3).map(Number);
+        const [r, g, b] = values.map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    for (const name of Object.keys(f.api.theme.themes)) {
+        f.api.theme.apply(name, 0.37);
+        assert.match(f.variables.get('--hud-background'), /0\.37\)/);
+        for (const background of ['--bg-app', '--bg-surface', '--bg-elevated', '--bg-hover']) {
+            assert.match(f.variables.get(background), /^rgb\(/, 'Normal pages and interactive surfaces stay opaque');
+            for (const text of ['--text-primary', '--text-secondary', '--text-muted']) {
+                const a = luminance(f.variables.get(background)), b = luminance(f.variables.get(text));
+                assert.ok((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5, `${name}: ${text} is readable over ${background}`);
+            }
+        }
+        assert.equal(f.variables.get('--control-color-scheme'), ['light', 'sepia'].includes(name) ? 'light' : 'dark');
+    }
+});
+
+test('Settings opacity/hydration reapplies matching foreground and background together', () => {
+    const calls = [];
+    const { Target } = componentClass('src/components/views/CustomizeView.js', 'CustomizeView', {
+        unifiedPageStyles: [], contextHalo: { theme: { apply: (...args) => calls.push(args) } },
+    });
+    const view = Object.assign(Object.create(Target.prototype), { theme: 'light', backgroundTransparency: 0.37 });
+    view.updateBackgroundAppearance();
+    assert.deepEqual(calls, [['light', 0.37]]);
+});

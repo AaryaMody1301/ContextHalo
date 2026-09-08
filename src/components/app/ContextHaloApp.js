@@ -230,12 +230,7 @@ export class ContextHaloApp extends LitElement {
         }
 
         .sidebar.hidden {
-            width: 0;
-            min-width: 0;
-            padding: 0;
-            overflow: hidden;
-            border-right: none;
-            opacity: 0;
+            display: none;
         }
 
         .sidebar-brand {
@@ -900,11 +895,13 @@ export class ContextHaloApp extends LitElement {
         const id = metadata?.requestId;
         if (id && this._responseRequestIndex.has(id)) return this.updateCurrentResponse(response, metadata);
         const wasOnLatest = this.currentResponseIndex === this.responses.length - 1;
+        const requestedReply = id && ['text', 'screen'].some(kind => this._requestOwners?.[kind]?.requestId === id);
+        const canFollow = requestedReply || this.shadowRoot?.querySelector('assistant-view')?.canFollowResponse?.() !== false;
         this.responses = [...this.responses, String(response || '')];
         (this._responseGrounding ||= []).push(metadata?.grounding);
         this._responseIds.push(id || null);
         if (id) this._responseRequestIndex.set(id, this.responses.length - 1);
-        if (wasOnLatest || this.currentResponseIndex === -1) this.currentResponseIndex = this.responses.length - 1;
+        if ((wasOnLatest && canFollow) || this.currentResponseIndex === -1) this.currentResponseIndex = this.responses.length - 1;
         this.requestUpdate();
     }
 
@@ -1528,7 +1525,7 @@ export class ContextHaloApp extends LitElement {
                     ${this.providerError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.providerError.retryAt).toLocaleTimeString()}.</p>` : ''}
                     <details class="error-details"><summary>Read connection error</summary><p>${this.providerError.message}</p></details>` : ''}
                 ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
-                <h3>${this.sessionStatusSummary()}</h3>
+                <h3>Session connection</h3>
                 <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
                 <p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Effective Search: ${this.searchState.effective ? 'enabled for Live, text and screen' : 'off for this session'}. Your saved preference is unchanged.</p>
                 <p>Restore with ${this.visibilityShortcut} or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Hiding and minimizing do not stop capture.</p>
