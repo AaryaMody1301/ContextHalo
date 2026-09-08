@@ -22,6 +22,8 @@ function rendererFixture(options = {}) {
         on() {},
         invoke: async (channel, ...args) => {
             calls.push([channel, ...args]);
+            const override = options.invoke?.(channel, ...args);
+            if (override !== undefined) return override;
             if (channel === 'storage:get-preferences') return { success: true, data: { ...prefs } };
             if (channel === 'storage:update-preference') { prefs[args[0]] = args[1]; return { success: true }; }
             if (channel === 'send-image-content') return options.image ? options.image(...args) : { success: true, text: 'Complete answer' };
@@ -46,7 +48,7 @@ function rendererFixture(options = {}) {
             throw new Error('Unexpected element: ' + tag);
         },
     };
-    const scope = { window, document, AudioContext, AbortController, CustomEvent, Blob, URL, console: { log() {}, warn() {}, error() {} },
+    const scope = { structuredClone, window, document, AudioContext, AbortController, CustomEvent, Blob, URL, console: { log() {}, warn() {}, error() {} },
         process: { platform: options.platform || 'win32' }, setTimeout, clearTimeout, setInterval, clearInterval,
         btoa: value => Buffer.from(value, 'binary').toString('base64'), require: () => ({ ipcRenderer: ipc }),
         navigator: { mediaDevices: {

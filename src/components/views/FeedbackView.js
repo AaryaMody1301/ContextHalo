@@ -46,10 +46,10 @@ export class FeedbackView extends LitElement {
         return html`
             <div class="unified-page">
                 <div class="unified-wrap">
-                    <div class="page-title">Feedback</div>
+                    <h1 class="page-title">Feedback</h1>
 
                     <section class="surface feedback-card">
-                        <div class="surface-title">Help improve ContextHalo</div>
+                        <h2 class="surface-title">Help improve ContextHalo</h2>
                         <div class="feedback-copy">
                             Bug reports, feature requests, and feedback are tracked publicly through the ContextHalo GitHub Issues page.
                             Before opening a new issue, please check whether a similar report already exists and never include API keys or other secrets.

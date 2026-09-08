@@ -37,7 +37,7 @@ export const unifiedPageStyles = css`
         font-size: var(--font-size-xl);
         font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
-        margin-bottom: 4px;
+        margin: 0 0 4px;
     }
 
     .page-subtitle {
@@ -56,7 +56,7 @@ export const unifiedPageStyles = css`
         color: var(--text-primary);
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-semibold);
-        margin-bottom: 4px;
+        margin: 0 0 4px;
     }
 
     .surface-subtitle {
@@ -125,7 +125,7 @@ export const unifiedPageStyles = css`
 
     select.control {
         appearance: none;
-        color-scheme: dark;
+        color-scheme: var(--control-color-scheme, dark);
         background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b6b6b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
         background-position: right 8px center;
         background-repeat: no-repeat;
@@ -136,8 +136,8 @@ export const unifiedPageStyles = css`
 
     select.control option,
     select.control optgroup {
-        background: #191919;
-        color: #f5f5f5;
+        background: var(--bg-elevated);
+        color: var(--text-primary);
     }
 
     textarea.control {
@@ -174,6 +174,24 @@ export const unifiedPageStyles = css`
         color: var(--danger);
     }
 
+    button, summary, a { cursor: pointer; }
+    input, textarea { cursor: text; user-select: text; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .control:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .save-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: var(--font-size-sm); }
+    .save-feedback .control { width: auto; }
+    .save-feedback.error { color: var(--danger); }
+    .form-group { min-width: 0; }
+    .form-label { white-space: normal; }
+    .form-help, .page-subtitle { line-height: 1.5; }
+    @media (max-width: 780px) {
+        .form-group { flex-wrap: wrap; gap: 8px; }
+        .control { max-width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
     @media (max-width: 640px) {
         .unified-page {
             padding: var(--space-md);

@@ -62,7 +62,9 @@ function statusLine(parent, text, isError = false) {
     line.setAttribute('role', isError ? 'alert' : 'status');
     if (isError) line.style.color = 'var(--text-primary)';
     parent.prepend(line);
-    setTimeout(() => line.remove(), 4500);
+    // Keep recovery feedback until the next action; errors must not disappear on a timer.
+    parent.querySelectorAll('[data-workspace-status]').forEach(node => node.remove());
+    line.dataset.workspaceStatus = 'true';
 }
 
 async function renderKnowledge(app, body) {
@@ -76,6 +78,9 @@ async function renderKnowledge(app, body) {
     body.append(el('div', 'phase4-note', 'Enabled sources are retrieved locally and injected only when relevant. Supported imports are text, Markdown, JSON/CSV, logs, code, SQL, YAML/XML, and other plain-text files up to 2 MB each. PDF and DOCX ingestion is intentionally not cloud-forwarded.'));
 
     const form = el('div', 'phase4-form');
+    form.id = 'knowledge-add-form';
+    addButton.setAttribute('aria-controls', form.id);
+    addButton.setAttribute('aria-expanded', 'false');
     const titleInput = el('input', 'phase4-input');
     titleInput.placeholder = 'Source title';
     titleInput.setAttribute('aria-label', 'Knowledge source title');
@@ -103,7 +108,7 @@ async function renderKnowledge(app, body) {
     body.append(list);
 
     const redraw = async () => {
-        list.replaceChildren(el('div', 'phase4-empty', 'Loading knowledge…'));
+        list.setAttribute('aria-busy', 'true');
         try {
             await loadDocuments();
             list.replaceChildren();
@@ -128,6 +133,7 @@ async function renderKnowledge(app, body) {
                 main.append(el('div', 'phase4-doc-title', document.title));
                 main.append(el('div', 'phase4-doc-meta', `${document.sourceType || 'text'} · ${document.chunks || 0} chunks · ${formatBytes(document.chars)}`));
                 const remove = el('button', 'phase4-btn danger', 'Delete');
+                remove.setAttribute('aria-label', `Delete knowledge source ${document.title}`);
                 remove.addEventListener('click', async () => {
                     remove.disabled = true;
                     try { await invoke('knowledge:delete', document.id); await redraw(); }
@@ -137,8 +143,9 @@ async function renderKnowledge(app, body) {
                 list.append(row);
             }
         } catch (error) {
-            list.replaceChildren(el('div', 'phase4-empty', error.message));
+            statusLine(body, 'Knowledge could not be refreshed. Existing sources are unchanged. Use Refresh to retry.', true);
         }
+        finally { list.setAttribute('aria-busy', 'false'); }
     };
 
     importButton.addEventListener('click', async () => {
@@ -152,16 +159,23 @@ async function renderKnowledge(app, body) {
         } catch (error) { statusLine(body, error.message, true); }
         importButton.disabled = false;
     });
-    addButton.addEventListener('click', () => form.classList.toggle('visible'));
+    addButton.addEventListener('click', () => {
+        const expanded = form.classList.toggle('visible');
+        addButton.setAttribute('aria-expanded', String(expanded));
+        if (expanded) titleInput.focus();
+    });
     refreshButton.addEventListener('click', redraw);
     saveText.addEventListener('click', async () => {
         if (!textInput.value.trim()) return statusLine(body, 'Paste some text before saving.', true);
         saveText.disabled = true;
+        const savedTitle = titleInput.value, savedText = textInput.value;
         try {
-            await invoke('knowledge:add-text', titleInput.value, textInput.value);
-            titleInput.value = '';
-            textInput.value = '';
-            form.classList.remove('visible');
+            await invoke('knowledge:add-text', savedTitle, savedText);
+            if (titleInput.value === savedTitle) titleInput.value = '';
+            if (textInput.value === savedText) textInput.value = '';
+            if (!textInput.value) form.classList.remove('visible');
+            addButton.setAttribute('aria-expanded', String(form.classList.contains('visible')));
+            if (!form.classList.contains('visible') && form.contains(app.shadowRoot.activeElement)) addButton.focus();
             statusLine(body, 'Knowledge source saved locally.');
             await redraw();
         } catch (error) { statusLine(body, error.message, true); }
@@ -199,9 +213,9 @@ async function renderPractice(app, body) {
     const knowledgeOption = el('option', '', 'Enabled knowledge library');
     knowledgeOption.value = 'knowledge';
     sourceSelect.append(knowledgeOption);
-    await loadSessions().catch(() => []);
+    try { await loadSessions(); } catch { setup.append(el('p', 'phase4-error', 'Saved sessions could not be loaded. Close and reopen Practice to retry. Your knowledge library remains available.')); }
     for (const session of state.sessions.slice(0, 60)) {
-        const option = el('option', '', `Session · ${session.profile || 'Session'} · ${new Date(session.createdAt || Number(session.sessionId)).toLocaleDateString()}`);
+        const option = el('option', '', `Session · ${session.title || session.profile || 'Session'} · ${new Date(session.createdAt || Number(session.sessionId)).toLocaleDateString()}`);
         option.value = `session:${session.sessionId}`;
         sourceSelect.append(option);
     }
@@ -222,7 +236,7 @@ async function renderPractice(app, body) {
             const average = Math.round(recent.reduce((sum, item) => sum + (Number(item.score) || 0), 0) / recent.length * 100);
             historyText.textContent = `${attempts.length} saved attempts · ${average}% average across the latest ${recent.length}.`;
         }
-    } catch {}
+    } catch { historyText.textContent = 'Practice history could not be loaded. Reopen Practice to retry; existing attempts are unchanged.'; }
     grid.append(setup, progress);
     body.append(grid);
 
@@ -249,6 +263,7 @@ async function renderPractice(app, body) {
         const check = el('button', 'phase4-btn primary', 'Check answer');
         const next = el('button', 'phase4-btn', state.practiceIndex >= questions.length - 1 ? 'Restart set' : 'Next');
         const feedback = el('div', 'phase4-feedback');
+        feedback.setAttribute('role', 'status');
         feedback.style.display = 'none';
         controls.append(check, next);
         practiceArea.append(answer, controls, feedback);
@@ -271,6 +286,7 @@ async function renderPractice(app, body) {
         next.addEventListener('click', () => {
             state.practiceIndex = state.practiceIndex >= questions.length - 1 ? 0 : state.practiceIndex + 1;
             drawQuestion();
+            practiceArea.querySelector('textarea')?.focus();
         });
     };
 
@@ -321,6 +337,7 @@ async function renderReview(app, body) {
     grid.append(sessionCard, detailCard);
     body.append(grid);
 
+    let detailEpoch = 0;
     const drawDetail = review => {
         detailCard.replaceChildren();
         detailCard.append(el('div', 'phase4-card-title', review.title || 'Session review'));
@@ -361,20 +378,26 @@ async function renderReview(app, body) {
             button.style.textAlign = 'left';
             button.style.padding = '9px 10px';
             const date = new Date(session.createdAt || Number(session.sessionId));
-            button.append(el('div', 'phase4-session-title', session.profile || 'Session'));
+            button.append(el('div', 'phase4-session-title', session.title || session.profile || 'Session'));
             button.append(el('div', 'phase4-session-meta', `${Number.isNaN(date.getTime()) ? '' : date.toLocaleString()} · ${session.messageCount || 0} turns`));
             button.addEventListener('click', async () => {
+                const epoch = ++detailEpoch;
+                for (const sibling of sessionList.children) sibling.setAttribute('aria-pressed', String(sibling === button));
                 detailCard.replaceChildren(el('div', 'phase4-empty', 'Building review…'));
                 try {
                     const result = await invoke('review:get', session.sessionId);
+                    if (epoch !== detailEpoch || !body.isConnected) return;
                     state.review = result.data;
                     drawDetail(result.data);
-                } catch (error) { detailCard.replaceChildren(el('div', 'phase4-empty', error.message)); }
+                } catch { if (epoch === detailEpoch) detailCard.replaceChildren(el('div', 'phase4-empty', 'This session could not be opened. Select it again to retry; other saved sessions are unchanged.')); }
             });
             sessionList.append(button);
         }
     } catch (error) {
-        sessionList.replaceChildren(el('div', 'phase4-empty', error.message));
+        sessionList.replaceChildren(el('div', 'phase4-empty', 'Sessions could not be loaded. Your history has not been deleted.'));
+        const retry = el('button', 'phase4-btn', 'Retry loading sessions');
+        retry.addEventListener('click', () => renderReview(app, body));
+        sessionList.append(retry);
     }
 }
 

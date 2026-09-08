@@ -192,6 +192,12 @@ export class CustomizeView extends LitElement {
         onImageQualityChange: { type: Function },
         onLayoutModeChange: { type: Function },
         onOpenProviderSettings: { type: Function },
+        onOpenInstructions: { type: Function },
+        saveStates: { state: true },
+        shortcutStatus: { state: true },
+        shortcutConflicts: { state: true },
+        keybindSaving: { state: true },
+        settingsLoading: { state: true },
         isClearing: { type: Boolean },
         isRestoring: { type: Boolean },
         clearStatusMessage: { type: String },
@@ -212,6 +218,14 @@ export class CustomizeView extends LitElement {
         this.onImageQualityChange = () => {};
         this.onLayoutModeChange = () => {};
         this.onOpenProviderSettings = () => {};
+        this.onOpenInstructions = () => {};
+        this.saveStates = {};
+        this.shortcutStatus = '';
+        this.shortcutConflicts = {};
+        this.keybindSaving = false;
+        this.settingsLoading = true;
+        this._saveVersions = {};
+        this._failedWrites = new Map();
         this.googleSearchEnabled = true;
         this.isClearing = false;
         this.isRestoring = false;
@@ -231,7 +245,14 @@ export class CustomizeView extends LitElement {
 
     async _loadFromStorage() {
         try {
-            const [prefs, keybinds] = await Promise.all([contextHalo.storage.getPreferences(), contextHalo.storage.getKeybinds()]);
+            const [prefs, shortcutState] = await Promise.all([contextHalo.storage.getPreferences(), contextHalo.storage.getShortcutState()]);
+            if (shortcutState.success !== true) throw new Error(shortcutState.error || 'Could not load shortcuts.');
+            const keybinds = shortcutState.data;
+            this.shortcutConflicts = shortcutState.conflicts || {};
+            this.shortcutRecovery = shortcutState.recovery;
+            this.selectedLanguage = prefs.selectedLanguage || this.selectedLanguage;
+            this.selectedImageQuality = prefs.selectedImageQuality || this.selectedImageQuality;
+            this.layoutMode = prefs.layoutMode || this.layoutMode;
             this.googleSearchEnabled = prefs.googleSearchEnabled ?? true;
             this.backgroundTransparency = prefs.backgroundTransparency ?? 0.8;
             this.fontSize = prefs.fontSize ?? 20;
@@ -245,19 +266,8 @@ export class CustomizeView extends LitElement {
             this.updateFontSize();
             this.requestUpdate();
         } catch (error) {
-            console.error('Error loading settings:', error);
-        }
-    }
-
-    getProfiles() {
-        return [
-            { value: 'interview', name: 'Job Interview' },
-            { value: 'sales', name: 'Sales Call' },
-            { value: 'meeting', name: 'Business Meeting' },
-            { value: 'presentation', name: 'Presentation' },
-            { value: 'negotiation', name: 'Negotiation' },
-            { value: 'exam', name: 'Exam Assistant' },
-        ];
+            this.saveStates = { load: 'Could not load settings. Retry before editing.' };
+        } finally { this.settingsLoading = false; this.requestUpdate(); }
     }
 
     getLanguages() {
@@ -330,68 +340,81 @@ export class CustomizeView extends LitElement {
         ];
     }
 
-    async saveKeybinds() {
-        await contextHalo.storage.setKeybinds(this.keybinds);
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('update-keybinds', this.keybinds);
+    async _savePreference(key, value, write) {
+        const version = this._saveVersions[key] = (this._saveVersions[key] || 0) + 1;
+        const perform = write || (() => contextHalo.storage.updatePreference(key, value));
+        this.saveStates = { ...this.saveStates, [key]: 'saving' };
+        try {
+            const result = await perform();
+            if (result?.success === false) throw new Error(result.error || 'Could not save this change.');
+            if (this._saveVersions[key] === version) {
+                this._failedWrites.delete(key);
+                this.saveStates = { ...this.saveStates, [key]: 'saved' };
+            }
+            return true;
+        } catch {
+            if (this._saveVersions[key] === version) {
+                this._failedWrites.set(key, () => this._savePreference(key, value, perform));
+                this.saveStates = { ...this.saveStates, [key]: 'failed' };
+            }
+            return false;
         }
     }
 
-    handleProfileSelect(e) {
-        this.selectedProfile = e.target.value;
-        this.onProfileChange(this.selectedProfile);
+    retrySaves() {
+        if (this.saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
+        return Promise.all([...this._failedWrites.values()].map(retry => retry()));
+    }
+
+    renderSaveFeedback() {
+        const values = Object.values(this.saveStates);
+        const failed = values.includes('failed') || this.saveStates.load;
+        const saving = values.includes('saving');
+        return html`<div class="save-feedback" role="status" aria-live="polite" data-state=${failed ? 'error' : saving ? 'saving' : 'saved'}>
+            <span>${this.settingsLoading ? 'Loading settings...' : failed ? (this.saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
+            ${failed ? html`<button class="control" @click=${this.retrySaves} ?disabled=${saving}>Retry save</button>` : ''}
+        </div>`;
     }
 
     handleLanguageSelect(e) {
         this.selectedLanguage = e.target.value;
-        this.onLanguageChange(this.selectedLanguage);
-    }
-
-    handleScreenshotIntervalSelect(e) {
-        this.selectedScreenshotInterval = e.target.value;
-        this.onScreenshotIntervalChange(this.selectedScreenshotInterval);
+        const value = this.selectedLanguage;
+        return this._savePreference('selectedLanguage', value, () => this.onLanguageChange(value));
     }
 
     handleImageQualitySelect(e) {
         this.selectedImageQuality = e.target.value;
-        this.onImageQualityChange(this.selectedImageQuality);
+        const value = this.selectedImageQuality;
+        return this._savePreference('selectedImageQuality', value, () => this.onImageQualityChange(value));
     }
 
     handleLayoutModeSelect(e) {
         this.layoutMode = e.target.value;
-        this.onLayoutModeChange(this.layoutMode);
+        const value = this.layoutMode;
+        return this._savePreference('layoutMode', value, () => this.onLayoutModeChange(value));
     }
 
-    async handleCustomPromptInput(e) {
-        this.customPrompt = e.target.value;
-        await contextHalo.storage.updatePreference('customPrompt', this.customPrompt);
-    }
-
-    async handleAudioModeSelect(e) {
+    handleAudioModeSelect(e) {
         this.audioMode = e.target.value;
-        await contextHalo.storage.updatePreference('audioMode', this.audioMode);
         this.requestUpdate();
+        return this._savePreference('audioMode', this.audioMode);
     }
 
-    async handleThemeChange(e) {
+    handleThemeChange(e) {
         this.theme = e.target.value;
-        await contextHalo.theme.save(this.theme);
-        this.updateBackgroundAppearance();
-        this.requestUpdate();
+        contextHalo.theme.apply(this.theme, this.backgroundTransparency);
+        return this._savePreference('theme', this.theme);
     }
 
-    async handleGoogleSearchChange(e) {
+    handleGoogleSearchChange(e) {
         this.googleSearchEnabled = e.target.checked;
-        await contextHalo.storage.updatePreference('googleSearchEnabled', this.googleSearchEnabled);
-        this.requestUpdate();
+        return this._savePreference('googleSearchEnabled', this.googleSearchEnabled);
     }
 
-    async handleBackgroundTransparencyChange(e) {
-        this.backgroundTransparency = parseFloat(e.target.value);
-        await contextHalo.storage.updatePreference('backgroundTransparency', this.backgroundTransparency);
+    handleBackgroundTransparencyChange(e) {
+        this.backgroundTransparency = Number(e.target.value);
         this.updateBackgroundAppearance();
-        this.requestUpdate();
+        return this._savePreference('backgroundTransparency', this.backgroundTransparency);
     }
 
     updateBackgroundAppearance() {
@@ -399,81 +422,80 @@ export class CustomizeView extends LitElement {
         contextHalo.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
     }
 
-    async handleFontSizeChange(e) {
-        this.fontSize = parseInt(e.target.value, 10);
-        await contextHalo.storage.updatePreference('fontSize', this.fontSize);
+    handleFontSizeChange(e) {
+        this.fontSize = Number(e.target.value);
         this.updateFontSize();
-        this.requestUpdate();
+        return this._savePreference('fontSize', this.fontSize);
     }
 
     updateFontSize() {
         document.documentElement.style.setProperty('--response-font-size', `${this.fontSize}px`);
     }
 
-    handleKeybindChange(action, value) {
-        this.keybinds = { ...this.keybinds, [action]: value };
-        this.saveKeybinds();
-        this.requestUpdate();
+    async saveKeybinds(candidate) {
+        if (this.keybindSaving) return false;
+        this.keybindSaving = true;
+        this.shortcutStatus = 'Checking availability and saving...';
+        try {
+            const result = await contextHalo.storage.setKeybinds(candidate);
+            if (result?.success !== true) throw Object.assign(new Error(result?.error || 'Shortcut not saved.'), { result });
+            this.keybinds = result.data || candidate;
+            this.shortcutConflicts = result.conflicts || {};
+            this.shortcutStatus = 'Shortcut saved and registered. Tab moves to the next setting.';
+            this.dispatchEvent(new CustomEvent('shortcuts-changed', { detail: this.keybinds, bubbles: true, composed: true }));
+            return true;
+        } catch (error) {
+            this.shortcutConflicts = error.result?.conflicts || {};
+            this.shortcutStatus = error.result?.error || 'Shortcut not saved. The previous working binding is retained. Choose another combination or retry.';
+            return false;
+        } finally { this.keybindSaving = false; }
     }
 
     handleKeybindFocus(e) {
-        e.target.placeholder = 'Press key combination...';
+        this._capturingAction = e.target.dataset.action;
+        this.shortcutStatus = 'Press Ctrl, Alt or Windows with a key (or a function key). Tab moves on; Escape cancels.';
         e.target.select();
     }
 
-    handleKeybindInput(e) {
-        e.preventDefault();
-        const modifiers = [];
-        if (e.ctrlKey) modifiers.push('Ctrl');
-        if (e.metaKey) modifiers.push('Cmd');
-        if (e.altKey) modifiers.push('Alt');
-        if (e.shiftKey) modifiers.push('Shift');
-        let mainKey = e.key;
-
-        switch (e.code) {
-            case 'ArrowUp':
-                mainKey = 'Up';
-                break;
-            case 'ArrowDown':
-                mainKey = 'Down';
-                break;
-            case 'ArrowLeft':
-                mainKey = 'Left';
-                break;
-            case 'ArrowRight':
-                mainKey = 'Right';
-                break;
-            case 'Enter':
-                mainKey = 'Enter';
-                break;
-            case 'Space':
-                mainKey = 'Space';
-                break;
-            case 'Backslash':
-                mainKey = '\\';
-                break;
-            default:
-                if (e.key.length === 1) mainKey = e.key.toUpperCase();
-                break;
-        }
-
-        if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return;
-
-        const action = e.target.dataset.action;
-        const keybind = [...modifiers, mainKey].join('+');
-        this.handleKeybindChange(action, keybind);
-        e.target.value = keybind;
-        e.target.blur();
+    handleKeybindBlur() {
+        this._capturingAction = null;
+        if (this.shortcutStatus.startsWith('Press ')) this.shortcutStatus = 'No shortcut changed.';
     }
 
-    async resetKeybinds() {
-        this.keybinds = this.getDefaultKeybinds();
-        await contextHalo.storage.setKeybinds(null);
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            ipcRenderer.send('update-keybinds', this.keybinds);
+    handleKeybindInput(e) {
+        // Navigation must never become a binding, including Shift+Tab.
+        if (e.key === 'Tab') return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            this._capturingAction = null;
+            e.target.value = this.keybinds[e.target.dataset.action];
+            this.shortcutStatus = 'Shortcut editing cancelled. Previous binding retained.';
+            return;
         }
-        this.requestUpdate();
+        if (e.repeat || e.isComposing || ['Control', 'Meta', 'Alt', 'Shift', 'AltGraph'].includes(e.key)) return;
+        e.preventDefault();
+        if (this.keybindSaving) return;
+        const named = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Space: 'Space', Backslash: '\\', Equal: e.shiftKey ? 'Plus' : '=' };
+        const key = named[e.code] || (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+        const modifiers = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
+        if (!e.ctrlKey && !e.altKey && !e.metaKey && !/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {
+            this.shortcutStatus = 'Not saved. Use Ctrl, Alt or Windows with a key, or a function key.';
+            return;
+        }
+        const action = e.target.dataset.action;
+        const binding = [...modifiers, key].join('+');
+        const duplicate = Object.entries(this.keybinds).find(([name, value]) => name !== action && value.toLowerCase() === binding.toLowerCase());
+        if (duplicate) {
+            this.shortcutConflicts = { [action]: `Already assigned to ${this.getKeybindActions().find(item => item.key === duplicate[0])?.name || duplicate[0]}.` };
+            this.shortcutStatus = 'Shortcut not saved: choose a different combination.';
+            return;
+        }
+        // Do not blur: success must not disrupt keyboard traversal.
+        return this.saveKeybinds({ ...this.keybinds, [action]: binding });
+    }
+
+    resetKeybinds() {
+        return this.saveKeybinds(this.getDefaultKeybinds());
     }
 
     async restoreAllSettings() {
@@ -497,16 +519,12 @@ export class CustomizeView extends LitElement {
                 theme: 'dark',
             };
             for (const [key, value] of Object.entries(defaults)) {
-                await contextHalo.storage.updatePreference(key, value);
+                const result = await contextHalo.storage.updatePreference(key, value);
+                if (result?.success === false) throw new Error('Some settings were not saved. Retry the reset.');
             }
 
             // Restore keybinds
-            this.keybinds = this.getDefaultKeybinds();
-            await contextHalo.storage.setKeybinds(null);
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                ipcRenderer.send('update-keybinds', this.keybinds);
-            }
+            if (!await this.resetKeybinds()) throw new Error('Preferences restored, but shortcuts could not be reset. Previous bindings retained.');
 
             // Apply to local state
             this.selectedProfile = defaults.selectedProfile;
@@ -521,11 +539,11 @@ export class CustomizeView extends LitElement {
             this.theme = defaults.theme;
 
             // Notify parent callbacks
-            this.onProfileChange(defaults.selectedProfile);
-            this.onLanguageChange(defaults.selectedLanguage);
-            this.onScreenshotIntervalChange(defaults.selectedScreenshotInterval);
-            this.onImageQualityChange(defaults.selectedImageQuality);
-            this.onLayoutModeChange('normal');
+            await this.onProfileChange(defaults.selectedProfile);
+            await this.onLanguageChange(defaults.selectedLanguage);
+            await this.onScreenshotIntervalChange(defaults.selectedScreenshotInterval);
+            await this.onImageQualityChange(defaults.selectedImageQuality);
+            await this.onLayoutModeChange('normal');
 
             // Apply visual changes
             this.updateBackgroundAppearance();
@@ -551,7 +569,8 @@ export class CustomizeView extends LitElement {
         this.clearStatusType = '';
         this.requestUpdate();
         try {
-            await contextHalo.storage.clearAll();
+            const result = await contextHalo.storage.clearAll();
+            if (result?.success === false) throw new Error('No confirmation that data was cleared. Retry.');
             this.clearStatusMessage = 'Successfully cleared all local data';
             this.clearStatusType = 'success';
             this.requestUpdate();
@@ -581,21 +600,16 @@ export class CustomizeView extends LitElement {
                 <div class="surface-title">Session Defaults</div>
                 <div class="surface-subtitle">Defaults used when you start a new assistant session.</div>
                 <div class="form-grid">
+                    <div class="form-help">Choose the session profile on Home. <button class="control" @click=${() => this.onOpenProviderSettings()}>Open Home</button></div>
                     <div class="form-group">
-                        <label class="form-label">Session Profile</label>
-                        <select class="control" .value=${this.selectedProfile} @change=${this.handleProfileSelect}>
-                            ${this.getProfiles().map(profile => html`<option value=${profile.value}>${profile.name}</option>`)}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Window Layout</label>
-                        <select class="control" .value=${this.layoutMode} @change=${this.handleLayoutModeSelect}>
+                        <label class="form-label" for="layout-mode">Window Layout</label>
+                        <select id="layout-mode" class="control" .value=${this.layoutMode} @change=${this.handleLayoutModeSelect}>
                             <option value="normal">Normal</option>
                             <option value="compact">Compact sidebar</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Screen capture</label>
+                        <span class="form-label">Screen capture</span>
                         <div class="form-hint">On demand only. Use Analyze Screen or the capture shortcut; no automatic image requests are sent.</div>
                     </div>
                 </div>
@@ -627,14 +641,8 @@ export class CustomizeView extends LitElement {
                         <span class="toggle-label">Request Google Search for the next Gemini session (Live, typed and screen)</span>
                     </label>
                     <div class="form-group vertical">
-                        <label class="form-label">Custom Instructions</label>
-                        <textarea
-                            class="control"
-                            placeholder="Optional instructions applied to every new session"
-                            .value=${this.customPrompt}
-                            @input=${this.handleCustomPromptInput}
-                        ></textarea>
-                        <div class="form-help">Keep this focused. Profile-specific instructions are combined with these custom instructions.</div>
+                        <div class="form-help">Edit shared instructions in AI Customization. Saved instructions still apply to new sessions.</div>
+                        <button class="control" @click=${() => this.onOpenInstructions()}>Open AI Customization</button>
                     </div>
                 </div>
             </section>
@@ -647,19 +655,19 @@ export class CustomizeView extends LitElement {
                 <div class="surface-title">Audio Input</div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Audio Mode</label>
-                        <select class="control" .value=${this.audioMode} @change=${this.handleAudioModeSelect}>
+                        <label class="form-label" for="audio-mode">Audio Mode</label>
+                        <select id="audio-mode" class="control" .value=${this.audioMode} @change=${this.handleAudioModeSelect}>
                             <option value="speaker_only">Speaker Only (Interviewer)</option>
                             <option value="mic_only">Microphone Only (Me)</option>
                             <option value="both">Both Speaker and Microphone</option>
                         </select>
                     </div>
                     ${this.audioMode !== 'speaker_only' ? html`
-                        <div class="warning-callout">May cause unexpected behavior. Only change this if you know what you're doing.</div>
+                        <div class="warning-callout">Microphone capture requires permission. Mixed audio includes both your voice and speaker audio; use headphones to reduce echo.</div>
                     ` : ''}
                     <div class="form-group">
-                        <label class="form-label">Image Quality</label>
-                        <select class="control" .value=${this.selectedImageQuality} @change=${this.handleImageQualitySelect}>
+                        <label class="form-label" for="image-quality">Image Quality</label>
+                        <select id="image-quality" class="control" .value=${this.selectedImageQuality} @change=${this.handleImageQualitySelect}>
                             <option value="high">High Quality</option>
                             <option value="medium">Medium Quality</option>
                             <option value="low">Low Quality</option>
@@ -676,8 +684,8 @@ export class CustomizeView extends LitElement {
                 <div class="surface-title">Language</div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Speech Language</label>
-                        <select class="control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
+                        <label class="form-label" for="speech-language">Speech Language</label>
+                        <select id="speech-language" class="control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
                             ${this.getLanguages().map(language => html`<option value=${language.value}>${language.name}</option>`)}
                         </select>
                     </div>
@@ -692,8 +700,8 @@ export class CustomizeView extends LitElement {
                 <div class="surface-title">Appearance</div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Theme</label>
-                        <select class="control" .value=${this.theme} @change=${this.handleThemeChange}>
+                        <label class="form-label" for="theme">Theme</label>
+                        <select id="theme" class="control" .value=${this.theme} @change=${this.handleThemeChange}>
                             ${this.getThemes().map(theme => html`<option value=${theme.value}>${theme.name}</option>`)}
                         </select>
                     </div>
@@ -717,12 +725,13 @@ export class CustomizeView extends LitElement {
                     </div>
                     <div class="form-group slider-wrap">
                         <div class="slider-header">
-                            <label class="form-label">Response Font Size</label>
+                            <label class="form-label" for="response-font">Response Font Size</label>
                             <span class="slider-value">${this.fontSize}px</span>
                         </div>
                         <input
                             class="slider-input"
                             type="range"
+                            id="response-font"
                             min="12"
                             max="32"
                             step="1"
@@ -741,20 +750,28 @@ export class CustomizeView extends LitElement {
                 <div class="surface-title">Keyboard Shortcuts</div>
                 ${this.getKeybindActions().map(action => html`
                     <div class="keybind-row">
-                        <span class="keybind-name">${action.name}</span>
+                        <label class="keybind-name" for=${`shortcut-${action.key}`}>${action.name}</label>
                         <input
                             type="text"
                             class="control keybind-input"
                             .value=${this.keybinds[action.key]}
+                            id=${`shortcut-${action.key}`}
+                            aria-describedby=${`shortcut-help shortcut-error-${action.key}`}
+                            aria-invalid=${this.shortcutConflicts[action.key] ? 'true' : 'false'}
+                            aria-busy=${this.keybindSaving ? 'true' : 'false'}
                             data-action=${action.key}
                             @keydown=${this.handleKeybindInput}
                             @focus=${this.handleKeybindFocus}
+                            @blur=${this.handleKeybindBlur}
                             readonly
                         />
                     </div>
+                    <div id=${`shortcut-error-${action.key}`} class="form-help">${this.shortcutConflicts[action.key] || ''}</div>
                 `)}
+                <p id="shortcut-help" class="form-help">Tab and Shift+Tab navigate. Escape cancels. Hide does not stop capture. To restore a hidden window, use ${this.keybinds.toggleVisibility} or the ContextHalo notification-area icon; when unavailable, the window minimizes to the taskbar.</p>
+                <p class="form-help" role="status">${this.shortcutStatus}</p>
                 <div style="margin-top: var(--space-sm);">
-                    <button class="control" style="width:auto;padding:8px 10px;" @click=${this.resetKeybinds}>Reset to defaults</button>
+                    <button class="control" style="width:auto;padding:8px 10px;" @click=${this.resetKeybinds} ?disabled=${this.keybindSaving}>Reset shortcuts to defaults</button>
                 </div>
             </section>
         `;
@@ -785,6 +802,8 @@ export class CustomizeView extends LitElement {
                 <div class="unified-wrap">
                     <div class="page-title">Settings</div>
                     <div class="page-subtitle">Configure session defaults, AI behavior, audio, appearance, keyboard shortcuts, and local data.</div>
+                    ${this.renderSaveFeedback()}
+                    <fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates.load)}>
                     ${this.renderSessionSection()}
                     ${this.renderProviderSection()}
                     ${this.renderAISection()}
@@ -793,6 +812,7 @@ export class CustomizeView extends LitElement {
                     ${this.renderAppearanceSection()}
                     ${this.renderKeyboardSection()}
                     ${this.renderPrivacySection()}
+                    </fieldset>
                 </div>
             </div>
         `;

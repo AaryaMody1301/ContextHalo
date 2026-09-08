@@ -41,7 +41,7 @@ function assertCurrentRequest() {
 
 function getRequestMetadata() {
     const request = context.getStore();
-    return request ? { requestId: request.requestId, kind: request.kind, epoch: request.epoch } : undefined;
+    return request ? { requestId: request.requestId, kind: request.kind, epoch: request.epoch, uiEpoch: request.uiEpoch } : undefined;
 }
 
 function getRequestSignal() {
@@ -60,7 +60,7 @@ function runSessionRequest(kind, work, options = {}) {
     controllers.set(controller, kind);
     const timeoutMs = options.timeoutMs || 65000;
     const request = {
-        requestId: options.requestId || randomUUID(), kind, epoch,
+        requestId: options.requestId || randomUUID(), kind, epoch, uiEpoch: options.uiEpoch,
         signal: controller.signal,
     };
     let timer;

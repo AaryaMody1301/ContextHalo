@@ -62,7 +62,7 @@ const allowedChannels = {
         'get-current-session',
         'start-new-session',
     ],
-    send: ['update-keybinds', 'log-message', 'view-changed'],
+    send: [ 'log-message', 'view-changed'],
     on: [
         'update-status',
         'provider-state',

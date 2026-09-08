@@ -13,29 +13,21 @@ import { FeedbackView } from '../views/FeedbackView.js';
 
 export class ContextHaloApp extends LitElement {
     static styles = css`
-    .phase4-overlay {
-        position: fixed;
-        inset: 48px 28px 28px calc(var(--sidebar-width) + 28px);
-        z-index: 20000;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--bg-surface);
-        box-shadow: 0 28px 90px rgba(0,0,0,.55);
-        backdrop-filter: blur(28px) saturate(130%);
-        -webkit-app-region: no-drag;
-    }
-    :host([live-hud]) .phase4-overlay {
-        inset: 58px 22px 22px 22px;
-    }
+        .phase4-overlay {
+            position: fixed; inset: 12px; width: auto; height: auto; max-width: none; max-height: none;
+            margin: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden;
+            border: 1px solid var(--border-strong); border-radius: 12px;
+            background: var(--bg-surface); color: var(--text-primary); -webkit-app-region: no-drag;
+        }
+        .phase4-overlay:not([open]) { display: none; }
+        .phase4-overlay::backdrop { background: rgb(0 0 0 / 0.3); }
+        .phase4-overlay :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .phase4-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        min-height: 58px;
+        min-height: 40px; flex: 0 0 auto;
         padding: 0 18px;
         border-bottom: 1px solid var(--border);
     }
@@ -47,7 +39,7 @@ export class ContextHaloApp extends LitElement {
         font-size: 15px;
         font-weight: 650;
     }
-    .phase4-subtitle { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+    .phase4-subtitle { color: var(--text-secondary); font-size: 13px; font-weight: 400; }
     .phase4-close, .phase4-btn, .phase4-tab, .phase4-source-button {
         border: 1px solid var(--border);
         background: var(--bg-elevated);
@@ -59,13 +51,13 @@ export class ContextHaloApp extends LitElement {
     .phase4-close { min-height: 32px; padding: 0 10px; font-size: 13px; }
     .phase4-close:hover, .phase4-btn:hover, .phase4-tab:hover, .phase4-source-button:hover { background: var(--bg-elevated); color: var(--text-primary); }
     .phase4-tabs { display: flex; gap: 6px; padding: 10px 18px 0; }
-    .phase4-tab { padding: 7px 11px; font-size: 11px; }
+    .phase4-tab { padding: 7px 11px; font-size: 13px; }
     .phase4-tab.active { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.13); color: var(--accent); }
     .phase4-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 22px; }
     .phase4-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
-    .phase4-btn { min-height: 32px; padding: 0 11px; font-size: 11px; }
+    .phase4-btn { min-height: 32px; padding: 0 11px; font-size: 13px; }
     .phase4-btn.primary { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.18); color: var(--text-primary); }
-    .phase4-btn.danger { border-color: rgba(248,113,113,.25); color: #fecaca; }
+    .phase4-btn.danger { border-color: rgba(248,113,113,.25); color: var(--text-primary); }
     .phase4-btn:disabled { opacity: .45; cursor: default; }
     .phase4-input, .phase4-textarea, .phase4-select {
         width: 100%;
@@ -74,9 +66,9 @@ export class ContextHaloApp extends LitElement {
         background: var(--bg-elevated);
         color: var(--text-primary);
         font: inherit;
-        outline: none;
+        color-scheme: var(--control-color-scheme, dark); box-sizing: border-box;
     }
-    .phase4-input, .phase4-select { height: 34px; padding: 0 10px; }
+    .phase4-input, .phase4-select { height: 36px; padding: 0 10px; }
     .phase4-textarea { min-height: 110px; padding: 9px 10px; resize: vertical; user-select: text; cursor: text; }
     .phase4-input:focus, .phase4-textarea:focus, .phase4-select:focus { border-color: rgba(96,165,250,.65); }
     .phase4-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
@@ -86,9 +78,9 @@ export class ContextHaloApp extends LitElement {
         background: var(--bg-elevated);
         padding: 13px;
     }
-    .phase4-card-title { color: var(--text-primary); font-size: 12px; font-weight: 650; margin-bottom: 5px; }
-    .phase4-muted { color: var(--text-secondary); font-size: 10px; line-height: 1.55; }
-    .phase4-note { color: var(--text-secondary); font-size: 10px; line-height: 1.55; margin: 8px 0 14px; }
+    .phase4-card-title { color: var(--text-primary); font-size: 15px; font-weight: 650; margin-bottom: 5px; }
+    .phase4-muted { color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+    .phase4-note, .phase4-error { color: var(--text-primary); font-size: 13px; line-height: 1.55; margin: 8px 0 14px; }
     .phase4-list { display: flex; flex-direction: column; gap: 7px; }
     .phase4-doc, .phase4-session {
         display: flex;
@@ -101,27 +93,27 @@ export class ContextHaloApp extends LitElement {
         background: var(--bg-elevated);
     }
     .phase4-doc-main, .phase4-session-main { flex: 1; min-width: 0; }
-    .phase4-doc-title, .phase4-session-title { color: var(--text-primary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .phase4-doc-meta, .phase4-session-meta { color: var(--text-secondary); font-size: 9px; margin-top: 3px; }
-    .phase4-toggle { width: 15px; height: 15px; accent-color: #60a5fa; cursor: pointer; }
+    .phase4-doc-title, .phase4-session-title { color: var(--text-primary); font-size: 13px; overflow-wrap: anywhere; }
+    .phase4-doc-meta, .phase4-session-meta { color: var(--text-secondary); font-size: 13px; margin-top: 3px; }
+    .phase4-toggle { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
     .phase4-search-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin-bottom: 14px; }
     .phase4-result { margin-top: 8px; padding: 10px; border-left: 2px solid rgba(96,165,250,.5); background: rgba(59,130,246,.05); }
-    .phase4-result-title { color: var(--accent); font-size: 10px; font-weight: 600; }
-    .phase4-result-text { color: var(--text-secondary); font-size: 10px; line-height: 1.55; margin-top: 5px; white-space: pre-wrap; user-select: text; }
+    .phase4-result-title { color: var(--accent); font-size: 13px; font-weight: 600; }
+    .phase4-result-text { color: var(--text-secondary); font-size: 13px; line-height: 1.55; margin-top: 5px; white-space: pre-wrap; user-select: text; }
     .phase4-form { display: none; margin: 10px 0 14px; gap: 8px; }
     .phase4-form.visible { display: grid; }
     .phase4-practice-question { font-size: 14px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; user-select: text; margin: 12px 0; }
-    .phase4-progress { color: var(--text-secondary); font-size: 10px; }
-    .phase4-feedback { margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--bg-elevated); font-size: 10px; line-height: 1.55; color: var(--text-secondary); }
-    .phase4-feedback.strong { background: rgba(34,197,94,.08); color: #bbf7d0; }
-    .phase4-feedback.partial { background: rgba(234,179,8,.08); color: #fef08a; }
-    .phase4-feedback.retry { background: rgba(248,113,113,.08); color: #fecaca; }
+    .phase4-progress { color: var(--text-secondary); font-size: 13px; }
+    .phase4-feedback { margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--bg-elevated); font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+    .phase4-feedback.strong { background: rgba(34,197,94,.08); color: var(--text-primary); }
+    .phase4-feedback.partial { background: rgba(234,179,8,.08); color: var(--text-primary); }
+    .phase4-feedback.retry { background: rgba(248,113,113,.08); color: var(--text-primary); }
     .phase4-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-    .phase4-tag { padding: 4px 7px; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 9px; }
+    .phase4-tag { padding: 4px 7px; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 13px; }
     .phase4-review-section { margin-top: 14px; }
-    .phase4-review-section h4 { margin: 0 0 7px; color: var(--text-primary); font-size: 11px; }
-    .phase4-review-section ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 10px; line-height: 1.6; user-select: text; }
-    .phase4-empty { padding: 32px 16px; text-align: center; color: var(--text-secondary); font-size: 11px; }
+    .phase4-review-section h4 { margin: 0 0 7px; color: var(--text-primary); font-size: 13px; }
+    .phase4-review-section ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; user-select: text; }
+    .phase4-empty { padding: 32px 16px; text-align: center; color: var(--text-secondary); font-size: 13px; }
     .phase4-live-chip {
         min-height: 24px;
         padding: 0 8px;
@@ -129,16 +121,13 @@ export class ContextHaloApp extends LitElement {
         border-radius: 999px;
         background: rgba(59,130,246,.07);
         color: var(--accent);
-        font-size: 9px;
+        font-size: 13px;
         cursor: pointer;
     }
     @media (max-width: 900px) { .phase4-grid { grid-template-columns: 1fr; } }
 
-        .phase4-overlay { position: fixed; inset: 16px; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-strong); }
-        .phase4-overlay:not([open]) { display: none; }
-        .phase4-overlay::backdrop { background: rgb(0 0 0 / 0.3); }
-        .phase4-overlay :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+        .phase4-page { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
         * {
             box-sizing: border-box;
             font-family: var(--font);
@@ -423,29 +412,24 @@ export class ContextHaloApp extends LitElement {
         .live-bar button:hover, .session-actions button:hover { background: var(--bg-hover); }
         button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .live-bar-text { font-size: 12px; white-space: nowrap; text-shadow: var(--hud-text-shadow); }
-        .session-state {
-            max-height: 96px; overflow-y: auto;
-            padding: 6px 12px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px 12px;
-            flex-shrink: 0;
-            font-size: 12px;
-            color: var(--text-primary);
-            text-shadow: var(--hud-text-shadow);
-        }
-        .session-state .status-detail {
-            min-width: 0;
-            overflow-wrap: anywhere;
-            overflow: auto;
-            max-height: 3.2em;
-            flex: 1 1 200px;
-            user-select: text;
-        }
-        .session-state .search-state { flex-shrink: 0; }
-        .session-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-        .session-actions > span { flex-basis: 100%; max-height: 3.2em; overflow: auto; overflow-wrap: anywhere; }
-        @media (max-height: 400px) { .session-state { max-height: 64px; padding: 4px 8px; } }
+        .session-state { padding:4px 12px; display:flex; align-items:center; gap:8px; flex-shrink:0; min-height:36px;
+            font-size:13px; color:var(--text-primary); text-shadow:var(--hud-text-shadow); }
+        .status-detail { min-width:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .search-state { flex-shrink:0; font-size:13px; }
+        .session-state button { min-height:28px; flex-shrink:0; padding:4px 8px; border:1px solid var(--border-strong); border-radius:6px; background:var(--bg-elevated); color:var(--text-primary); cursor:pointer; font:inherit; }
+        .session-actions { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+        .session-actions > span { flex-basis:100%; overflow-wrap:anywhere; }
+        .session-details { position:fixed; inset:12px; width:auto; height:auto; max-width:none; max-height:none; margin:0; padding:0; display:flex; flex-direction:column;
+            background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-strong); border-radius:12px; -webkit-app-region:no-drag; }
+        .session-details:not([open]) { display:none; }
+        .session-details::backdrop { background:rgb(0 0 0 / .35); }
+        .details-header { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
+        .details-header h2 { margin-right:auto; font-size:16px; }
+        .details-body { flex:1; min-height:0; overflow:auto; padding:16px; font-size:14px; line-height:1.6; user-select:text; }
+        .details-body p { margin:8px 0 12px; overflow-wrap:anywhere; white-space:pre-wrap; user-select:text; }
+        .details-body summary { cursor:pointer; padding:8px 0; font-weight:600; }
+        .details-body h3 { font-size:15px; margin:16px 0 8px; }
+        .live-bar-center { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
         :host([windows]) .top-drag-bar { height: 38px; background: var(--bg-surface); }
         :host([windows]) .drag-region { order: 1; }
         :host([windows]) .traffic-lights { order: 2; padding: 0; gap: 0; }
@@ -560,6 +544,8 @@ export class ContextHaloApp extends LitElement {
 
     static properties = {
         workspaceTab: { state: true },
+        instructionDraft: { state: true },
+        _detailMessage: { state: true },
         _unsavedSession: { state: true },
         currentView: { type: String },
         statusText: { type: String },
@@ -573,6 +559,8 @@ export class ContextHaloApp extends LitElement {
         providerError: { state: true },
         requestError: { state: true },
         shortcut: { state: true },
+        visibilityShortcut: { state: true },
+        shortcutWarning: { state: true },
         captureState: { state: true },
         searchState: { state: true },
         sessionDraft: { state: true },
@@ -611,6 +599,12 @@ export class ContextHaloApp extends LitElement {
         this.sessionDraft = '';
         this.requestError = null;
         this.shortcut = '';
+        this.visibilityShortcut = 'Ctrl+\\';
+        this.shortcutWarning = '';
+        this._requestSequence = 0;
+        this._requestOwners = {};
+        this._requestErrors = {};
+        this._detailMessage = null;
         this._responseGrounding = [];
         this._unsavedSession = false;
         this._needsRestart = false;
@@ -671,7 +665,8 @@ export class ContextHaloApp extends LitElement {
             this.selectedImageQuality = prefs.selectedImageQuality || 'medium';
             this.layoutMode = config.layout || 'normal';
 
-            this.shortcut = (await contextHalo.storage.getKeybinds())?.nextStep || (window.process?.platform === 'darwin' ? 'Cmd+Enter' : 'Ctrl+Enter');
+            const shortcuts = contextHalo.storage.getShortcutState ? await contextHalo.storage.getShortcutState() : { data: await contextHalo.storage.getKeybinds() };
+            this.refreshShortcuts(shortcuts.data, shortcuts.conflicts);
             this._storageLoaded = true;
             this.requestUpdate();
         } catch (error) {
@@ -700,7 +695,7 @@ export class ContextHaloApp extends LitElement {
             // guard while screen/audio permission and capture are still pending.
             listen('provider-state', (_, state) => this.setProviderState(state));
             listen('search-state', (_, state) => { this.searchState = state; });
-            listen('provider-request-error', (_, failure) => { this.requestError = failure; this._scheduleRecoveryRefresh(); });
+            listen('provider-request-error', (_, failure, metadata) => this.handleRequestError(failure, metadata));
             listen('shortcut', (_, shortcut) => contextHalo.handleShortcut(shortcut));
             listen('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
@@ -813,14 +808,70 @@ export class ContextHaloApp extends LitElement {
         this.requestUpdate();
     }
 
-    retryRequest() {
-        if (this.requestError?.retryAt > Date.now()) return;
+    refreshShortcuts(bindings = {}, conflicts = {}) {
+        this.shortcut = bindings?.nextStep || 'Ctrl+Enter';
+        this.visibilityShortcut = bindings?.toggleVisibility || 'Ctrl+\\';
+        this.shortcutWarning = conflicts?.toggleVisibility ? 'Visibility shortcut unavailable. Use the notification-area icon or taskbar.' : '';
+    }
+
+    _beginRequest(operation, retry) {
+        const owner = {
+            operation, uiEpoch: this._uiSessionEpoch || 0,
+            requestId: `ui-${this._uiSessionEpoch || 0}-${++this._requestSequence}`,
+            sequence: this._requestSequence, retry,
+        };
+        this._requestOwners[operation] = owner;
+        return owner;
+    }
+
+    _requestIsCurrent(owner) {
+        return owner && owner.uiEpoch === (this._uiSessionEpoch || 0)
+            && this._requestOwners[owner.operation]?.requestId === owner.requestId;
+    }
+
+    _refreshRequestError() {
+        this.requestError = Object.values(this._requestErrors).sort((a, b) => b.sequence - a.sequence)[0] || null;
+        this._scheduleRecoveryRefresh();
+    }
+
+    handleRequestError(failure, metadata) {
+        // A null/legacy broadcast is not evidence that another request succeeded.
+        if (!failure || !metadata?.requestId) return;
+        const operation = metadata.kind || failure.operation;
+        const owner = this._requestOwners[operation];
+        if (owner?.outcome === 'success' || owner?.outcome === 'cancelled') return;
+        if (!this._requestIsCurrent(owner) || owner.requestId !== metadata.requestId
+            || metadata.uiEpoch !== owner.uiEpoch) return;
+        this._requestErrors[operation] = { ...failure, operation, requestId: owner.requestId, uiEpoch: owner.uiEpoch, sequence: owner.sequence };
+        this._refreshRequestError();
+    }
+
+    _finishRequest(owner, result) {
+        if (!this._requestIsCurrent(owner)) return;
+        owner.outcome = result?.success === true ? 'success' : result?.cancelled ? 'cancelled' : 'failed';
+        if (result?.success === true || result?.cancelled || result?.failure?.category === 'cancelled') {
+            if (this._detailMessage?.operation === owner.operation && this._detailMessage.uiEpoch === owner.uiEpoch) this._detailMessage = null;
+            if ((this._requestErrors[owner.operation]?.sequence || 0) <= owner.sequence) delete this._requestErrors[owner.operation];
+        } else {
+            this._requestErrors[owner.operation] = {
+                ...(result?.failure || {}), operation: owner.operation,
+                message: result?.failure?.message || result?.error || 'Request failed. Retry or review settings.',
+                requestId: owner.requestId, uiEpoch: owner.uiEpoch, sequence: owner.sequence,
+            };
+        }
+        this._refreshRequestError();
+    }
+
+    async retryRequest() {
+        const failure = this.requestError;
+        const owner = failure && this._requestOwners[failure.operation];
+        if (!this._requestIsCurrent(owner) || failure.requestId !== owner.requestId || failure.retryAt > Date.now() || !this.sessionActive) return;
         this.navigate('assistant');
-        this.updateComplete.then(() => {
-            const view = this.shadowRoot.querySelector('assistant-view');
-            if (this.requestError?.operation === 'screen') return view?.handleScreenAnswer();
-            return view?.handleSendText();
-        });
+        await this.updateComplete;
+        if (!this._requestIsCurrent(owner)) return;
+        const view = this.shadowRoot.querySelector('assistant-view');
+        if (owner.operation === 'screen') return view?.handleScreenAnswer(owner.retry);
+        return view?.handleSendText({ retryText: owner.retry.text });
     }
 
     _checkStart(epoch) {
@@ -845,6 +896,7 @@ export class ContextHaloApp extends LitElement {
     }
 
     addNewResponse(response, metadata) {
+        if (metadata?.uiEpoch !== undefined && metadata.uiEpoch !== this._uiSessionEpoch) return;
         const id = metadata?.requestId;
         if (id && this._responseRequestIndex.has(id)) return this.updateCurrentResponse(response, metadata);
         const wasOnLatest = this.currentResponseIndex === this.responses.length - 1;
@@ -857,6 +909,7 @@ export class ContextHaloApp extends LitElement {
     }
 
     updateCurrentResponse(response, metadata) {
+        if (metadata?.uiEpoch !== undefined && metadata.uiEpoch !== this._uiSessionEpoch) return;
         const id = metadata?.requestId;
         if (id && !this._responseRequestIndex.has(id)) return this.addNewResponse(response, metadata);
         const index = id ? this._responseRequestIndex.get(id) : this.responses.length - 1;
@@ -893,7 +946,12 @@ export class ContextHaloApp extends LitElement {
 
     endSession() {
         if (this._stopPromise) return this._stopPromise;
+        this.closeSessionDetails();
+        this.shadowRoot?.querySelector('.phase4-overlay')?.close();
         this._uiSessionEpoch += 1;
+        this._requestOwners = {};
+        this._requestErrors = {};
+        this.requestError = null;
         this._startController?.abort();
         this._setLifecycle('stopping', 'Stopping capture and closing the provider...');
         contextHalo.stopCapture();
@@ -967,6 +1025,9 @@ export class ContextHaloApp extends LitElement {
         if (this.sessionActive) { this.navigate('assistant'); return Promise.resolve({ success: true }); }
         if (this.providerError?.retryAt > Date.now()) return Promise.resolve({ success: false, error: this.providerError.message });
         const epoch = ++this._uiSessionEpoch;
+        this._requestOwners = {};
+        this._requestErrors = {};
+        this.requestError = null;
         this._startEpoch = epoch;
         this._startController = new AbortController();
         const operation = this._prepareSession(epoch, options).finally(() => {
@@ -1055,7 +1116,6 @@ export class ContextHaloApp extends LitElement {
         this._setLifecycle('reconnecting', 'Reconnecting the provider. Your draft and session history are retained.');
         const operation = window.electronAPI.invoke('retry-session-connection', { withoutSearch }).then(result => {
             if (epoch === this._uiSessionEpoch) this.setProviderState({ state: result.success ? 'ready' : 'failed', error: result.failure, search: result.search });
-            if (epoch === this._uiSessionEpoch && result.success) this.requestError = null;
             return result;
         }).catch(error => {
             if (epoch === this._uiSessionEpoch) this.setProviderState({ state: 'failed', error: { message: error.message } });
@@ -1087,22 +1147,22 @@ export class ContextHaloApp extends LitElement {
 
     async handleProfileChange(profile) {
         this.selectedProfile = profile;
-        await contextHalo.storage.updatePreference('selectedProfile', profile);
+        return await contextHalo.storage.updatePreference('selectedProfile', profile);
     }
 
     async handleLanguageChange(language) {
         this.selectedLanguage = language;
-        await contextHalo.storage.updatePreference('selectedLanguage', language);
+        return await contextHalo.storage.updatePreference('selectedLanguage', language);
     }
 
     async handleScreenshotIntervalChange(interval) {
         this.selectedScreenshotInterval = interval;
-        await contextHalo.storage.updatePreference('selectedScreenshotInterval', interval);
+        return await contextHalo.storage.updatePreference('selectedScreenshotInterval', interval);
     }
 
     async handleImageQualityChange(quality) {
         this.selectedImageQuality = quality;
-        await contextHalo.storage.updatePreference('selectedImageQuality', quality);
+        return await contextHalo.storage.updatePreference('selectedImageQuality', quality);
     }
 
     async handleLayoutModeChange(layoutMode) {
@@ -1119,20 +1179,31 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleSendText(message) {
-        // A new question returns to the newest card, unlike background updates.
+        const owner = this._beginRequest('text', { text: message });
+        // A deliberate new question returns to latest; background updates do not.
         this.currentResponseIndex = this.responses.length - 1;
         this.requestUpdate();
-        const epoch = this._uiSessionEpoch || 0;
+        let result;
         try {
-            const result = await window.contextHalo.sendTextMessage(message);
-            if ((this._uiSessionEpoch || 0) !== epoch) return { success: false, error: 'Session ended' };
-            if (result?.success !== true) this.setStatus('Error sending message: ' + (result?.error || 'Unknown provider error'));
-            else this.setStatus('Response received');
-            return result;
+            result = await window.contextHalo.sendTextMessage(message, { requestId: owner.requestId, uiEpoch: owner.uiEpoch });
+        } catch { result = { success: false, error: 'The request could not be completed. Your draft is retained; retry.' }; }
+        if (owner.uiEpoch !== (this._uiSessionEpoch || 0)) return { success: false, cancelled: true, error: 'Session ended' };
+        this._finishRequest(owner, result);
+        if (this._requestIsCurrent(owner)) this.setStatus(result?.success === true ? 'Response received' : 'Text request needs attention');
+        return result;
+    }
+
+    async handleAnalyzeScreen(options = {}) {
+        const owner = this._beginRequest('screen', { ...(options.region ? { region: { ...options.region } } : {}) });
+        let result;
+        try {
+            result = await window.captureManualScreenshot(null, { ...options, request: { requestId: owner.requestId, uiEpoch: owner.uiEpoch } });
         } catch (error) {
-            if ((this._uiSessionEpoch || 0) === epoch) this.setStatus('Error sending message: ' + error.message);
-            return { success: false, error: error.message };
+            result = { success: false, cancelled: options.signal?.aborted || error?.name === 'AbortError', error: error?.message || 'Screen analysis failed. Retry or review capture settings.' };
         }
+        if (owner.uiEpoch !== (this._uiSessionEpoch || 0)) return { success: false, cancelled: true, error: 'Session ended' };
+        this._finishRequest(owner, result);
+        return result;
     }
 
     handleResponseIndexChanged(e) {
@@ -1169,12 +1240,14 @@ export class ContextHaloApp extends LitElement {
         switch (this.currentView) {
             case 'onboarding':
                 return html`
-                    <onboarding-view .onComplete=${() => this.handleOnboardingComplete()} .onClose=${() => this.handleClose()}></onboarding-view>
+                    <onboarding-view .onClose=${() => this.handleClose()} .onComplete=${() => this.handleOnboardingComplete()}></onboarding-view>
                 `;
 
             case 'main':
                 return html`
                     <main-view
+                        .sessionActive=${this.sessionActive}
+                        .onOpenSettings=${() => this.navigate('customize')}
                         .unsavedSession=${this._unsavedSession}
                         .onRetrySave=${() => this.retrySave()}
                         .selectedProfile=${this.selectedProfile}
@@ -1200,8 +1273,10 @@ export class ContextHaloApp extends LitElement {
             case 'ai-customize':
                 return html`
                     <ai-customize-view
+                        .draft=${this.instructionDraft}
+                        @instruction-draft=${event => { this.instructionDraft = event.detail; }}
                         .selectedProfile=${this.selectedProfile}
-                        .onProfileChange=${p => this.handleProfileChange(p)}
+                        .onOpenProfile=${() => this.navigate('main')}
                     ></ai-customize-view>
                 `;
 
@@ -1219,6 +1294,8 @@ export class ContextHaloApp extends LitElement {
                         .onImageQualityChange=${q => this.handleImageQualityChange(q)}
                         .onLayoutModeChange=${lm => this.handleLayoutModeChange(lm)}
                         .onOpenProviderSettings=${() => this.navigate('main')}
+                        .onOpenInstructions=${() => this.navigate('ai-customize')}
+                        @shortcuts-changed=${event => this.refreshShortcuts(event.detail)}
                     ></customize-view>
                 `;
 
@@ -1241,6 +1318,10 @@ export class ContextHaloApp extends LitElement {
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
                         .onSendText=${msg => this.handleSendText(msg)}
+                        .onAnalyzeScreen=${options => this.handleAnalyzeScreen(options)}
+                        .onEndSession=${() => this.endSession()}
+                        .onHideWindow=${() => this.handleHideToggle()}
+                        .onShowError=${(message, operation) => this.openSessionDetails(message, operation)}
                         .onOpenKnowledge=${() => openPanel(this, 'knowledge')}
                         .draft=${this.sessionDraft}
                         @draft-changed=${event => { this.sessionDraft = event.detail; }}
@@ -1338,11 +1419,12 @@ export class ContextHaloApp extends LitElement {
                 <div class="sidebar-brand">
                     <h1>ContextHalo</h1>
                 </div>
-                <nav class="sidebar-nav">
+                <nav class="sidebar-nav" aria-label="Main navigation">
                     ${items.map(
                         item => html`
                             <button
                                 class="nav-item ${this.currentView === item.id ? 'active' : ''}"
+                                aria-current=${this.currentView === item.id ? 'page' : 'false'}
                                 @click=${() => this.navigate(item.id)}
                                 title=${item.label}
                             >
@@ -1351,7 +1433,7 @@ export class ContextHaloApp extends LitElement {
                         `
                     )}
                 ${[['knowledge', 'Knowledge'], ['practice', 'Practice Lab'], ['review', 'Session Review']].map(([tab, label]) => html`
-                    <button type="button" id=${`phase4-${tab}-nav`} class="nav-item" @click=${() => openPanel(this, tab)} title=${label}><span>${label}</span></button>`)}
+                    <button type="button" id=${`phase4-${tab}-nav`} class="nav-item" aria-haspopup="dialog" @click=${() => openPanel(this, tab)} title=${label}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M8 8h8M8 12h8M8 16h5"></path></svg><span>${label}</span></button>`)}
                 </nav>
                 <div class="sidebar-footer">
                     ${
@@ -1389,29 +1471,70 @@ export class ContextHaloApp extends LitElement {
                 <div class="live-bar-center">${profileLabels[this.selectedProfile] || 'Session workspace'}</div>
                 <div class="live-bar-right">
                     <span class="live-bar-text elapsed">${this.getElapsedTime()}</span>
-                    <button type="button" @click=${() => this.handleHideToggle()} title="Hide window; capture continues. Use your visibility shortcut to show it again.">Hide</button>
+                    <button type="button" @click=${() => this.handleHideToggle()} title=${`Hide without ending capture. Restore with ${this.visibilityShortcut}, the ContextHalo notification-area icon or the taskbar. ${this.shortcutWarning}`}>Hide</button>
                 </div>
             </header>
             <div class="session-state">
-                <span class="status-detail" role="status" title=${this.statusText}>${this.statusText || 'Session ready'}</span>
+                <span class="status-detail" role="status">${this.sessionStatusSummary()}</span>
                 <span class="search-state" title="Google Search applies to Gemini Live, typed questions and screen analysis for this session.">
-                    ${this.searchState.status === 'pending' ? 'Search requested; connecting' : this.searchState.status === 'not-supported' ? 'Search unavailable with this provider' : this.searchState.effective ? 'Search enabled: Live, text, screen' : this.searchState.requested ? 'Search off for this session' : 'Search off'}
+                    ${this.searchState.status === 'pending' ? 'Search pending' : this.searchState.status === 'not-supported' ? 'Search unavailable' : this.searchState.effective ? 'Search on' : this.searchState.requested ? 'Search off (session)' : 'Search off'}
                 </span>
-                ${this._isClickThrough ? html`<span>Click-through on</span>` : ''}
-                ${this.captureState.state !== 'ready' && this.sessionActive ? html`<div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div>` : ''}
-                ${this.providerError ? html`<div class="session-actions" role="group" aria-label="Provider recovery">
-                    <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
-                    ${this.searchState.requested && this.searchState.effective && this.providerError.canDisableSearch ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.providerError.retryAt > Date.now()}>Continue without Search</button>` : ''}
-                    <button @click=${() => this.navigate('main')}>Provider settings</button>
-                </div>` : ''}
-                ${this.requestError ? html`<div class="session-actions" role="alert">
-                    <span>${this.requestError.message}</span>
-                    <button @click=${this.retryRequest} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'draft'}</button>
-                    ${this.requestError.canDisableSearch && this.searchState.effective ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.requestError.retryAt > Date.now()}>Continue without Search</button>` : ''}
-                    <button @click=${() => this.navigate('main')}>Provider settings</button>
-                </div>` : ''}
+                <button type="button" aria-haspopup="dialog" @click=${() => this.openSessionDetails()}>${this.providerError || this.requestError || this.captureState.warning ? 'Resolve issue' : 'Session details'}</button>
             </div>
         `;
+    }
+
+    sessionStatusSummary() {
+        const provider = { byok:'Gemini', groq:'Groq', local:'Local AI' }[this.providerMode] || 'Provider';
+        if (this.providerState === 'reconnecting') return `${provider} reconnecting`;
+        if (this.providerError) return `${provider} connection needs attention`;
+        if (this.requestError) return this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention';
+        if (this._isClickThrough) return 'Click-through on - use visibility shortcut or tray to recover';
+        if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
+        if (!this.captureState.audioReady) return `${provider} ready - audio stopped`;
+        return `${provider} ready - ${this.captureState.microphone && this.captureState.system ? 'mixed audio' : this.captureState.microphone ? 'microphone' : 'speaker audio'}`;
+    }
+
+    async openSessionDetails(message, operation) {
+        this._detailMessage = message ? { message:String(message).slice(0,4000), operation, uiEpoch:this._uiSessionEpoch } : null;
+        this.requestUpdate();
+        await this.updateComplete;
+        const dialog = this.shadowRoot.querySelector('.session-details');
+        if (dialog && !dialog.open) dialog.showModal();
+    }
+
+    closeSessionDetails() { this.shadowRoot.querySelector('.session-details')?.close(); }
+
+    renderSessionDetails() {
+        return html`<dialog class="session-details" aria-labelledby="session-details-title">
+            <div class="details-header session-actions"><h2 id="session-details-title">Session details</h2>
+                <button type="button" @click=${() => { this.closeSessionDetails(); this.endSession(); }}>End session</button>
+                <button type="button" @click=${() => { this.closeSessionDetails(); this.handleHideToggle(); }}>Hide</button>
+                <button type="button" @click=${this.closeSessionDetails} aria-label="Close session details">Close</button></div>
+            <div class="details-body" tabindex="0" aria-label="Session details">
+                ${this.requestError ? html`<h3>${this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention'}</h3>
+                    <div class="session-actions" role="group" aria-label="Request recovery">
+                        <button @click=${() => { this.closeSessionDetails(); this.retryRequest(); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'message'}</button>
+                        ${this.requestError.canDisableSearch && this.searchState.effective ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.requestError.retryAt > Date.now()}>Continue without Search</button>` : ''}
+                        <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button>
+                    </div>
+                    ${this.requestError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.requestError.retryAt).toLocaleTimeString()}.</p>` : ''}
+                    <details class="error-details"><summary>Read request error</summary><p>${this.requestError.message}</p></details>
+                ` : this._detailMessage?.uiEpoch === this._uiSessionEpoch ? html`<p>${this._detailMessage.message}</p>` : ''}
+                ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">
+                    <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
+                    ${this.searchState.requested && this.searchState.effective && this.providerError.canDisableSearch ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.providerError.retryAt > Date.now()}>Continue without Search</button>` : ''}
+                    <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button></div>
+                    ${this.providerError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.providerError.retryAt).toLocaleTimeString()}.</p>` : ''}
+                    <details class="error-details"><summary>Read connection error</summary><p>${this.providerError.message}</p></details>` : ''}
+                ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
+                <h3>${this.sessionStatusSummary()}</h3>
+                <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
+                <p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Effective Search: ${this.searchState.effective ? 'enabled for Live, text and screen' : 'off for this session'}. Your saved preference is unchanged.</p>
+                <p>Restore with ${this.visibilityShortcut} or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Hiding and minimizing do not stop capture.</p>
+                ${this.shortcutWarning ? html`<p>${this.shortcutWarning}</p>` : ''}
+            </div>
+        </dialog>`;
     }
 
     renderWorkspace() {
@@ -1420,7 +1543,7 @@ export class ContextHaloApp extends LitElement {
             <div class="phase4-header"><div class="phase4-title">${titles[this.workspaceTab] || 'Session tools'}</div>
                 <button type="button" class="phase4-close" aria-label="Close session tools" @click=${() => closePanel(this)}>Close</button></div>
             <div class="phase4-tabs">${[['knowledge', 'Knowledge'], ['practice', 'Practice'], ['review', 'Review']].map(([tab, label]) => html`
-                <button type="button" class=${`phase4-tab ${tab === this.workspaceTab ? 'active' : ''}`} @click=${() => openPanel(this, tab)}>${label}</button>`)}</div>
+                <button type="button" class=${`phase4-tab ${tab === this.workspaceTab ? 'active' : ''}`} aria-pressed=${tab === this.workspaceTab ? 'true' : 'false'} @click=${() => openPanel(this, tab)}>${label}</button>`)}</div>
             <div class="phase4-body"></div>
         </dialog>`;
     }
@@ -1458,6 +1581,7 @@ export class ContextHaloApp extends LitElement {
                 </div>
             </div>
                 ${this.renderWorkspace()}
+                ${this.renderSessionDetails()}
         `;
     }
 }

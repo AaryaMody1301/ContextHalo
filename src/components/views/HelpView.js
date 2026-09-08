@@ -157,10 +157,10 @@ export class HelpView extends LitElement {
         return html`
             <div class="unified-page">
                 <div class="unified-wrap">
-                    <div class="page-title">Help</div>
+                    <h1 class="page-title">Help</h1>
 
                     <section class="surface">
-                        <div class="surface-title">ContextHalo project</div>
+                        <h2 class="surface-title">ContextHalo project</h2>
                         <div class="link-row">
                             <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo')}>GitHub</button>
                             <button class="link-button" @click=${() => this._open('https://github.com/AaryaMody1301/ContextHalo/issues')}>Report an issue</button>
@@ -168,7 +168,8 @@ export class HelpView extends LitElement {
                     </section>
 
                     <section class="surface">
-                        <div class="surface-title">Keyboard Shortcuts</div>
+                        <h2 class="surface-title">Keyboard Shortcuts</h2>
+                        <p class="form-help">Hide keeps capture running. Restore with your visibility shortcut or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Click-through, Minimize and End are separate actions.</p>
                         <div class="shortcut-grid">
                             ${shortcutRows.map(([label, keys]) => html`
                                 <div class="shortcut-row">

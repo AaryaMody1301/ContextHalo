@@ -85,6 +85,7 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 2;
 
 function sendToRenderer(channel, data, metadata = getRequestMetadata()) {
+    metadata = { uiEpoch: providerUiEpoch, ...metadata };
     if (!requestIsCurrent()) return;
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
@@ -1160,11 +1161,9 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
         sendToRenderer('new-response', text, { ...getRequestMetadata(), grounding, model });
         saveScreenAnalysis(prompt, text, model, grounding);
         incrementLimitCount(model);
-        sendToRenderer('provider-request-error', null);
         return { success: true, text, model, grounding };
     } catch (error) {
         const failure = classifyGeminiFailure(error, 'screen', model);
-        if (failure.category !== 'cancelled') sendToRenderer('provider-request-error', failure);
         return { success: false, error: failure.message, failure };
     }
 }
@@ -1196,10 +1195,41 @@ async function sendTypedGeminiText(text) {
     if (!answer) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
     const grounding = groundingFromResponse(response);
     sendToRenderer('new-response', answer, { ...getRequestMetadata(), grounding, model });
-    sendToRenderer('provider-request-error', null);
     saveConversationTurn(text, answer, grounding);
     incrementLimitCount(model);
     return { success: true, text: answer, model, grounding };
+}
+
+function validateUserRequestContext(value) {
+    if (value === undefined) return { uiEpoch: providerUiEpoch };
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+        || typeof value.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.requestId)
+        || !Number.isSafeInteger(value.uiEpoch) || value.uiEpoch < 0
+        || (providerUiEpoch !== undefined && value.uiEpoch !== providerUiEpoch)) {
+        throw Object.assign(new Error('Invalid or expired request context'), { name: 'AbortError' });
+    }
+    return { requestId: value.requestId, uiEpoch: value.uiEpoch };
+}
+
+function userRequestFailure(error, operation) {
+    const cancelled = error?.name === 'AbortError' && !/timed? out|timeout/i.test(error.message || '');
+    const failure = currentProviderMode === 'byok' ? classifyGeminiFailure(error, operation, getAvailableModel())
+        : { operation, category: cancelled ? 'cancelled' : 'request-failed',
+            message: cancelled ? 'Request cancelled.' : `${currentProviderMode === 'local' ? 'Local AI' : 'Groq'} could not complete this request. Check provider settings and retry; your draft is retained.` };
+    return { success: false, cancelled: failure.category === 'cancelled', error: failure.message, failure };
+}
+
+function reportUserRequestResult(result, operation) {
+    if (result?.success === true && Object.hasOwn(result, 'text') && !String(result.text || '').trim()) {
+        result = { success: false, error: 'The provider returned an empty answer. Review model settings and retry.' };
+    }
+    if (result?.success !== true) {
+        const failure = result?.failure || { operation, category: result?.cancelled ? 'cancelled' : 'request-failed',
+            message: String(result?.error || 'Request failed. Retry or review provider settings.').slice(0, 4000) };
+        result = { ...result, success: false, error: failure.message, failure };
+        if (failure.category !== 'cancelled') sendToRenderer('provider-request-error', failure);
+    }
+    return { ...result, request: getRequestMetadata() };
 }
 
 function setupGeminiIpcHandlers(geminiSessionRef) {
@@ -1239,10 +1269,10 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return result;
             } catch (error) {
                 if (initializing && generation === liveGeneration) { closeSessionRequests(); isInitializingSession = false; }
-                if (currentProviderMode === 'byok' && ['send-text-message', 'send-image-content'].includes(channel)) {
-                    const failure = classifyGeminiFailure(error, channel === 'send-text-message' ? 'text' : 'screen', getAvailableModel());
-                    if (failure.category !== 'cancelled') sendToRenderer('provider-request-error', failure);
-                    return { success: false, error: failure.message, failure };
+                if (['send-text-message', 'send-image-content'].includes(channel)) {
+                    // The IPC result belongs to its original caller. Never broadcast an
+                    // unscoped error after leaving AsyncLocalStorage or ending a session.
+                    return userRequestFailure(error, channel === 'send-text-message' ? 'text' : 'screen');
                 }
                 return { success: false, error: error?.message || 'Request failed' };
             }
@@ -1427,52 +1457,38 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (typeof data !== 'string' || data.length > 20000000 || typeof prompt !== 'string' || prompt.length > 32000) {
             return { success: false, error: 'Invalid image request' };
         }
-        try {
-            if (!data || typeof data !== 'string') {
-                console.error('Invalid image data received');
-                return { success: false, error: 'Invalid image data' };
-            }
-
-            const buffer = Buffer.from(data, 'base64');
-
-            if (buffer.length < 1000) {
-                console.error(`Image buffer too small: ${buffer.length} bytes`);
-                return { success: false, error: 'Image buffer too small' };
-            }
-
-            process.stdout.write('!');
-
-            if (currentProviderMode === 'cloud') {
-                const sent = sendCloudImage(data);
-                if (!sent) {
-                    return { success: false, error: 'Cloud connection not active' };
-                }
-                return { success: true, model: 'cloud' };
-            }
-
-            if (currentProviderMode === 'local') {
-                const result = await getLocalAi().sendLocalImage(data, prompt);
-                return result;
-            }
-
-            const result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
+        const request = validateUserRequestContext(payload.request);
+        return runSessionRequest('screen', async () => {
+            sendToRenderer('screen-analysis-started', null);
+            let result;
+            try {
+                if (Buffer.from(data, 'base64').length < 1000) result = { success: false, error: 'Image buffer too small' };
+                else if (currentProviderMode === 'cloud') {
+                    const sent = sendCloudImage(data);
+                    result = sent ? { success: true, model: 'cloud' } : { success: false, error: 'Cloud connection not active' };
+                } else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
+                else result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
+            } catch (error) { result = userRequestFailure(error, 'screen'); }
+            result = reportUserRequestResult(result, 'screen');
+            sendToRenderer('screen-analysis-complete', result);
             return result;
-        } catch (error) {
-            console.warn('Error sending image:');
-            return { success: false, error: error.message };
-        }
+        }, { ...request, timeoutMs: 58000 });
     });
 
-    register('send-text-message', async (event, text) => {
+    register('send-text-message', async (event, text, options) => {
         if (typeof text !== 'string' || !text.trim() || text.length > 32000) {
             return { success: false, error: 'Enter a message between 1 and 32,000 characters' };
         }
+        const request = validateUserRequestContext(options);
         const cleanText = text.trim();
         return runSessionRequest('text', async () => {
-            if (currentProviderMode === 'local') return getLocalAi().sendLocalText(cleanText);
-            if (currentProviderMode === 'groq') return sendToGroq(cleanText);
-            return sendTypedGeminiText(cleanText);
-        }, { timeoutMs: currentProviderMode === 'local' ? 180000 : 65000 });
+            let result;
+            try {
+                result = currentProviderMode === 'local' ? await getLocalAi().sendLocalText(cleanText)
+                    : currentProviderMode === 'groq' ? await sendToGroq(cleanText) : await sendTypedGeminiText(cleanText);
+            } catch (error) { result = userRequestFailure(error, 'text'); }
+            return reportUserRequestResult(result, 'text');
+        }, { ...request, timeoutMs: currentProviderMode === 'local' ? 180000 : 65000 });
     });
 
     register('start-macos-audio', async event => {

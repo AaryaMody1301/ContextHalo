@@ -79,105 +79,124 @@ const isLinux = process.platform === 'linux';
 const isMacOS = process.platform === 'darwin';
 
 // ============ STORAGE API ============
+// Writes are serialized once here, in invocation order. A failed write does not
+// block later edits, and callers receive both rejected and explicit failures.
+let persistenceQueue = Promise.resolve();
+function persistStorage(channel, ...args) {
+    const snapshot = structuredClone(args);
+    const pending = persistenceQueue.then(async () => {
+        const result = await ipcRenderer.invoke(channel, ...snapshot);
+        if (result?.success !== true) throw Object.assign(new Error(result?.error || 'Could not save data. Your edit is retained; retry.'), { result });
+        return result;
+    });
+    persistenceQueue = pending.catch(() => {});
+    return pending;
+}
+
 // Wrapper for IPC-based storage access
 const storage = {
     // Config
     async getConfig() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-config');
         return result.success ? result.data : {};
     },
     async setConfig(config) {
-        return ipcRenderer.invoke('storage:set-config', config);
+        return persistStorage('storage:set-config', config);
     },
     async updateConfig(key, value) {
-        return ipcRenderer.invoke('storage:update-config', key, value);
+        return persistStorage('storage:update-config', key, value);
     },
 
     // Credentials
     async getCredentials() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-credentials');
         return result.success ? result.data : {};
     },
     async setCredentials(credentials) {
-        return ipcRenderer.invoke('storage:set-credentials', credentials);
+        return persistStorage('storage:set-credentials', credentials);
     },
     async getApiKey() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-api-key');
         return result.success ? result.data : '';
     },
     async setApiKey(apiKey) {
-        return ipcRenderer.invoke('storage:set-api-key', apiKey);
+        return persistStorage('storage:set-api-key', apiKey);
     },
     async getGroqApiKey() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-groq-api-key');
         return result.success ? result.data : '';
     },
     async setGroqApiKey(groqApiKey) {
-        return ipcRenderer.invoke('storage:set-groq-api-key', groqApiKey);
+        return persistStorage('storage:set-groq-api-key', groqApiKey);
     },
 
     // Preferences
     async getPreferences() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-preferences');
-        return result.success ? result.data : {};
+        if (!result?.success) throw new Error('Preferences could not be loaded. Retry before editing.');
+        return result.data;
     },
     async setPreferences(preferences) {
-        return ipcRenderer.invoke('storage:set-preferences', preferences);
+        return persistStorage('storage:set-preferences', preferences);
     },
     async updatePreference(key, value) {
-        return ipcRenderer.invoke('storage:update-preference', key, value);
+        return persistStorage('storage:update-preference', key, value);
     },
 
     // Keybinds
     async getKeybinds() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-keybinds');
         return result.success ? result.data : null;
     },
+    async getShortcutState() {
+        await persistenceQueue;
+        return ipcRenderer.invoke('storage:get-keybinds');
+    },
     async setKeybinds(keybinds) {
-        return ipcRenderer.invoke('storage:set-keybinds', keybinds);
+        return persistStorage('storage:set-keybinds', keybinds);
     },
 
     // Sessions (History)
     async getAllSessions() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-all-sessions');
-        return result.success ? result.data : [];
+        if (!result?.success) throw Object.assign(new Error(result?.error || 'History could not be loaded. Retry.'), { code: result?.code });
+        return result.data;
     },
     async getSession(sessionId) {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-session', sessionId);
-        return result.success ? result.data : null;
+        if (!result?.success) throw Object.assign(new Error(result?.error || 'This session could not be read. Retry.'), { code: result?.code });
+        return result.data;
     },
     async saveSession(sessionId, data) {
-        return ipcRenderer.invoke('storage:save-session', sessionId, data);
+        return persistStorage('storage:save-session', sessionId, data);
     },
     async deleteSession(sessionId) {
-        return ipcRenderer.invoke('storage:delete-session', sessionId);
+        return persistStorage('storage:delete-session', sessionId);
     },
     async deleteAllSessions() {
-        return ipcRenderer.invoke('storage:delete-all-sessions');
+        return persistStorage('storage:delete-all-sessions');
     },
 
     // Clear all
     async clearAll() {
-        return ipcRenderer.invoke('storage:clear-all');
+        return persistStorage('storage:clear-all');
     },
 
     // Limits
     async getTodayLimits() {
+        await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-today-limits');
         return result.success ? result.data : { flash: { count: 0 }, flashLite: { count: 0 } };
     },
 };
-
-// Every persistence call must propagate a rejected write to its UI caller.
-for (const name of ['setConfig', 'updateConfig', 'setCredentials', 'setApiKey', 'setGroqApiKey',
-    'setPreferences', 'updatePreference', 'setKeybinds', 'saveSession', 'deleteSession', 'deleteAllSessions', 'clearAll']) {
-    const original = storage[name];
-    storage[name] = async (...args) => {
-        const result = await original(...args);
-        if (result?.success !== true) throw new Error(result?.error || 'Could not save data');
-        return result;
-    };
-}
 
 // Cache for preferences to avoid async calls in hot paths
 let preferencesCache = null;
@@ -486,7 +505,7 @@ async function captureManualScreenshot(imageQuality = null, options = {}) {
     const cancel = () => { void ipcRenderer.invoke('cancel-screen-analysis').catch(() => {}); };
     signal?.addEventListener('abort', cancel, { once: true });
     try {
-        const result = await waitForCapture(ipcRenderer.invoke('send-image-content', { data, prompt: MANUAL_SCREENSHOT_PROMPT }), signal, 60000);
+        const result = await waitForCapture(ipcRenderer.invoke('send-image-content', { data, prompt: MANUAL_SCREENSHOT_PROMPT, request: options.request }), signal, 60000);
         check();
         return result;
     } catch (error) {
@@ -532,14 +551,14 @@ function stopCapture(warning = '') {
 }
 
 // Send text message to Gemini
-async function sendTextMessage(text) {
+async function sendTextMessage(text, request) {
     if (!text || text.trim().length === 0) {
         console.warn('Cannot send empty text message');
         return { success: false, error: 'Empty message' };
     }
 
     try {
-        const result = await ipcRenderer.invoke('send-text-message', text);
+        const result = await ipcRenderer.invoke('send-text-message', text, request);
         if (result.success) {
             console.log('Text message sent successfully');
         } else {
@@ -601,7 +620,7 @@ function handleShortcut(shortcutKey) {
 
     if (shortcutKey === 'ctrl+enter' || shortcutKey === 'cmd+enter') {
         if (currentView === 'main') {
-            contextHalo.element().handleStart();
+            void contextHalo.element().shadowRoot?.querySelector('main-view')?._handleStart();
         } else if (currentView === 'assistant') {
             void contextHalo.element().shadowRoot?.querySelector('assistant-view')?.handleScreenAnswer();
         }
@@ -802,6 +821,9 @@ const theme = {
         root.style.setProperty('--hud-background', `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${alpha})`);
         // Only the HUD shell composites with the desktop. Normal pages and small
         // interactive surfaces remain opaque; foreground text is never faded.
+        root.style.setProperty('--control-color-scheme', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark');
+        root.style.colorScheme = (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark';
+        this._appearanceRevision = (this._appearanceRevision || 0) + 1;
         root.style.setProperty('--hud-text-shadow', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128
             ? '0 1px 2px rgba(255,255,255,0.85)' : '0 1px 2px rgba(0,0,0,0.9)');
 
@@ -891,9 +913,12 @@ const theme = {
     },
 
     async save(themeName) {
-        await storage.updatePreference('theme', themeName);
+        const revision = this._appearanceRevision;
+        const result = await storage.updatePreference('theme', themeName);
         const prefs = await storage.getPreferences();
-        this.apply(themeName, prefs.backgroundTransparency ?? this.currentAlpha ?? 0.8);
+        // A slow save must not repaint over a newer theme/opacity preview.
+        if (revision === this._appearanceRevision) this.apply(themeName, prefs.backgroundTransparency ?? this.currentAlpha ?? 0.8);
+        return result;
     },
 };
 
