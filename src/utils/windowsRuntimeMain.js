@@ -1,4 +1,4 @@
-const { BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('electron');
+const { BrowserWindow, ipcMain } = require('electron');
 const storage = require('../storage');
 const {
     abortProviderSession,
@@ -7,7 +7,6 @@ const {
 } = require('./windowsProviderTransport');
 
 const windowsHandlers = new Map();
-const modelByAnalysisTimestamp = new Map();
 
 let originalIpcHandle = null;
 let providerMode = 'byok';
@@ -111,45 +110,15 @@ function enqueueMixedWindowsAudio(channel, event, payload) {
     return { success: true, queued: true, mixed: true };
 }
 
-function correctAnalyzeResult(result) {
-    if (providerMode !== 'byok' || !result || result.success !== true) return result;
-    const actualModel = global.__lastAnalyzeActualModel;
-    if (!actualModel) return result;
-    return { ...result, model: actualModel };
+function prepareWindowsProvider(mode) {
+    providerMode = mode;
+    global.__windowsProviderMode = mode;
+    resetProviderSession();
+    resetAudioMixer();
 }
 
 function wrapWindowsIpcHandler(channel, handler) {
     windowsHandlers.set(channel, handler);
-
-    if (channel === 'initialize-gemini') {
-        return async (event, ...args) => {
-            providerMode = args[4] === 'groq' ? 'groq' : 'byok';
-            global.__windowsProviderMode = providerMode;
-            resetProviderSession();
-            resetAudioMixer();
-            return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'initialize-local') {
-        return async (event, ...args) => {
-            providerMode = 'local';
-            global.__windowsProviderMode = providerMode;
-            resetProviderSession();
-            resetAudioMixer();
-            return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'initialize-cloud') {
-        return async (event, ...args) => {
-            providerMode = 'cloud';
-            global.__windowsProviderMode = providerMode;
-            resetProviderSession();
-            resetAudioMixer();
-            return handler(event, ...args);
-        };
-    }
 
     if (channel === 'close-session') {
         return async (event, ...args) => {
@@ -166,9 +135,8 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-image-content') {
         return async (event, ...args) => {
-            if (providerMode === 'byok') global.__lastAnalyzeActualModel = null;
             const result = await runWithProviderScope('Analyze Screen', ANALYZE_SCOPE_MS, () => handler(event, ...args));
-            return correctAnalyzeResult(result);
+            return result;
         };
     }
 
@@ -211,54 +179,9 @@ function installWindowsIpcHardening() {
     };
 }
 
-function setupWindowsWindowHardening(mainWindow) {
-    if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
-
-    // This runs after the legacy shared window hardening and intentionally owns
-    // the final Windows display-capture policy: primary display + WASAPI loopback.
-    session.defaultSession.setDisplayMediaRequestHandler(
-        async (request, callback) => {
-            try {
-                const sources = await desktopCapturer.getSources({ types: ['screen'] });
-                const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-                const source = sources.find(candidate => String(candidate.display_id) === primaryDisplayId) || sources[0];
-                callback(source ? { video: source, audio: 'loopback' } : {});
-            } catch (error) {
-                console.error('Windows display capture selection failed:', error);
-                callback({});
-            }
-        },
-        { useSystemPicker: false }
-    );
-
-    const webContents = mainWindow.webContents;
-    if (webContents.__windowsSendPatched) return;
-
-    const originalSend = webContents.send.bind(webContents);
-    webContents.send = (channel, ...args) => {
-        if (channel === 'save-screen-analysis' && global.__windowsProviderMode === 'byok' && global.__lastAnalyzeActualModel) {
-            const payload = args[0];
-            if (payload?.analysis?.timestamp) {
-                modelByAnalysisTimestamp.set(payload.analysis.timestamp, global.__lastAnalyzeActualModel);
-                const analysis = { ...payload.analysis, model: global.__lastAnalyzeActualModel };
-                const fullHistory = Array.isArray(payload.fullHistory)
-                    ? payload.fullHistory.map(item => {
-                        const model = modelByAnalysisTimestamp.get(item.timestamp);
-                        return model ? { ...item, model } : item;
-                    })
-                    : payload.fullHistory;
-                args[0] = { ...payload, analysis, fullHistory };
-            }
-        }
-        return originalSend(channel, ...args);
-    };
-
-    Object.defineProperty(webContents, '__windowsSendPatched', { value: true });
-}
-
 module.exports = {
     installWindowsIpcHardening,
-    setupWindowsWindowHardening,
+    prepareWindowsProvider,
     mixPcm16,
     resetAudioMixer,
 };

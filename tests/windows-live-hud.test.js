@@ -40,47 +40,8 @@ test('restored normal bounds are clamped into the current Windows work area', ()
     assert.deepEqual(restored, { x: 500, y: 100, width: 1100, height: 800 });
 });
 
-test('window integration switches privacy and z-order policy by app mode', () => {
-    const windowSource = read('src/utils/window.js');
-    const controllerSource = read('src/utils/windowModeController.js');
 
-    assert.match(windowSource, /createWindowModeController/);
-    assert.match(windowSource, /enterHudMode\(\)/);
-    assert.match(windowSource, /enterNormalMode\(\)/);
-    assert.match(windowSource, /mouseEventsIgnored = false/);
-    assert.doesNotMatch(windowSource, /setVisibleOnAllWorkspaces/);
 
-    assert.match(controllerSource, /setContentProtection\(true\)/);
-    assert.match(controllerSource, /setAlwaysOnTop\(true, 'screen-saver', 1\)/);
-    assert.match(controllerSource, /setAlwaysOnTop\(false\)/);
-    assert.match(controllerSource, /setBackgroundMaterial\(mainWindow, 'acrylic'\)/);
-    assert.match(controllerSource, /setBackgroundMaterial\(mainWindow, 'mica'\)/);
-    assert.match(controllerSource, /setSkipTaskbar\(mainWindow, true\)/);
-    assert.match(controllerSource, /setSkipTaskbar\(mainWindow, false\)/);
-});
-
-test('renderer loads the Windows HUD layer before runtime hardening', () => {
-    const html = read('src/index.html');
-    const hudSource = read('src/utils/windowsHudRenderer.js');
-
-    const hudIndex = html.indexOf('utils/windowsHudRenderer.js');
-    const hardeningIndex = html.indexOf('utils/runtimeHardeningRenderer.js');
-    assert.ok(hudIndex >= 0);
-    assert.ok(hardeningIndex > hudIndex);
-
-    assert.match(hudSource, /Private HUD/);
-    assert.match(hudSource, /\.traffic-light\.maximize/);
-    assert.match(hudSource, /\.traffic-light\.close:hover/);
-    assert.match(hudSource, /backdrop-filter: blur\(30px\)/);
-    assert.match(hudSource, /currentView === 'assistant'/);
-});
-
-test('maximize caption has one Lit handler, not a second imperative toggle', () => {
-    const hardeningSource = read('src/utils/runtimeHardeningRenderer.js');
-    const appSource = read('src/components/app/ContextHaloApp.js');
-    assert.doesNotMatch(hardeningSource, /maximizeButton.addEventListener/);
-    assert.match(appSource, /@click=\$\{\(\) => this._handleMaximize\(\)\}/);
-});
 
 
 test('returning from HUD restores the maximized state and original normal bounds', () => {

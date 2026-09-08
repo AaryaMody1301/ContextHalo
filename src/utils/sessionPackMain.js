@@ -3,7 +3,6 @@ const storage = require('../storage');
 const SESSION_PACK_MARKER = '[ContextHalo session pack]';
 let installed = false;
 let fetchPatched = false;
-let googleGenAiPatched = false;
 
 const { sanitizeSessionPack } = require('./sessionData');
 
@@ -71,75 +70,9 @@ function patchProviderFetch() {
     fetchPatched = true;
 }
 
-function appendPackToLiveInstruction(systemInstruction) {
-    const pack = storage.getPreferences()?.sessionPack;
-    if (!formatSessionPack(pack)) return systemInstruction;
-
-    if (typeof systemInstruction === 'string') return appendSessionPack(systemInstruction, pack);
-    if (systemInstruction && typeof systemInstruction === 'object') {
-        const parts = Array.isArray(systemInstruction.parts) ? systemInstruction.parts.map(part => ({ ...part })) : [];
-        const textIndex = parts.findIndex(part => typeof part?.text === 'string');
-        if (textIndex >= 0) parts[textIndex].text = appendSessionPack(parts[textIndex].text, pack);
-        else parts.push({ text: appendSessionPack('', pack) });
-        return { ...systemInstruction, parts };
-    }
-    return { parts: [{ text: appendSessionPack('', pack) }] };
-}
-
-function replaceGoogleGenAiExport(genai, PatchedGoogleGenAI) {
-    try { genai.GoogleGenAI = PatchedGoogleGenAI; } catch {}
-    if (genai.GoogleGenAI === PatchedGoogleGenAI) return true;
-    try {
-        const modulePath = require.resolve('@google/genai');
-        const cachedModule = require.cache[modulePath];
-        if (!cachedModule) return false;
-        cachedModule.exports = { ...genai, GoogleGenAI: PatchedGoogleGenAI };
-        return require('@google/genai').GoogleGenAI === PatchedGoogleGenAI;
-    } catch {
-        return false;
-    }
-}
-
-function patchGeminiLive() {
-    if (googleGenAiPatched) return;
-    try {
-        const genai = require('@google/genai');
-        const CurrentGoogleGenAI = genai.GoogleGenAI;
-        if (!CurrentGoogleGenAI || CurrentGoogleGenAI.__sessionPackPatched) {
-            googleGenAiPatched = true;
-            return;
-        }
-
-        class SessionPackGoogleGenAI extends CurrentGoogleGenAI {
-            constructor(options) {
-                super(options);
-                const live = this.live;
-                const originalConnect = live?.connect?.bind(live);
-                if (!originalConnect) return;
-                live.connect = params => {
-                    const config = {
-                        ...(params?.config || {}),
-                        systemInstruction: appendPackToLiveInstruction(params?.config?.systemInstruction),
-                    };
-                    return originalConnect({ ...params, config });
-                };
-            }
-        }
-
-        Object.defineProperty(SessionPackGoogleGenAI, '__sessionPackPatched', { value: true });
-        if (!replaceGoogleGenAiExport(genai, SessionPackGoogleGenAI)) {
-            throw new Error('The @google/genai CommonJS export could not be wrapped for session packs');
-        }
-        googleGenAiPatched = true;
-    } catch (error) {
-        console.warn('Could not install Gemini session pack bridge:', error.message);
-    }
-}
-
 function installSessionPackMain() {
     if (installed) return;
     patchProviderFetch();
-    patchGeminiLive();
     installed = true;
 }
 

@@ -5,7 +5,6 @@ const { getEnabledDocuments, searchKnowledge } = require('./knowledgeStore');
 const KNOWLEDGE_MARKER = '[ContextHalo knowledge]';
 let installed = false;
 let fetchPatched = false;
-let googleGenAiPatched = false;
 
 function requestUrl(input) {
     try {
@@ -151,81 +150,9 @@ function augmentLiveTextPayload(payload) {
     };
 }
 
-function replaceGoogleGenAiExport(genai, PatchedGoogleGenAI) {
-    try { genai.GoogleGenAI = PatchedGoogleGenAI; } catch {}
-    if (genai.GoogleGenAI === PatchedGoogleGenAI) return true;
-    try {
-        const modulePath = require.resolve('@google/genai');
-        const cachedModule = require.cache[modulePath];
-        if (!cachedModule) return false;
-        cachedModule.exports = { ...genai, GoogleGenAI: PatchedGoogleGenAI };
-        return require('@google/genai').GoogleGenAI === PatchedGoogleGenAI;
-    } catch {
-        return false;
-    }
-}
-
-function patchGoogleGenAi() {
-    if (googleGenAiPatched) return;
-    try {
-        const genai = require('@google/genai');
-        const CurrentGoogleGenAI = genai.GoogleGenAI;
-        if (!CurrentGoogleGenAI || CurrentGoogleGenAI.__knowledgeRagPatched) {
-            googleGenAiPatched = true;
-            return;
-        }
-
-        class KnowledgeRagGoogleGenAI extends CurrentGoogleGenAI {
-            constructor(options) {
-                super(options);
-
-                const models = this.models;
-                if (models?.generateContent) {
-                    const originalGenerateContent = models.generateContent.bind(models);
-                    models.generateContent = params => originalGenerateContent(augmentGenerateParams(params));
-                }
-                if (models?.generateContentStream) {
-                    const originalGenerateContentStream = models.generateContentStream.bind(models);
-                    models.generateContentStream = params => originalGenerateContentStream(augmentGenerateParams(params));
-                }
-
-                const live = this.live;
-                const originalConnect = live?.connect?.bind(live);
-                if (originalConnect) {
-                    live.connect = async params => {
-                        const context = retrieveContext(sessionSeed(), { limit: 4, maxChars: 6500 });
-                        const config = context
-                            ? {
-                                  ...(params?.config || {}),
-                                  systemInstruction: appendContextToInstruction(params?.config?.systemInstruction, context),
-                              }
-                            : params?.config;
-                        const liveSession = await originalConnect({ ...params, config });
-                        const originalSend = liveSession?.sendRealtimeInput?.bind(liveSession);
-                        if (originalSend && !liveSession.__knowledgeRagPatched) {
-                            liveSession.sendRealtimeInput = payload => originalSend(augmentLiveTextPayload(payload));
-                            Object.defineProperty(liveSession, '__knowledgeRagPatched', { value: true });
-                        }
-                        return liveSession;
-                    };
-                }
-            }
-        }
-
-        Object.defineProperty(KnowledgeRagGoogleGenAI, '__knowledgeRagPatched', { value: true });
-        if (!replaceGoogleGenAiExport(genai, KnowledgeRagGoogleGenAI)) {
-            throw new Error('The @google/genai CommonJS export could not be wrapped for local knowledge retrieval');
-        }
-        googleGenAiPatched = true;
-    } catch (error) {
-        console.warn('Could not install local knowledge provider bridge:', error.message);
-    }
-}
-
 function installKnowledgeRagMain() {
     if (installed) return;
     patchProviderFetch();
-    patchGoogleGenAi();
     installed = true;
 }
 
@@ -236,4 +163,5 @@ module.exports = {
     augmentMessages,
     augmentGenerateParams,
     augmentLiveTextPayload,
+    appendContextToInstruction,
 };

@@ -1,0 +1,138 @@
+{
+  "explanation": "Implementation-literal tests are replaced by observable behavior. Pure existing security, storage, knowledge, audio and transport tests remain. The retired SDK-wrapping capability is intentionally no longer a contract.",
+  "replacement_suites": [
+    "tests/gemini-recovery.test.js",
+    "tests/session-lifecycle.test.js",
+    "tests/capture-lifecycle.test.js",
+    "tests/appearance.test.js",
+    "tests/composer-behavior.test.js",
+    "tests/context-behavior.test.js",
+    "scripts/renderer-behavior-smoke.js"
+  ],
+  "retired_implementation_assertions": [
+    {
+      "previous": "Analyze fallback remains inside the renderer 60 second watchdog",
+      "file": "tests/analyze-provider-fallback.test.js"
+    },
+    {
+      "previous": "Analyze fallback recognizes provider capacity and timeout failures",
+      "file": "tests/analyze-provider-fallback.test.js"
+    },
+    {
+      "previous": "Analyze provider wrapper can replace the current GoogleGenAI export",
+      "file": "tests/analyze-provider-fallback.test.js"
+    },
+    {
+      "previous": "GoogleGenAI CommonJS export can be wrapped before gemini.js imports it",
+      "file": "tests/provider-runtime.test.js"
+    },
+    {
+      "previous": "session start surfaces initialization and capture failures on Home",
+      "file": "tests/runtime-session-ui-settings.test.js"
+    },
+    {
+      "previous": "Windows capture uses loopback-safe constraints and cleans microphone resources",
+      "file": "tests/runtime-session-ui-settings.test.js"
+    },
+    {
+      "previous": "Gemini Live reads preferences in main and normalizes the configured model",
+      "file": "tests/runtime-session-ui-settings.test.js"
+    },
+    {
+      "previous": "model selectors are readable and capability restricted",
+      "file": "tests/runtime-session-ui-settings.test.js"
+    },
+    {
+      "previous": "Settings exposes session, AI behavior and emergency erase controls",
+      "file": "tests/runtime-session-ui-settings.test.js"
+    },
+    {
+      "previous": "context capture UI exposes session packs, multi-source context, inspector, region crop, and quick commands",
+      "file": "tests/context-capture.test.js"
+    },
+    {
+      "previous": "session pack runtime injects context into Gemini, Groq, and local chat without replacing provider implementations",
+      "file": "tests/context-capture.test.js"
+    },
+    {
+      "previous": "Phase 4 stays additive and preserves the hardened renderer bridge",
+      "file": "tests/phase4-knowledge.test.js"
+    },
+    {
+      "previous": "Phase 1 wiring preserves manual fallback and makes Groq transcription configurable",
+      "file": "tests/provider-model-registry.test.js"
+    },
+    {
+      "previous": "realtime context runtime observes all supported transcript paths without replacing provider implementations",
+      "file": "tests/realtime-context.test.js"
+    },
+    {
+      "previous": "renderer exposes response selection, live transcript, context chips, and session markers",
+      "file": "tests/realtime-context.test.js"
+    },
+    {
+      "previous": "assistant imports the sanitizer directly before rendering untrusted Markdown",
+      "file": "tests/response-sanitizer.test.js"
+    },
+    {
+      "previous": "Analyze Screen uses serialized retries, stream guards, and lifecycle events",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "global shortcut and duplicate session start share guarded renderer paths",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "renderer sanitizes model output and tracks capture resources",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "window fallback selects the primary display and search preference is storage-backed",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "final renderer guard covers supported local architectures and Analyze lifecycle polish",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "bootstrap installs hardening before provider IPC registration and accepts null keybind reset",
+      "file": "tests/runtime-hardening.test.js"
+    },
+    {
+      "previous": "Gemini Live validates model access and exposes setup failures",
+      "file": "tests/scroll-settings-gemini-live.test.js"
+    },
+    {
+      "previous": "renderer entrypoint loads provider fixes and removes the stale script reference",
+      "file": "tests/storage.test.js"
+    },
+    {
+      "previous": "provider UI exposes Gemini, Groq, and Local modes with the intended free-tier models",
+      "file": "tests/storage.test.js"
+    },
+    {
+      "previous": "window integration switches privacy and z-order policy by app mode",
+      "file": "tests/windows-live-hud.test.js"
+    },
+    {
+      "previous": "renderer loads the Windows HUD layer before runtime hardening",
+      "file": "tests/windows-live-hud.test.js"
+    },
+    {
+      "previous": "maximize caption has one Lit handler, not a second imperative toggle",
+      "file": "tests/windows-live-hud.test.js"
+    },
+    {
+      "previous": "obsolete typed audio gate and missing component export stay removed",
+      "file": "tests/typed-session-runtime.test.js"
+    },
+    {
+      "previous": "composer uses a native multiline input, explicit send, and returned provider outcomes",
+      "file": "tests/typed-session-runtime.test.js"
+    },
+    {
+      "previous": "provider discovery cannot silently overwrite saved models",
+      "file": "tests/typed-session-runtime.test.js"
+    }
+  ]
+}

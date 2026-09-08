@@ -384,14 +384,6 @@ export class CustomizeView extends LitElement {
     async handleGoogleSearchChange(e) {
         this.googleSearchEnabled = e.target.checked;
         await contextHalo.storage.updatePreference('googleSearchEnabled', this.googleSearchEnabled);
-        if (window.require) {
-            try {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('update-google-search-setting', this.googleSearchEnabled);
-            } catch (error) {
-                console.error('Failed to notify main process:', error);
-            }
-        }
         this.requestUpdate();
     }
 
@@ -632,7 +624,7 @@ export class CustomizeView extends LitElement {
                 <div class="form-grid">
                     <label class="toggle-row">
                         <input class="toggle-input" type="checkbox" .checked=${this.googleSearchEnabled} @change=${this.handleGoogleSearchChange} />
-                        <span class="toggle-label">Enable Google Search grounding for Gemini Live</span>
+                        <span class="toggle-label">Request Google Search for the next Gemini session (Live, typed and screen)</span>
                     </label>
                     <div class="form-group vertical">
                         <label class="form-label">Custom Instructions</label>
@@ -707,7 +699,7 @@ export class CustomizeView extends LitElement {
                     </div>
                     <div class="form-group slider-wrap">
                         <div class="slider-header">
-                            <label class="form-label">Background Transparency</label>
+                            <label class="form-label" for="hud-opacity">HUD background opacity</label>
                             <span class="slider-value">${Math.round(this.backgroundTransparency * 100)}%</span>
                         </div>
                         <input
@@ -716,9 +708,12 @@ export class CustomizeView extends LitElement {
                             min="0"
                             max="1"
                             step="0.01"
+                            id="hud-opacity"
+                            aria-valuetext=${`${Math.round(this.backgroundTransparency * 100)} percent opaque`}
                             .value=${this.backgroundTransparency}
                             @input=${this.handleBackgroundTransparencyChange}
                         />
+                        <div class="form-hint">0% is transparent; 100% is opaque. Text and controls stay solid. Normal pages are unaffected.</div>
                     </div>
                     <div class="form-group slider-wrap">
                         <div class="slider-header">

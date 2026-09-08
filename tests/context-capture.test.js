@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { loadMain } = require('./helpers/native-boundary');
 const {
     sanitizeSelection,
     normalizeRegion,
-} = require('../src/utils/contextCaptureMain');
+} = loadMain('src/utils/contextCaptureMain.js');
 const {
     sanitizeSessionPack,
     formatSessionPack,
@@ -70,37 +71,4 @@ test('desktop source selection stays in the trusted main process and region sele
     assert.match(selectorHtml, /Content-Security-Policy/);
 });
 
-test('context capture UI exposes session packs, multi-source context, inspector, region crop, and quick commands', () => {
-    const renderer = read('src/utils/contextCaptureRenderer.js');
-    const index = read('src/index.html');
-    const mainIndex = read('src/index.js');
 
-    assert.match(renderer, /Session context/);
-    assert.match(renderer, /Refresh windows/);
-    assert.match(renderer, /Use copied text/);
-    assert.match(renderer, /Context source:/);
-    assert.match(renderer, /phase3-context-inspector/);
-    assert.match(renderer, /CanvasRenderingContext2D/);
-    assert.match(renderer, /selectAndAnalyzeRegion/);
-    assert.match(renderer, /\/say/);
-    assert.match(renderer, /\/shorter/);
-    assert.match(renderer, /\/recap/);
-    assert.match(renderer, /\/actions/);
-    assert.match(renderer, /\/decisions/);
-    assert.match(renderer, /\/questions/);
-    assert.match(renderer, /\/translate/);
-    assert.match(index, /contextCaptureRenderer\.js/);
-    assert.match(mainIndex, /installSessionPackMain\(\)/);
-    assert.match(mainIndex, /setupContextCaptureMain\(mainWindow, ipcMain\)/);
-});
-
-test('session pack runtime injects context into Gemini, Groq, and local chat without replacing provider implementations', () => {
-    const packMain = read('src/utils/sessionPackMain.js');
-    assert.match(packMain, /api\.groq\.com/);
-    assert.match(packMain, /127\.0\.0\.1/);
-    assert.match(packMain, /live\.connect/);
-    assert.match(packMain, /systemInstruction/);
-    assert.match(packMain, /sessionPack/);
-    assert.doesNotMatch(packMain, /previousSaveSession/);
-    assert.match(read('src/storage.js'), /sanitizeSessionPack\(data.sessionPack\)/);
-});

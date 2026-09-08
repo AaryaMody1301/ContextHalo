@@ -1,13 +1,11 @@
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
-const { installProviderRuntimeHardening, installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
-const { installAnalyzeProviderFallback } = require('./utils/analyzeProviderFallback');
+const { installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
 const {
     installWindowsProviderTransport,
     abortProviderSession,
 } = require('./utils/windowsProviderTransport');
 const {
     installWindowsIpcHardening,
-    setupWindowsWindowHardening,
 } = require('./utils/windowsRuntimeMain');
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
 const { installRealtimeContextMain } = require('./utils/realtimeContextMain');
@@ -27,14 +25,12 @@ if (WINDOWS_SMOKE_MODE) {
     app.on('will-quit', () => { try { fs.rmSync(smokeHome, { recursive: true, force: true }); } catch {} });
 }
 
-// Provider networking, Local AI compatibility and SDK wrappers must be installed
+// Provider networking, Local AI compatibility and context observers must be installed
 // before gemini.js/localai.js capture their dependencies.
 installWindowsProviderTransport();
 installWindowsLocalAiRuntime();
-installProviderRuntimeHardening();
 installRealtimeContextMain();
 installSessionPackMain();
-installAnalyzeProviderFallback();
 installKnowledgeRagMain();
 
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
@@ -48,16 +44,26 @@ let mainWindow = null;
 function installWindowsSmokeCheck(window) {
     if (!WINDOWS_SMOKE_MODE) return;
 
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const directory = path.resolve(process.env.CONTEXTHALO_QA_DIR || path.join(process.cwd(), 'qa-results'));
+    fs.mkdirSync(directory, { recursive: true });
+    const rendererErrors = [];
+    window.webContents.on('console-message', (_event, ...details) => {
+        const message = typeof details[0] === 'object' ? details[0] : { level: details[0], message: details[1] };
+        if (message.level === 'error' || message.level === 3) rendererErrors.push(String(message.message).slice(0, 2000));
+    });
     let finished = false;
     const finish = (success, detail) => {
         if (finished) return;
         finished = true;
         clearTimeout(timeout);
+        fs.writeFileSync(path.join(directory, 'outcome.json'), JSON.stringify({ success, detail, packaged: app.isPackaged, version: app.getVersion(), platform: process.platform, arch: process.arch, windowsRelease: require('node:os').release(), electron: process.versions.electron, commit: process.env.GITHUB_SHA || null, completedAt: new Date().toISOString() }, null, 2));
         console.log(success ? `[Windows smoke] PASS: ${detail}` : `[Windows smoke] FAIL: ${detail}`);
         setTimeout(() => app.exit(success ? 0 : 1), 50);
     };
 
-    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 45 seconds'), 45000);
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 120 seconds'), 120000);
 
     window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
         finish(false, `load failed (${errorCode}): ${errorDescription}`);
@@ -152,7 +158,6 @@ function installWindowsSmokeCheck(window) {
             console.log('[Windows behavior smoke] ' + JSON.stringify(checks));
             const fs = require('node:fs');
             const path = require('node:path');
-            const directory = path.join(process.cwd(), 'qa-results');
             fs.mkdirSync(directory, { recursive: true });
             for (const view of ['main', 'customize', 'assistant']) {
                 await window.webContents.executeJavaScript(`(async () => {
@@ -167,14 +172,69 @@ function installWindowsSmokeCheck(window) {
                 })()`);
                 fs.writeFileSync(path.join(directory, view + '.png'), (await window.webContents.capturePage()).toPNG());
             }
-            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks }, null, 2));
+            // Capture actual Lit/native-window output, including alpha variants.
+            const appearance = [];
+            for (const theme of ['dark', 'light']) {
+                for (const alpha of [0.25, 0.5, 0.8, 1]) {
+                    const state = await window.webContents.executeJavaScript(`(async () => {
+                        const app = document.querySelector('context-halo-app');
+                        contextHalo.theme.apply(${JSON.stringify(theme)}, ${alpha});
+                        app.navigate('assistant'); await app.updateComplete;
+                        app.providerState = 'ready'; app.statusText = 'Controlled renderer fixture - no live account or device';
+                        app.searchState = {requested:true,effective:false,status:'disabled-for-session'};
+                        await app.updateComplete; await new Promise(resolve=>setTimeout(resolve,100));
+                        const shell=app.shadowRoot.querySelector('.app-shell');
+                        return { theme:${JSON.stringify(theme)}, alpha:${alpha}, background:getComputedStyle(shell).backgroundColor, devicePixelRatio, width:innerWidth, height:innerHeight };
+                    })()`);
+                    appearance.push(state);
+                    fs.writeFileSync(path.join(directory, `hud-${theme}-${alpha}.png`), (await window.webContents.capturePage()).toPNG());
+                }
+            }
+            const workArea = require('electron').screen.getDisplayMatching(window.getBounds()).workArea;
+            const minimumWidth = Math.min(640, workArea.width);
+            const minimumHeight = Math.min(320, workArea.height);
+            window.setMinimumSize(minimumWidth, minimumHeight);
+            window.setBounds({ x: workArea.x, y: workArea.y, width: minimumWidth, height: minimumHeight });
+            const minimum = await window.webContents.executeJavaScript(`(async()=>{
+                const app=document.querySelector('context-halo-app');
+                contextHalo.theme.apply('dark',0.5); app.statusText='Long status '.repeat(100);
+                app.requestError={message:'A long recoverable provider error '.repeat(100),operation:'text',retryAt:0};
+                await app.updateComplete;
+                const view=app.shadowRoot.querySelector('assistant-view');
+                view.transcriptExpanded=true;view.contextExpanded=true; await view.updateComplete;
+                view.shadowRoot.querySelector('details').open=true; await new Promise(r=>setTimeout(r,100));
+                const root=view.shadowRoot;
+                const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight+1&&r.left>=0&&r.right<=innerWidth+1;};
+                const result={width:innerWidth,height:innerHeight,answerHeight:root.querySelector('#responseContainer').clientHeight,composer:visible(root.querySelector('#textInput')),analyze:visible(root.querySelector('.analyze-btn')),headerButtons:[...app.shadowRoot.querySelectorAll('.live-bar button')].every(visible)};
+                if(!result.composer||!result.analyze||!result.headerButtons||result.answerHeight<60) throw new Error('Minimum HUD inaccessible: '+JSON.stringify(result));
+                return result;
+            })()`);
+            fs.writeFileSync(path.join(directory,'hud-minimum-expanded.png'),(await window.webContents.capturePage()).toPNG());
+            window.show(); window.focus();
+            await window.webContents.executeJavaScript(`document.querySelector('context-halo-app').shadowRoot.querySelector('.live-bar button').focus()`);
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+            await new Promise(resolve => setTimeout(resolve, 75));
+            const keyboard = await window.webContents.executeJavaScript(`(() => {
+                const app=document.querySelector('context-halo-app');
+                return { tabReachesHide:app.shadowRoot.activeElement?.textContent.trim()==='Hide' };
+            })()`);
+            if (!keyboard.tabReachesHide) throw new Error('Native Tab did not reach the Hide button');
+            await window.webContents.executeJavaScript(`document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('summary').focus()`);
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+            window.webContents.sendInputEvent({ type: 'char', keyCode: String.fromCharCode(13) });
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+            await new Promise(resolve => setTimeout(resolve, 75));
+            keyboard.enterCollapsesSecondary = await window.webContents.executeJavaScript(`!document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('details').open`);
+            if (!keyboard.enterCollapsesSecondary) throw new Error('Native Enter did not collapse secondary controls');
+            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, keyboard, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
+            if (rendererErrors.length) throw new Error('Renderer console errors: '+rendererErrors.join('; '));
             finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {
             try {
                 const fs = require('node:fs');
                 const path = require('node:path');
-                const directory = path.join(process.cwd(), 'qa-results');
-                fs.mkdirSync(directory, { recursive: true });
+                    fs.mkdirSync(directory, { recursive: true });
                 fs.writeFileSync(path.join(directory, 'failure.txt'), error.stack || error.message);
                 fs.writeFileSync(path.join(directory, 'failure.png'), (await window.webContents.capturePage()).toPNG());
             } catch {}
@@ -186,7 +246,6 @@ function installWindowsSmokeCheck(window) {
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
     setupRuntimeWindowHardening(mainWindow);
-    setupWindowsWindowHardening(mainWindow);
     setupContextCaptureMain(mainWindow, ipcMain);
     setupPhase4Main(mainWindow, ipcMain);
     installWindowsSmokeCheck(mainWindow);

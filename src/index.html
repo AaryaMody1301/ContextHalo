@@ -3,7 +3,7 @@
     <head>
         <meta
             http-equiv="Content-Security-Policy"
-            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'"
+            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'"
         />
         <title>ContextHalo</title>
         <style>
@@ -118,7 +118,7 @@
                 padding: 0;
                 height: 100%;
                 overflow: hidden;
-                background: var(--bg-app);
+                background: transparent;
                 color: var(--text-primary);
                 line-height: var(--line-height);
                 border-radius: 12px;
@@ -172,13 +172,5 @@
 
         <context-halo-app id="contextHalo"></context-halo-app>
         <script src="utils/renderer.js"></script>
-        <script type="module" src="utils/runtimeProviderFixes.js"></script>
-        <script type="module" src="utils/dynamicModelRegistryRenderer.js"></script>
-        <script type="module" src="utils/windowsHudRenderer.js"></script>
-        <script type="module" src="utils/runtimeHardeningRenderer.js"></script>
-        <script type="module" src="utils/runtimeFinalRenderer.js"></script>
-        <script type="module" src="utils/realtimeContextRenderer.js"></script>
-        <script type="module" src="utils/contextCaptureRenderer.js"></script>
-        <script type="module" src="utils/phase4Renderer.js"></script>
     </body>
 </html>

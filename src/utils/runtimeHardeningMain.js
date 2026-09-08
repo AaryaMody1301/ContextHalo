@@ -4,29 +4,9 @@ const path = require('path');
 const storage = require('../storage');
 const { runSessionRequest, assertCurrentRequest } = require('./sessionRequests');
 
-const RETRYABLE_PROVIDER_PATTERNS = [
-    /\b409\b/i,
-    /aborted/i,
-    /conflict/i,
-    /\b429\b/i,
-    /resource[_ -]?exhausted/i,
-    /\b500\b/i,
-    /\b502\b/i,
-    /\b503\b/i,
-    /\b504\b/i,
-    /internal/i,
-    /unavailable/i,
-    /empty provider response/i,
-    /stream timed out/i,
-];
-
-const PROVIDER_STREAM_TIMEOUT_MS = 30000;
-
 let runtimeProviderMode = 'byok';
 let originalIpcHandle = null;
-let googleGenAiPatched = false;
 let runtimeMacAudioProc = null;
-let rejectedGeminiResumptionHandle = null;
 let beforeQuitCleanupInstalled = false;
 const registeredHandlers = new Map();
 
@@ -54,189 +34,6 @@ function createGroqVadState() {
 
 function resetGroqVad() {
     groqVadState = createGroqVadState();
-}
-
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function withTimeout(promise, timeoutMs, message) {
-    return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-        Promise.resolve(promise).then(
-            value => {
-                clearTimeout(timer);
-                resolve(value);
-            },
-            error => {
-                clearTimeout(timer);
-                reject(error);
-            }
-        );
-    });
-}
-
-function getErrorText(value) {
-    if (!value) return '';
-    if (typeof value === 'string') return value;
-    return String(value.error || value.message || value);
-}
-
-function isRetryableProviderFailure(value) {
-    const text = getErrorText(value);
-    return RETRYABLE_PROVIDER_PATTERNS.some(pattern => pattern.test(text));
-}
-
-async function callWithProviderRetry(fn, attempts = 4) {
-    let lastResult;
-    let lastError;
-
-    for (let attempt = 0; attempt < attempts; attempt++) {
-        try {
-            const result = await fn();
-            lastResult = result;
-            if (!result || result.success !== false || !isRetryableProviderFailure(result)) {
-                return result;
-            }
-        } catch (error) {
-            lastError = error;
-            if (!isRetryableProviderFailure(error) || attempt === attempts - 1) {
-                throw error;
-            }
-        }
-
-        if (attempt < attempts - 1) {
-            const backoff = 500 * 2 ** attempt + Math.floor(Math.random() * 250);
-            await delay(backoff);
-        }
-    }
-
-    if (lastError) throw lastError;
-    return lastResult;
-}
-
-function wrapGenerateContentStream(stream) {
-    if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return stream;
-
-    return {
-        [Symbol.asyncIterator]() {
-            const iterator = stream[Symbol.asyncIterator]();
-            let sawText = false;
-
-            return {
-                async next() {
-                    const result = await withTimeout(iterator.next(), PROVIDER_STREAM_TIMEOUT_MS, '503 Provider stream timed out');
-                    if (!result.done && result.value?.text) sawText = true;
-                    if (result.done && !sawText) throw new Error('503 Empty provider response');
-                    return result;
-                },
-                async return(value) {
-                    if (typeof iterator.return === 'function') return iterator.return(value);
-                    return { done: true, value };
-                },
-                async throw(error) {
-                    if (typeof iterator.throw === 'function') return iterator.throw(error);
-                    throw error;
-                },
-            };
-        },
-    };
-}
-
-function replaceGoogleGenAiExport(genai, HardenedGoogleGenAI) {
-    try {
-        genai.GoogleGenAI = HardenedGoogleGenAI;
-    } catch {}
-
-    if (genai.GoogleGenAI === HardenedGoogleGenAI) return true;
-
-    try {
-        const modulePath = require.resolve('@google/genai');
-        const cachedModule = require.cache[modulePath];
-        if (!cachedModule) return false;
-        cachedModule.exports = { ...genai, GoogleGenAI: HardenedGoogleGenAI };
-        return require('@google/genai').GoogleGenAI === HardenedGoogleGenAI;
-    } catch {
-        return false;
-    }
-}
-
-function installProviderRuntimeHardening() {
-    if (googleGenAiPatched) return;
-
-    try {
-        const genai = require('@google/genai');
-        const OriginalGoogleGenAI = genai.GoogleGenAI;
-        if (!OriginalGoogleGenAI || OriginalGoogleGenAI.__runtimeHardened) {
-            googleGenAiPatched = true;
-            return;
-        }
-
-        class HardenedGoogleGenAI extends OriginalGoogleGenAI {
-            constructor(options) {
-                super(options);
-
-                const live = this.live;
-                const originalConnect = live?.connect?.bind(live);
-                if (originalConnect) {
-                    live.connect = async params => {
-                        const handle = params?.config?.sessionResumption?.handle || null;
-                        let stripHandle = false;
-
-                        if (global.__runtimeFreshGeminiSession === true) {
-                            if (handle) rejectedGeminiResumptionHandle = handle;
-                            stripHandle = Boolean(handle);
-                        } else if (handle && rejectedGeminiResumptionHandle && handle === rejectedGeminiResumptionHandle) {
-                            stripHandle = true;
-                        } else if (handle && rejectedGeminiResumptionHandle && handle !== rejectedGeminiResumptionHandle) {
-                            rejectedGeminiResumptionHandle = null;
-                        }
-
-                        let nextParams = params;
-                        if (stripHandle) {
-                            nextParams = {
-                                ...params,
-                                config: {
-                                    ...params.config,
-                                    sessionResumption: {},
-                                },
-                            };
-                        }
-
-                        global.__runtimeFreshGeminiSession = false;
-                        return originalConnect(nextParams);
-                    };
-                }
-
-                const models = this.models;
-                const originalGenerateContentStream = models?.generateContentStream?.bind(models);
-                if (originalGenerateContentStream) {
-                    models.generateContentStream = async params => {
-                        const stream = await withTimeout(
-                            originalGenerateContentStream(params),
-                            PROVIDER_STREAM_TIMEOUT_MS,
-                            '503 Provider stream timed out'
-                        );
-                        return wrapGenerateContentStream(stream);
-                    };
-                }
-            }
-        }
-
-        Object.defineProperty(HardenedGoogleGenAI, '__runtimeHardened', { value: true });
-        if (!replaceGoogleGenAiExport(genai, HardenedGoogleGenAI)) {
-            throw new Error('The @google/genai CommonJS export could not be wrapped');
-        }
-
-        if (!beforeQuitCleanupInstalled) {
-            app.on('before-quit', stopRuntimeMacAudio);
-            beforeQuitCleanupInstalled = true;
-        }
-
-        googleGenAiPatched = true;
-    } catch (error) {
-        console.warn('Could not install Gemini runtime hardening:', error.message);
-    }
 }
 
 function calculatePcmRms(buffer) {
@@ -284,7 +81,7 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
     const preferences = storage.getPreferences();
     const language = String(preferences.selectedLanguage || 'en-US').split('-')[0];
 
-    const result = await callWithProviderRetry(async () => {
+    const result = await (async () => {
         const form = new FormData();
         form.append('model', storage.getConfig().groqTranscriptionModel || 'whisper-large-v3-turbo');
         form.append('response_format', 'json');
@@ -314,7 +111,7 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
         } catch (error) {
             return { success: false, error: error?.message || String(error) };
         }
-    });
+    })();
 
     if (!result?.success) throw new Error(result?.error || 'Groq transcription failed');
     return result.text || '';
@@ -480,42 +277,12 @@ function normalizeImageResult(result) {
 function wrapIpcHandler(channel, handler) {
     registeredHandlers.set(channel, handler);
 
-    if (channel === 'initialize-gemini') {
-        return async (event, ...args) => {
-            const provider = args[4] === 'groq' ? 'groq' : 'byok';
-            runtimeProviderMode = provider;
-            resetGroqVad();
-            stopRuntimeMacAudio();
-            global.__runtimeFreshGeminiSession = provider === 'byok';
-            return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'initialize-local') {
-        return async (event, ...args) => {
-            runtimeProviderMode = 'local';
-            resetGroqVad();
-            stopRuntimeMacAudio();
-            return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'initialize-cloud') {
-        return async (event, ...args) => {
-            runtimeProviderMode = 'cloud';
-            resetGroqVad();
-            stopRuntimeMacAudio();
-            return handler(event, ...args);
-        };
-    }
-
     if (channel === 'close-session') {
         return async (event, ...args) => {
             stopRuntimeMacAudio();
             const result = await handler(event, ...args);
             runtimeProviderMode = 'byok';
             resetGroqVad();
-            global.__runtimeFreshGeminiSession = false;
             return result;
         };
     }
@@ -543,7 +310,7 @@ function wrapIpcHandler(channel, handler) {
         return (event, ...args) => {
             sendScreenAnalysisLifecycle(event, 'screen-analysis-started');
             const queued = runSessionRequest('screen', () =>
-                callWithProviderRetry(async () => normalizeImageResult(await handler(event, ...args))),
+                Promise.resolve(handler(event, ...args)).then(normalizeImageResult),
                 { timeoutMs: 58000 }
             );
 
@@ -574,7 +341,14 @@ function wrapIpcHandler(channel, handler) {
     return handler;
 }
 
+function prepareRuntimeProvider(mode) {
+    runtimeProviderMode = mode;
+    resetGroqVad();
+    stopRuntimeMacAudio();
+}
+
 function installIpcHandlerHardening() {
+    if (!beforeQuitCleanupInstalled) { app.on('before-quit', stopRuntimeMacAudio); beforeQuitCleanupInstalled = true; }
     if (originalIpcHandle) return () => {};
 
     originalIpcHandle = ipcMain.handle.bind(ipcMain);
@@ -613,7 +387,7 @@ function setupRuntimeWindowHardening(mainWindow) {
     } catch {}
 
     ipcMain.handle('window-toggle-maximize', event => {
-        if (!event?.sender || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) {
+        if (!event?.sender || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id || event.senderFrame !== mainWindow.webContents.mainFrame) {
             return { success: false, error: 'Untrusted renderer' };
         }
         if (mainWindow.isMaximized()) mainWindow.unmaximize();
@@ -621,14 +395,8 @@ function setupRuntimeWindowHardening(mainWindow) {
         return { success: true, maximized: mainWindow.isMaximized() };
     });
 
-    const originalExecuteJavaScript = mainWindow.webContents.executeJavaScript.bind(mainWindow.webContents);
-    mainWindow.webContents.executeJavaScript = (code, ...args) => {
-        if (typeof code === 'string' && code.includes("localStorage.getItem('googleSearchEnabled')")) {
-            return Promise.resolve(String(storage.getPreferences().googleSearchEnabled === true));
-        }
-        return originalExecuteJavaScript(code, ...args);
-    };
-
+    // Windows selection, loopback and monitor fallback have one owner.
+    if (process.platform === 'win32') return;
     session.defaultSession.setDisplayMediaRequestHandler(
         async (request, callback) => {
             try {
@@ -650,7 +418,7 @@ function setupRuntimeWindowHardening(mainWindow) {
 }
 
 module.exports = {
-    installProviderRuntimeHardening,
+    prepareRuntimeProvider,
     installIpcHandlerHardening,
     setupRuntimeWindowHardening,
 };
