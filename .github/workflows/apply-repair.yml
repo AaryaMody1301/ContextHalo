@@ -1,0 +1,38 @@
+name: Apply verified Windows repair source
+
+on:
+  push:
+    branches: [fix/windows-workspace-search-recovery]
+    paths: ['.repair-transfer/**']
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.repository == 'AaryaMody1301/ContextHalo' && github.ref == 'refs/heads/fix/windows-workspace-search-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/windows-workspace-search-recovery
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Verify baseline and materialize reviewed repair
+        run: node .repair-transfer/apply.cjs
+      - name: Validate changed source and behavioral tests
+        run: |
+          npm run check
+          npm test
+      - name: Commit implementation on repair branch only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests scripts docs preload.js
+          git commit -m 'fix: restore Windows workspace lifecycle, Search recovery and appearance'
+          git push origin HEAD:fix/windows-workspace-search-recovery
