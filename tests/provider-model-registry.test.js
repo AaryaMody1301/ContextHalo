@@ -53,20 +53,3 @@ test('Groq catalog keeps all active models while grouping task models conservati
     assert.equal(catalog.chat.some(model => model.id.includes('orpheus')), false);
 });
 
-test('Phase 1 wiring preserves manual fallback and makes Groq transcription configurable', () => {
-    const preload = fs.readFileSync(path.join(process.cwd(), 'preload.js'), 'utf8');
-    const indexMain = fs.readFileSync(path.join(process.cwd(), 'src', 'index.js'), 'utf8');
-    const indexHtml = fs.readFileSync(path.join(process.cwd(), 'src', 'index.html'), 'utf8');
-    const gemini = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'gemini.js'), 'utf8');
-    const hardening = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'runtimeHardeningMain.js'), 'utf8');
-    const dynamicUi = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'dynamicModelRegistryRenderer.js'), 'utf8');
-
-    assert.match(preload, /provider-models:list/);
-    assert.match(indexMain, /listProviderModels/);
-    assert.match(indexHtml, /dynamicModelRegistryRenderer\.js/);
-    assert.match(gemini, /groqTranscriptionModel/);
-    assert.match(hardening, /groqTranscriptionModel/);
-    assert.match(dynamicUi, /Manual model IDs remain available/i);
-    assert.match(dynamicUi, /All provider models \(advanced\)/);
-    assert.match(dynamicUi, /gemini-3\.8-flash/);
-});

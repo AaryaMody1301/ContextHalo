@@ -1,3 +1,4 @@
+import '../GroundingSources.js';
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 import { unifiedPageStyles } from './sharedPageStyles.js';
 
@@ -375,7 +376,7 @@ export class HistoryView extends LitElement {
         const history = session.conversationHistory || [];
         history.forEach(turn => {
             if (turn.transcription) messages.push({ type: 'user', content: turn.transcription, timestamp: turn.timestamp });
-            if (turn.ai_response) messages.push({ type: 'ai', content: turn.ai_response, timestamp: turn.timestamp });
+            if (turn.ai_response) messages.push({ type: 'ai', content: turn.ai_response, timestamp: turn.timestamp, grounding: turn.grounding });
         });
         return messages;
     }
@@ -389,7 +390,7 @@ export class HistoryView extends LitElement {
             return messages.map(msg => html`
                 <div class="message-row ${msg.type}">
                     <div class="message">
-                        <div class="message-body">${msg.content}</div>
+                        <div class="message-body">${msg.content}</div><grounding-sources .grounding=${msg.grounding}></grounding-sources>
                         <div class="message-meta">${this.formatTime(msg.timestamp)}</div>
                     </div>
                 </div>
@@ -402,7 +403,7 @@ export class HistoryView extends LitElement {
             return screen.map(entry => html`
                 <div class="message-row screen">
                     <div class="message">
-                        <div class="message-body">${entry.response || ''}</div>
+                        <div class="message-body">${entry.response || ''}</div><grounding-sources .grounding=${entry.grounding}></grounding-sources>
                         <div class="message-meta">${this.formatTime(entry.timestamp)}</div>
                     </div>
                 </div>

@@ -275,7 +275,12 @@ function setupContextCaptureMain(mainWindow, ipcMain) {
     installHandler('context-capture:select-region', () => selectRegion(mainWindow));
 }
 
+function cancelRegionSelection() {
+    if (selectorWindow && !selectorWindow.isDestroyed()) selectorWindow.close();
+}
+
 module.exports = {
+    cancelRegionSelection,
     DEFAULT_SELECTION,
     sanitizeSelection,
     normalizeRegion,

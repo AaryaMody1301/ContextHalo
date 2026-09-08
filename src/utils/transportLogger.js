@@ -3,7 +3,7 @@ const path = require('path');
 const { getConfigDir } = require('../storage');
 let logStream = null;
 let bytes = 0;
-const ALLOWED = new Set(['sessionId', 'model', 'status', 'code', 'chunkLength', 'provider', 'durationMs']);
+const ALLOWED = new Set(['sessionId', 'model', 'status', 'code', 'chunkLength', 'provider', 'durationMs', 'operation', 'category', 'retryAfterMs', 'attempt']);
 function startTransportLog(sessionId) {
     closeTransportLog();
     if (process.env.CONTEXTHALO_DIAGNOSTICS !== '1') return;

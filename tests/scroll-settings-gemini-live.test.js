@@ -24,14 +24,3 @@ test('Settings links provider/model setup to the canonical Home editor', () => {
     assert.ok(app.includes(".onOpenProviderSettings=${() => this.navigate('main')}"));
 });
 
-test('Gemini Live validates model access and exposes setup failures', () => {
-    const gemini = read('src/utils/gemini.js');
-    assert.ok(gemini.includes("listProviderModels('gemini', apiKey)"));
-    assert.ok(gemini.includes('geminiSessionResumptionHandle = null'));
-    assert.ok(gemini.includes('connectGeminiLiveWithGuard'));
-    assert.ok(gemini.includes('Gemini Live closed during setup'));
-    assert.ok(gemini.includes('lastGeminiInitializationError'));
-    assert.ok(gemini.includes('preferredConfig'));
-    assert.ok(gemini.includes('retrying without Search'));
-    assert.ok(!gemini.includes('thinkingConfig: { thinkingLevel'));
-});

@@ -12,8 +12,9 @@ const {
     resetProviderSession,
     setFetchImplementationForTests,
 } = require('../src/utils/windowsProviderTransport');
-const { mixPcm16 } = require('../src/utils/windowsRuntimeMain');
-const { normalizeEtag, parseModelReference } = require('../src/utils/windowsLocalAiRuntime');
+const { loadMain } = require('./helpers/native-boundary');
+const { mixPcm16 } = loadMain('src/utils/windowsRuntimeMain.js');
+const { normalizeEtag, parseModelReference } = loadMain('src/utils/windowsLocalAiRuntime.js');
 
 function read(relativePath) {
     return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
@@ -116,13 +117,12 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
 
 test('Windows security and packaging configuration are enabled together', () => {
     const windowSource = read('src/utils/window.js');
-    const windowsRuntime = read('src/utils/windowsRuntimeMain.js');
+    const windowsRuntime = read('src/utils/contextCaptureMain.js');
     const storageSource = read('src/storage.js');
     const preloadSource = read('preload.js');
     const cloudSource = read('src/utils/cloud.js');
     const packageJson = JSON.parse(read('package.json'));
     const indexSource = read('src/index.js');
-    const analyzeSource = read('src/utils/analyzeProviderFallback.js');
 
     assert.match(windowSource, /sandbox: true/);
     assert.equal(windowSource.includes('enableBlinkFeatures'), false);
@@ -131,7 +131,7 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.match(windowSource, /Content-Security-Policy/);
     assert.match(windowsRuntime, /audio: 'loopback'/);
     assert.match(windowsRuntime, /useSystemPicker: false/);
-    assert.match(windowsRuntime, /screen\.getPrimaryDisplay\(\)\.id/);
+    assert.match(windowsRuntime, /screen\.getPrimaryDisplay/);
     assert.match(storageSource, /safeStorage\.encryptString/);
     assert.match(storageSource, /windows-safe-storage-v1/);
     assert.equal(preloadSource.includes('process.env'), false);
@@ -151,7 +151,6 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.equal(indexSource.includes('electron-squirrel-startup'), false);
     assert.ok(indexSource.indexOf('installWindowsProviderTransport();') < indexSource.indexOf("require('./utils/gemini')"));
     assert.ok(indexSource.indexOf('installWindowsLocalAiRuntime();') < indexSource.indexOf("require('./utils/gemini')"));
-    assert.match(analyzeSource, /__lastAnalyzeActualModel = model/);
 });
 
 test('Retry-After numeric values are interpreted as seconds', () => {

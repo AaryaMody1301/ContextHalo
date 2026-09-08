@@ -1,7 +1,5 @@
 const { ipcRenderer } = window.require('electron');
 
-const STYLE_ID = 'phase4-workspace-style';
-const NAV_IDS = ['phase4-knowledge-nav', 'phase4-practice-nav', 'phase4-review-nav'];
 const state = {
     tab: null,
     documents: [],
@@ -14,140 +12,10 @@ const state = {
     busy: false,
 };
 
-const STYLES = `
-    .phase4-overlay {
-        position: fixed;
-        inset: 48px 28px 28px calc(var(--sidebar-width) + 28px);
-        z-index: 20000;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 16px;
-        background: rgba(10,12,17,.96);
-        box-shadow: 0 28px 90px rgba(0,0,0,.55);
-        backdrop-filter: blur(28px) saturate(130%);
-        -webkit-app-region: no-drag;
-    }
-    :host([live-hud]) .phase4-overlay {
-        inset: 58px 22px 22px 22px;
-    }
-    .phase4-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        min-height: 58px;
-        padding: 0 18px;
-        border-bottom: 1px solid rgba(255,255,255,.08);
-    }
-    .phase4-title {
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-        color: #f8fafc;
-        font-size: 15px;
-        font-weight: 650;
-    }
-    .phase4-subtitle { color: rgba(255,255,255,.46); font-size: 11px; font-weight: 400; }
-    .phase4-close, .phase4-btn, .phase4-tab, .phase4-source-button {
-        border: 1px solid rgba(255,255,255,.1);
-        background: rgba(255,255,255,.055);
-        color: rgba(255,255,255,.8);
-        border-radius: 9px;
-        cursor: pointer;
-        font: inherit;
-    }
-    .phase4-close { width: 30px; height: 30px; font-size: 18px; }
-    .phase4-close:hover, .phase4-btn:hover, .phase4-tab:hover, .phase4-source-button:hover { background: rgba(255,255,255,.1); color: #fff; }
-    .phase4-tabs { display: flex; gap: 6px; padding: 10px 18px 0; }
-    .phase4-tab { padding: 7px 11px; font-size: 11px; }
-    .phase4-tab.active { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.13); color: #bfdbfe; }
-    .phase4-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 22px; }
-    .phase4-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
-    .phase4-btn { min-height: 32px; padding: 0 11px; font-size: 11px; }
-    .phase4-btn.primary { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.18); color: #dbeafe; }
-    .phase4-btn.danger { border-color: rgba(248,113,113,.25); color: #fecaca; }
-    .phase4-btn:disabled { opacity: .45; cursor: default; }
-    .phase4-input, .phase4-textarea, .phase4-select {
-        width: 100%;
-        border: 1px solid rgba(255,255,255,.1);
-        border-radius: 9px;
-        background: rgba(255,255,255,.045);
-        color: #f1f5f9;
-        font: inherit;
-        outline: none;
-    }
-    .phase4-input, .phase4-select { height: 34px; padding: 0 10px; }
-    .phase4-textarea { min-height: 110px; padding: 9px 10px; resize: vertical; user-select: text; cursor: text; }
-    .phase4-input:focus, .phase4-textarea:focus, .phase4-select:focus { border-color: rgba(96,165,250,.65); }
-    .phase4-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
-    .phase4-card {
-        border: 1px solid rgba(255,255,255,.08);
-        border-radius: 12px;
-        background: rgba(255,255,255,.025);
-        padding: 13px;
-    }
-    .phase4-card-title { color: #f8fafc; font-size: 12px; font-weight: 650; margin-bottom: 5px; }
-    .phase4-muted { color: rgba(255,255,255,.46); font-size: 10px; line-height: 1.55; }
-    .phase4-note { color: rgba(255,255,255,.58); font-size: 10px; line-height: 1.55; margin: 8px 0 14px; }
-    .phase4-list { display: flex; flex-direction: column; gap: 7px; }
-    .phase4-doc, .phase4-session {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        min-height: 48px;
-        padding: 9px 10px;
-        border: 1px solid rgba(255,255,255,.07);
-        border-radius: 10px;
-        background: rgba(255,255,255,.02);
-    }
-    .phase4-doc-main, .phase4-session-main { flex: 1; min-width: 0; }
-    .phase4-doc-title, .phase4-session-title { color: #e5e7eb; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .phase4-doc-meta, .phase4-session-meta { color: rgba(255,255,255,.4); font-size: 9px; margin-top: 3px; }
-    .phase4-toggle { width: 15px; height: 15px; accent-color: #60a5fa; cursor: pointer; }
-    .phase4-search-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin-bottom: 14px; }
-    .phase4-result { margin-top: 8px; padding: 10px; border-left: 2px solid rgba(96,165,250,.5); background: rgba(59,130,246,.05); }
-    .phase4-result-title { color: #bfdbfe; font-size: 10px; font-weight: 600; }
-    .phase4-result-text { color: rgba(255,255,255,.65); font-size: 10px; line-height: 1.55; margin-top: 5px; white-space: pre-wrap; user-select: text; }
-    .phase4-form { display: none; margin: 10px 0 14px; gap: 8px; }
-    .phase4-form.visible { display: grid; }
-    .phase4-practice-question { font-size: 14px; line-height: 1.55; color: #f8fafc; white-space: pre-wrap; user-select: text; margin: 12px 0; }
-    .phase4-progress { color: rgba(255,255,255,.46); font-size: 10px; }
-    .phase4-feedback { margin-top: 10px; padding: 10px; border-radius: 9px; background: rgba(255,255,255,.04); font-size: 10px; line-height: 1.55; color: rgba(255,255,255,.72); }
-    .phase4-feedback.strong { background: rgba(34,197,94,.08); color: #bbf7d0; }
-    .phase4-feedback.partial { background: rgba(234,179,8,.08); color: #fef08a; }
-    .phase4-feedback.retry { background: rgba(248,113,113,.08); color: #fecaca; }
-    .phase4-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-    .phase4-tag { padding: 4px 7px; border-radius: 999px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.58); font-size: 9px; }
-    .phase4-review-section { margin-top: 14px; }
-    .phase4-review-section h4 { margin: 0 0 7px; color: #e5e7eb; font-size: 11px; }
-    .phase4-review-section ul { margin: 0; padding-left: 18px; color: rgba(255,255,255,.64); font-size: 10px; line-height: 1.6; user-select: text; }
-    .phase4-empty { padding: 32px 16px; text-align: center; color: rgba(255,255,255,.42); font-size: 11px; }
-    .phase4-live-chip {
-        min-height: 24px;
-        padding: 0 8px;
-        border: 1px solid rgba(96,165,250,.2);
-        border-radius: 999px;
-        background: rgba(59,130,246,.07);
-        color: #bfdbfe;
-        font-size: 9px;
-        cursor: pointer;
-    }
-    @media (max-width: 900px) { .phase4-grid { grid-template-columns: 1fr; } }
-`;
-
-function ensureStyle(root) {
-    if (!root || root.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = STYLES;
-    root.appendChild(style);
-}
-
 function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
+    if (tag === 'button') node.type = 'button';
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
 }
@@ -163,39 +31,17 @@ function formatBytes(chars) {
     return value >= 1000000 ? `${(value / 1000000).toFixed(1)}m chars` : value >= 1000 ? `${Math.round(value / 1000)}k chars` : `${value} chars`;
 }
 
-function closePanel(app) {
-    app?.shadowRoot?.querySelector('.phase4-overlay')?.remove();
+export function closePanel(app) {
+    app?.shadowRoot?.querySelector('.phase4-overlay')?.close();
     state.tab = null;
-    for (const id of NAV_IDS) app?.shadowRoot?.getElementById(id)?.classList.remove('active');
+    app.workspaceTab = null;
 }
-
-function panelShell(app, tab) {
-    const root = app.shadowRoot;
-    root.querySelector('.phase4-overlay')?.remove();
-    const overlay = el('section', 'phase4-overlay');
-    const header = el('div', 'phase4-header');
-    const title = el('div', 'phase4-title');
-    title.append(el('span', '', tab === 'knowledge' ? 'Knowledge Library' : tab === 'practice' ? 'Practice Lab' : 'Session Review'));
-    title.append(el('span', 'phase4-subtitle', tab === 'knowledge'
-        ? 'Local retrieval for Gemini, Groq, and Local AI'
-        : tab === 'practice'
-            ? 'Local recall practice with keyword-based feedback'
-            : 'Decisions, actions, questions, topics, and follow-up practice'));
-    const close = el('button', 'phase4-close', '×');
-    close.type = 'button';
-    close.addEventListener('click', () => closePanel(app));
-    header.append(title, close);
-
-    const tabs = el('div', 'phase4-tabs');
-    for (const item of [['knowledge', 'Knowledge'], ['practice', 'Practice'], ['review', 'Review']]) {
-        const button = el('button', `phase4-tab ${tab === item[0] ? 'active' : ''}`, item[1]);
-        button.type = 'button';
-        button.addEventListener('click', () => openPanel(app, item[0]));
-        tabs.append(button);
-    }
-    const body = el('div', 'phase4-body');
-    overlay.append(header, tabs, body);
-    root.append(overlay);
+function panelShell(app) {
+    const dialog = app.shadowRoot.querySelector('.phase4-overlay');
+    const slot = dialog.querySelector('.phase4-body');
+    const body = el('div', 'phase4-page');
+    slot.replaceChildren(body);
+    if (!dialog.open) dialog.showModal();
     return body;
 }
 
@@ -213,7 +59,8 @@ async function loadSessions() {
 
 function statusLine(parent, text, isError = false) {
     const line = el('div', 'phase4-note', text);
-    if (isError) line.style.color = '#fecaca';
+    line.setAttribute('role', isError ? 'alert' : 'status');
+    if (isError) line.style.color = 'var(--text-primary)';
     parent.prepend(line);
     setTimeout(() => line.remove(), 4500);
 }
@@ -231,7 +78,11 @@ async function renderKnowledge(app, body) {
     const form = el('div', 'phase4-form');
     const titleInput = el('input', 'phase4-input');
     titleInput.placeholder = 'Source title';
+    titleInput.setAttribute('aria-label', 'Knowledge source title');
+    titleInput.maxLength = 160;
     const textInput = el('textarea', 'phase4-textarea');
+    textInput.setAttribute('aria-label', 'Knowledge source text');
+    textInput.maxLength = 200000;
     textInput.placeholder = 'Paste notes, a job description, requirements, documentation, study material, or other reusable context…';
     const saveText = el('button', 'phase4-btn primary', 'Save source');
     form.append(titleInput, textInput, saveText);
@@ -239,6 +90,8 @@ async function renderKnowledge(app, body) {
 
     const searchRow = el('div', 'phase4-search-row');
     const searchInput = el('input', 'phase4-input');
+    searchInput.setAttribute('aria-label', 'Test knowledge retrieval');
+    searchInput.maxLength = 2000;
     searchInput.placeholder = 'Test retrieval…';
     const searchButton = el('button', 'phase4-btn', 'Search');
     searchRow.append(searchInput, searchButton);
@@ -263,6 +116,7 @@ async function renderKnowledge(app, body) {
                 const toggle = el('input', 'phase4-toggle');
                 toggle.type = 'checkbox';
                 toggle.checked = document.enabled !== false;
+                toggle.setAttribute('aria-label', `Use ${document.title} for retrieval`);
                 toggle.title = toggle.checked ? 'Enabled for retrieval' : 'Disabled';
                 toggle.addEventListener('change', async () => {
                     toggle.disabled = true;
@@ -340,6 +194,7 @@ async function renderPractice(app, body) {
     setup.append(el('div', 'phase4-card-title', 'Practice source'));
     setup.append(el('div', 'phase4-muted', 'Use enabled knowledge or turn any saved session into a recall set. Questions and grading run locally.'));
     const sourceSelect = el('select', 'phase4-select');
+    sourceSelect.setAttribute('aria-label', 'Practice source');
     sourceSelect.style.marginTop = '10px';
     const knowledgeOption = el('option', '', 'Enabled knowledge library');
     knowledgeOption.value = 'knowledge';
@@ -386,6 +241,8 @@ async function renderPractice(app, body) {
         practiceArea.append(el('div', 'phase4-progress', `Question ${state.practiceIndex + 1} of ${questions.length} · ${question.sourceTitle}`));
         practiceArea.append(el('div', 'phase4-practice-question', question.prompt));
         const answer = el('textarea', 'phase4-textarea');
+        answer.setAttribute('aria-label', 'Your practice answer');
+        answer.maxLength = 32000;
         answer.placeholder = 'Answer in your own words…';
         const controls = el('div', 'phase4-toolbar');
         controls.style.marginTop = '9px';
@@ -521,76 +378,15 @@ async function renderReview(app, body) {
     }
 }
 
-async function openPanel(app, tab) {
-    if (!app?.shadowRoot) return;
+export async function openPanel(app, tab) {
+    if (!app?.shadowRoot || !['knowledge', 'practice', 'review'].includes(tab)) return;
     state.tab = tab;
-    for (const id of NAV_IDS) app.shadowRoot.getElementById(id)?.classList.toggle('active', id === `phase4-${tab}-nav`);
-    const body = panelShell(app, tab);
+    app.workspaceTab = tab;
+    await app.updateComplete;
+    if (state.tab !== tab) return;
+    const body = panelShell(app);
     if (tab === 'knowledge') await renderKnowledge(app, body);
     else if (tab === 'practice') await renderPractice(app, body);
     else await renderReview(app, body);
 }
 
-function makeNavButton(app, id, label, tab, iconPath) {
-    const button = el('button', 'nav-item');
-    button.id = id;
-    button.type = 'button';
-    button.title = label;
-    button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${iconPath}"/></svg><span></span>`;
-    button.querySelector('span').textContent = label;
-    button.addEventListener('click', () => openPanel(app, tab));
-    return button;
-}
-
-function decorate(app) {
-    const root = app?.shadowRoot;
-    if (!root) return;
-    ensureStyle(root);
-    const nav = root.querySelector('.sidebar-nav');
-    if (nav) {
-        const history = [...nav.querySelectorAll('.nav-item')].find(item => item.textContent?.trim() === 'History');
-        const entries = [
-            ['phase4-knowledge-nav', 'Knowledge', 'knowledge', 'M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z M8 7h8 M8 11h8'],
-            ['phase4-practice-nav', 'Practice Lab', 'practice', 'M12 3l8 4-8 4-8-4z M6 10v5c0 2 3 4 6 4s6-2 6-4v-5'],
-            ['phase4-review-nav', 'Session Review', 'review', 'M5 4h14v16H5z M8 8h8 M8 12h5 M8 16h6'],
-        ];
-        let anchor = history;
-        for (const entry of entries) {
-            let button = root.getElementById(entry[0]);
-            if (!button) {
-                button = makeNavButton(app, ...entry);
-                if (anchor?.nextSibling) nav.insertBefore(button, anchor.nextSibling);
-                else nav.append(button);
-            }
-            anchor = button;
-        }
-    }
-
-    if (app.currentView === 'assistant') {
-        const liveRight = root.querySelector('.live-bar-right');
-        if (liveRight && !liveRight.querySelector('.phase4-live-chip')) {
-            const chip = el('button', 'phase4-live-chip', 'Knowledge');
-            chip.type = 'button';
-            chip.title = 'Open Knowledge Library';
-            chip.addEventListener('click', () => openPanel(app, 'knowledge'));
-            liveRight.prepend(chip);
-        }
-    }
-}
-
-async function install() {
-    await customElements.whenDefined('context-halo-app');
-    const App = customElements.get('context-halo-app');
-    if (!App || App.prototype.__phase4WorkspaceInstalled) return;
-    const originalUpdated = App.prototype.updated;
-    App.prototype.updated = function(changedProperties) {
-        const result = originalUpdated.call(this, changedProperties);
-        queueMicrotask(() => decorate(this));
-        return result;
-    };
-    Object.defineProperty(App.prototype, '__phase4WorkspaceInstalled', { value: true });
-    const app = document.querySelector('context-halo-app');
-    if (app) decorate(app);
-}
-
-install().catch(error => console.error('Failed to install Phase 4 workspace:', error));

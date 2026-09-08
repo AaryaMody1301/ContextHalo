@@ -5,7 +5,7 @@ const context = new AsyncLocalStorage();
 let epoch = 0;
 let active = false;
 let queue = Promise.resolve();
-const controllers = new Set();
+const controllers = new Map();
 
 function abortError(message) {
     return Object.assign(new Error(message), { name: 'AbortError' });
@@ -14,9 +14,15 @@ function abortError(message) {
 function closeSessionRequests() {
     active = false;
     epoch += 1;
-    for (const controller of controllers) controller.abort(abortError('Session ended'));
+    for (const controller of controllers.keys()) controller.abort(abortError('Session ended'));
     controllers.clear();
     queue = Promise.resolve();
+}
+
+function cancelSessionRequests(kind) {
+    for (const [controller, requestKind] of controllers) {
+        if (requestKind === kind) controller.abort(abortError(`${kind} request cancelled`));
+    }
 }
 
 function resetSessionRequests() {
@@ -51,7 +57,7 @@ function runSessionRequest(kind, work, options = {}) {
     }
     if (!active) return Promise.reject(abortError('Start a session before sending a request'));
     const controller = new AbortController();
-    controllers.add(controller);
+    controllers.set(controller, kind);
     const timeoutMs = options.timeoutMs || 65000;
     const request = {
         requestId: options.requestId || randomUUID(), kind, epoch,
@@ -81,6 +87,6 @@ function runSessionRequest(kind, work, options = {}) {
 }
 
 module.exports = {
-    closeSessionRequests, resetSessionRequests, runSessionRequest,
+    closeSessionRequests, cancelSessionRequests, resetSessionRequests, runSessionRequest,
     requestIsCurrent, assertCurrentRequest, getRequestMetadata, getRequestSignal,
 };

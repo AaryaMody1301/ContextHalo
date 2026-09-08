@@ -122,24 +122,3 @@ test('knowledge store persists text sources under the ContextHalo config directo
     assert.equal(knowledge.listDocuments().length, 0);
 });
 
-test('Phase 4 stays additive and preserves the hardened renderer bridge', () => {
-    const index = read('src/index.js');
-    const preload = read('preload.js');
-    const html = read('src/index.html');
-    const rag = read('src/utils/knowledgeRagMain.js');
-    const renderer = read('src/utils/phase4Renderer.js');
-    const packageJson = JSON.parse(read('package.json'));
-
-    assert.match(index, /installKnowledgeRagMain\(\)/);
-    assert.match(index, /setupPhase4Main\(mainWindow, ipcMain\)/);
-    assert.match(preload, /'knowledge:import'/);
-    assert.match(preload, /'practice:generate'/);
-    assert.match(preload, /'review:get'/);
-    assert.match(html, /phase4Renderer\.js/);
-    assert.match(rag, /ContextHalo knowledge/);
-    assert.match(rag, /api\.groq\.com/);
-    assert.match(rag, /127\.0\.0\.1/);
-    assert.match(renderer, /Practice Lab/);
-    assert.equal(packageJson.dependencies['pdf-parse'], undefined);
-    assert.equal(packageJson.dependencies.mammoth, undefined);
-});

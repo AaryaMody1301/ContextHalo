@@ -10,7 +10,6 @@ const {
 
 let installed = false;
 let fetchPatched = false;
-let googleGenAiPatched = false;
 
 function emitLiveTranscript(payload) {
     if (!requestIsCurrent()) return;
@@ -118,94 +117,11 @@ function tuneLiveSystemInstruction(systemInstruction, mode) {
     return { parts: [{ text: applyResponseModeInstruction('', mode) }] };
 }
 
-function replaceGoogleGenAiExport(genai, PatchedGoogleGenAI) {
-    try {
-        genai.GoogleGenAI = PatchedGoogleGenAI;
-    } catch {}
-    if (genai.GoogleGenAI === PatchedGoogleGenAI) return true;
-
-    try {
-        const modulePath = require.resolve('@google/genai');
-        const cachedModule = require.cache[modulePath];
-        if (!cachedModule) return false;
-        cachedModule.exports = { ...genai, GoogleGenAI: PatchedGoogleGenAI };
-        return require('@google/genai').GoogleGenAI === PatchedGoogleGenAI;
-    } catch {
-        return false;
-    }
-}
-
-function patchGeminiLive() {
-    if (googleGenAiPatched) return;
-
-    try {
-        const genai = require('@google/genai');
-        const CurrentGoogleGenAI = genai.GoogleGenAI;
-        if (!CurrentGoogleGenAI || CurrentGoogleGenAI.__realtimeContextPatched) {
-            googleGenAiPatched = true;
-            return;
-        }
-
-        class RealtimeContextGoogleGenAI extends CurrentGoogleGenAI {
-            constructor(options) {
-                super(options);
-
-                const live = this.live;
-                const originalConnect = live?.connect?.bind(live);
-                if (!originalConnect) return;
-
-                live.connect = async params => {
-                    const mode = getResponseMode();
-                    let connectedSession = null;
-                    const originalOnMessage = params?.callbacks?.onmessage;
-                    const callbacks = {
-                        ...(params?.callbacks || {}),
-                        onmessage(message) {
-                            if (connectedSession && global.geminiSessionRef?.current !== connectedSession) return;
-                            const interim = extractGeminiTranscript(message, 'interimInputTranscription');
-                            if (interim) {
-                                emitLiveTranscript({ provider: 'gemini', text: interim, final: false, timestamp: Date.now() });
-                            }
-
-                            const finalText = extractGeminiTranscript(message, 'inputTranscription');
-                            if (finalText) {
-                                emitLiveTranscript({ provider: 'gemini', text: finalText, final: true, timestamp: Date.now() });
-                            }
-
-                            if (typeof originalOnMessage === 'function') {
-                                return originalOnMessage.call(this, message);
-                            }
-                            return undefined;
-                        },
-                    };
-
-                    const config = {
-                        ...(params?.config || {}),
-                        systemInstruction: tuneLiveSystemInstruction(params?.config?.systemInstruction, mode),
-                    };
-
-                    connectedSession = await originalConnect({ ...params, callbacks, config });
-                    return connectedSession;
-                };
-            }
-        }
-
-        Object.defineProperty(RealtimeContextGoogleGenAI, '__realtimeContextPatched', { value: true });
-        if (!replaceGoogleGenAiExport(genai, RealtimeContextGoogleGenAI)) {
-            throw new Error('The @google/genai CommonJS export could not be wrapped for realtime context');
-        }
-        googleGenAiPatched = true;
-    } catch (error) {
-        console.warn('Could not install realtime Gemini context bridge:', error.message);
-    }
-}
-
 const { sanitizeTranscriptHistory, sanitizeMarkers } = require('./sessionData');
 
 function installRealtimeContextMain() {
     if (installed) return;
     patchProviderFetch();
-    patchGeminiLive();
     installed = true;
 }
 

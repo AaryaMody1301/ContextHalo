@@ -1,3 +1,6 @@
+import { RESPONSE_MODES, getRealtimeState, setResponseMode } from '../../utils/realtimeContextRenderer.js';
+import { loadContextState, getContextState, selectionKey, refreshCaptureSources, setCaptureSource, setPackField, captureClipboardText, clearClipboardContext } from '../../utils/contextCaptureRenderer.js';
+import { GEMINI_DEFAULTS, GROQ_DEFAULTS, renderModelPicker } from '../../utils/dynamicModelRegistryRenderer.js';
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 
 const LOCAL_LLM_PRESETS = [
@@ -15,6 +18,15 @@ const LOCAL_LLM_PRESETS = [
 
 export class MainView extends LitElement {
     static styles = css`
+        .preparation { margin: 16px 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+        .preparation summary { cursor: pointer; font-weight: 600; }
+        .preparation label { display: block; margin: 12px 0 4px; color: var(--text-secondary); }
+        .preparation textarea, .preparation select, .preparation input { width: 100%; font: inherit; }
+        .preparation textarea { min-height: 72px; padding: 8px; resize: vertical; background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; }
+        .preparation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+        .preparation button { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+        .preparation :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
         * {
             font-family: var(--font);
             cursor: default;
@@ -720,6 +732,8 @@ export class MainView extends LitElement {
     `;
 
     static properties = {
+        unsavedSession: { type: Boolean },
+        onRetrySave: { attribute: false },
         onStart: { type: Function },
         onExternalLink: { type: Function },
         selectedProfile: { type: String },
@@ -730,6 +744,13 @@ export class MainView extends LitElement {
         whisperDownloading: { type: Boolean },
         downloadProgress: { type: Object },
         onCancelDownload: { type: Function },
+        onCancelStart: { type: Function },
+        onRetryWithoutSearch: { type: Function },
+        providerError: { type: Object },
+        searchState: { type: Object },
+        lifecycleState: { type: String },
+        retryBlocked: { type: Boolean },
+        shortcut: { type: String },
         // Internal state
         _mode: { state: true },
         _token: { state: true },
@@ -778,10 +799,11 @@ export class MainView extends LitElement {
         this._useCustomLocalLlmModel = false;
         this._whisperModel = 'tiny.en';
 
-        this._animId = null;
-        this._time = 0;
-        this._mouseX = -1;
-        this._mouseY = -1;
+        this._catalogEpochs = { gemini: 0, groq: 0 };
+        this._catalogTimers = {};
+        this._keySavePromise = Promise.resolve();
+        this._geminiHttpModel = GEMINI_DEFAULTS.screen;
+        this._groqTranscriptionModel = GROQ_DEFAULTS.transcription;
 
         this.boundKeydownHandler = this._handleKeydown.bind(this);
         this._loadFromStorage();
@@ -807,7 +829,9 @@ export class MainView extends LitElement {
             this._geminiKey = (await contextHalo.storage.getApiKey().catch(() => '')) || '';
             this._groqKey = (await contextHalo.storage.getGroqApiKey().catch(() => '')) || '';
             this._openaiKey = creds.openaiKey || '';
-            this._geminiLiveModel = config.geminiLiveModel || 'gemini-3.1-flash-live-preview';
+            this._geminiLiveModel = config.geminiLiveModel || GEMINI_DEFAULTS.live;
+            this._geminiHttpModel = config.geminiHttpModel || GEMINI_DEFAULTS.screen;
+            this._groqTranscriptionModel = config.groqTranscriptionModel || GROQ_DEFAULTS.transcription;
             this._groqModel = config.groqModel || 'qwen/qwen3.6-27b';
             this._groqImageModel = config.groqImageModel || 'qwen/qwen3.6-27b';
             this._disableGroqThinking = config.disableGroqThinking === true;
@@ -816,6 +840,8 @@ export class MainView extends LitElement {
             this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
             this._useCustomLocalLlmModel = !LOCAL_LLM_PRESETS.some(preset => preset.value === this._localLlmModel);
             this._whisperModel = prefs.whisperModel || 'tiny.en';
+            if (this._geminiKey.trim()) void this._refreshProviderModels('gemini');
+            if (this._groqKey.trim()) void this._refreshProviderModels('groq');
 
             this.requestUpdate();
         } catch (e) {
@@ -825,118 +851,21 @@ export class MainView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
+        this._contextChanged = () => this.requestUpdate();
+        window.addEventListener('session-context-changed', this._contextChanged);
+        window.addEventListener('realtime-context-changed', this._contextChanged);
+        void loadContextState().catch(() => { this.startError = 'Session context could not be loaded.'; });
         document.addEventListener('keydown', this.boundKeydownHandler);
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
+        window.removeEventListener('session-context-changed', this._contextChanged);
+        window.removeEventListener('realtime-context-changed', this._contextChanged);
         document.removeEventListener('keydown', this.boundKeydownHandler);
-        if (this._animId) cancelAnimationFrame(this._animId);
-    }
-
-    updated(changedProperties) {
-        super.updated(changedProperties);
-        if (changedProperties.has('_mode')) {
-            // Stop old animation when switching modes
-            if (this._animId) {
-                cancelAnimationFrame(this._animId);
-                this._animId = null;
-            }
-        }
-    }
-
-    _initButtonAurora() {
-        const btn = this.shadowRoot.querySelector('.start-button');
-        const aurora = this.shadowRoot.querySelector('canvas.btn-aurora');
-        const dither = this.shadowRoot.querySelector('canvas.btn-dither');
-        if (!aurora || !dither || !btn) return;
-
-        // Mouse tracking
-        this._mouseX = -1;
-        this._mouseY = -1;
-        btn.addEventListener('mousemove', e => {
-            const rect = btn.getBoundingClientRect();
-            this._mouseX = (e.clientX - rect.left) / rect.width;
-            this._mouseY = (e.clientY - rect.top) / rect.height;
-        });
-        btn.addEventListener('mouseleave', () => {
-            this._mouseX = -1;
-            this._mouseY = -1;
-        });
-
-        // Dither
-        const blockSize = 8;
-        const cols = Math.ceil(aurora.offsetWidth / blockSize);
-        const rows = Math.ceil(aurora.offsetHeight / blockSize);
-        dither.width = cols;
-        dither.height = rows;
-        const dCtx = dither.getContext('2d');
-        const img = dCtx.createImageData(cols, rows);
-        for (let i = 0; i < img.data.length; i += 4) {
-            const v = Math.random() > 0.5 ? 255 : 0;
-            img.data[i] = v;
-            img.data[i + 1] = v;
-            img.data[i + 2] = v;
-            img.data[i + 3] = 255;
-        }
-        dCtx.putImageData(img, 0, 0);
-
-        // Aurora
-        const ctx = aurora.getContext('2d');
-        const scale = 0.4;
-        aurora.width = Math.floor(aurora.offsetWidth * scale);
-        aurora.height = Math.floor(aurora.offsetHeight * scale);
-
-        const blobs = [
-            { color: [120, 160, 230], x: 0.1, y: 0.3, vx: 0.25, vy: 0.2, phase: 0 },
-            { color: [150, 120, 220], x: 0.8, y: 0.5, vx: -0.2, vy: 0.25, phase: 1.5 },
-            { color: [200, 140, 210], x: 0.5, y: 0.6, vx: 0.18, vy: -0.22, phase: 3.0 },
-            { color: [100, 190, 190], x: 0.3, y: 0.7, vx: 0.3, vy: 0.15, phase: 4.5 },
-            { color: [220, 170, 130], x: 0.7, y: 0.4, vx: -0.22, vy: -0.25, phase: 6.0 },
-        ];
-
-        const draw = () => {
-            this._time += 0.008;
-            const w = aurora.width;
-            const h = aurora.height;
-            const maxDim = Math.max(w, h);
-
-            ctx.fillStyle = '#f0f0f0';
-            ctx.fillRect(0, 0, w, h);
-
-            const hovering = this._mouseX >= 0;
-
-            for (const blob of blobs) {
-                const t = this._time;
-                const cx = (blob.x + Math.sin(t * blob.vx + blob.phase) * 0.4) * w;
-                const cy = (blob.y + Math.cos(t * blob.vy + blob.phase * 0.7) * 0.4) * h;
-                const r = maxDim * 0.45;
-
-                let boost = 1;
-                if (hovering) {
-                    const dx = cx / w - this._mouseX;
-                    const dy = cy / h - this._mouseY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    boost = 1 + 2.5 * Math.max(0, 1 - dist / 0.6);
-                }
-
-                const a0 = Math.min(1, 0.18 * boost);
-                const a1 = Math.min(1, 0.08 * boost);
-                const a2 = Math.min(1, 0.02 * boost);
-
-                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-                grad.addColorStop(0, `rgba(${blob.color[0]}, ${blob.color[1]}, ${blob.color[2]}, ${a0})`);
-                grad.addColorStop(0.3, `rgba(${blob.color[0]}, ${blob.color[1]}, ${blob.color[2]}, ${a1})`);
-                grad.addColorStop(0.6, `rgba(${blob.color[0]}, ${blob.color[1]}, ${blob.color[2]}, ${a2})`);
-                grad.addColorStop(1, `rgba(${blob.color[0]}, ${blob.color[1]}, ${blob.color[2]}, 0)`);
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-            }
-
-            this._animId = requestAnimationFrame(draw);
-        };
-
-        draw();
+        for (const timer of Object.values(this._catalogTimers)) clearTimeout(timer);
+        this._catalogEpochs.gemini++;
+        this._catalogEpochs.groq++;
     }
 
     _handleKeydown(e) {
@@ -945,16 +874,21 @@ export class MainView extends LitElement {
             return;
         }
 
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        if ((isMac ? e.metaKey : e.ctrlKey) && e.key === 'Enter') {
-            e.preventDefault();
-            this._handleStart();
-        }
+
     }
 
     // ── Persistence ──
 
+    _localAiSupported() {
+        const { platform, arch } = window.process || {};
+        return (platform === 'win32' && arch === 'x64') || (platform === 'darwin' && ['x64', 'arm64'].includes(arch));
+    }
+
     async _saveMode(mode) {
+        if (mode === 'local' && !this._localAiSupported()) {
+            this.startError = `Local AI is unavailable on ${window.process?.platform}/${window.process?.arch}. Choose Gemini or Groq.`;
+            return;
+        }
         this._mode = mode;
         this._tokenError = false;
         this._keyError = false;
@@ -972,16 +906,70 @@ export class MainView extends LitElement {
         this.requestUpdate();
     }
 
-    async _saveGeminiKey(val) {
-        this._geminiKey = val;
+    _saveGeminiKey(value) { return this._saveProviderKey('gemini', value); }
+    _saveGroqKey(value) { return this._saveProviderKey('groq', value); }
+
+    _saveProviderKey(provider, value) {
+        const gemini = provider === 'gemini';
+        this[gemini ? '_geminiKey' : '_groqKey'] = value;
         this._keyError = false;
-        await contextHalo.storage.setApiKey(val);
+        this._catalogEpochs[provider]++;
+        this[gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading'] = false;
+        clearTimeout(this._catalogTimers[provider]);
+        // Serialize key writes; Start awaits the latest write. No key is logged.
+        this._keySavePromise = this._keySavePromise.catch(() => {}).then(async () => {
+            const result = await (gemini ? contextHalo.storage.setApiKey(value) : contextHalo.storage.setGroqApiKey(value));
+            if (result?.success === false) throw new Error('Credential storage rejected the update.');
+        }).then(() => {
+            if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
+            this._keyError = false;
+            this.startError = '';
+            if (value.trim().length >= 20) this._catalogTimers[provider] = setTimeout(() => this._refreshProviderModels(provider, true), 1200);
+        }).catch(() => {
+            if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
+            this._keyError = true;
+            this.startError = 'The key could not be saved securely. The entered value remains in this form; retry before starting.';
+        });
+        this.requestUpdate();
+        return this._keySavePromise.finally(() => this.requestUpdate());
+    }
+
+    async _refreshProviderModels(provider, forceRefresh = false) {
+        const gemini = provider === 'gemini';
+        const loading = gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading';
+        const errorKey = gemini ? '_geminiCatalogError' : '_groqCatalogError';
+        if (this[loading]) return;
+        const epoch = ++this._catalogEpochs[provider];
+        this[loading] = true;
+        this[errorKey] = '';
+        this.requestUpdate();
+        try {
+            await this._keySavePromise;
+            const result = await window.electronAPI.invoke('provider-models:list', provider, forceRefresh === true);
+            if (!this.isConnected || epoch !== this._catalogEpochs[provider]) return;
+            if (!result?.success) throw new Error('Model discovery failed. Check the provider key or retry.');
+            this[gemini ? '_geminiCatalog' : '_groqCatalog'] = result.data;
+            const selected = gemini ? this._geminiLiveModel : this._groqModel;
+            if (selected && !result.data?.all?.some(model => model.id === selected)) {
+                this[errorKey] = 'The selected model is not in this catalog. Its manual ID is preserved; review the model or refresh.';
+            }
+            if (result.data?.stale) this[errorKey] = 'The provider catalog is cached. Saved and manual model IDs are preserved.';
+        } catch {
+            if (epoch === this._catalogEpochs[provider]) this[errorKey] = 'Model discovery is unavailable. Saved and manual model IDs remain usable.';
+        } finally {
+            if (epoch === this._catalogEpochs[provider]) { this[loading] = false; this.requestUpdate(); }
+        }
+    }
+
+    async _saveGeminiHttpModel(value) {
+        this._geminiHttpModel = value;
+        await contextHalo.storage.updateConfig('geminiHttpModel', value);
         this.requestUpdate();
     }
 
-    async _saveGroqKey(val) {
-        this._groqKey = val;
-        await contextHalo.storage.setGroqApiKey(val);
+    async _saveGroqTranscriptionModel(value) {
+        this._groqTranscriptionModel = value;
+        await contextHalo.storage.updateConfig('groqTranscriptionModel', value);
         this.requestUpdate();
     }
 
@@ -1059,8 +1047,10 @@ export class MainView extends LitElement {
 
     // ── Start ──
 
-    _handleStart() {
-        if (this.isInitializing || this.downloadProgress.active) return;
+    async _handleStart() {
+        if (this.isInitializing || this.downloadProgress.active || this.retryBlocked) return;
+        await this._keySavePromise;
+        if (this._keyError || this.isInitializing) return;
 
         if (this._mode === 'byok') {
             if (!this._geminiKey.trim()) {
@@ -1068,7 +1058,12 @@ export class MainView extends LitElement {
                 this.requestUpdate();
                 return;
             }
+        } else if (this._mode === 'groq' && !this._groqKey.trim()) {
+            this._keyError = true;
+            this.startError = 'Enter a Groq API key before starting.';
+            return;
         } else if (this._mode === 'local') {
+            if (!this._localAiSupported()) { this.startError = 'Local AI requires Windows x64 or supported macOS hardware.'; return; }
             if (!this._localLlmModel.trim()) {
                 return;
             }
@@ -1128,8 +1123,37 @@ export class MainView extends LitElement {
             <div class="session-status ${error ? 'error' : ''}" role=${error ? 'alert' : 'status'}>
                 <span class="session-status-dot"></span>
                 <span>${text}</span>
+                ${this.isInitializing ? html`<button type="button" class="download-cancel" @click=${() => this.onCancelStart?.()}>Cancel start</button>` : ''}
+                ${error && this.searchState?.effective && this.providerError?.canDisableSearch ? html`<button type="button" class="download-cancel" ?disabled=${this.retryBlocked} @click=${() => this.onRetryWithoutSearch?.()}>Continue without Search</button>` : ''}
             </div>
         `;
+    }
+
+    async _contextAction(action) {
+        try { await action(); } catch { this.startError = 'The setting could not be saved. Your current draft is retained.'; }
+    }
+
+    renderPreparation() {
+        const { sessionPack: pack, captureState, captureSources, error } = getContextState();
+        const { responseMode } = getRealtimeState();
+        return html`<details class="preparation"><summary>Screen, context &amp; response style</summary>
+            <label for="responseMode">Response style (applied next session)</label>
+            <select id="responseMode" .value=${responseMode} @change=${event => this._contextAction(() => setResponseMode(event.target.value))}>
+                ${RESPONSE_MODES.map(mode => html`<option value=${mode.id}>${mode.label} - ${mode.description}</option>`)}
+            </select>
+            <label for="captureSource">Screen or window to analyze</label>
+            <select id="captureSource" .value=${selectionKey(captureState)} @change=${event => this._contextAction(() => setCaptureSource(event.target.value))}>
+                ${captureSources.map(source => html`<option value=${source.key}>${source.label}</option>`)}
+            </select>
+            <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(refreshCaptureSources)}>Refresh screens</button></div>
+            <label for="contextTitle">Session title</label><input id="contextTitle" maxlength="160" .value=${pack.title} @input=${event => setPackField('title', event.target.value)} />
+            <label for="contextGoal">Goal</label><input id="contextGoal" maxlength="1600" .value=${pack.goal} @input=${event => setPackField('goal', event.target.value)} />
+            <label for="contextNotes">Context notes</label><textarea id="contextNotes" maxlength="6000" .value=${pack.notes} @input=${event => setPackField('notes', event.target.value)}></textarea>
+            <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(captureClipboardText)}>Add clipboard text</button>
+                <button type="button" ?disabled=${!pack.clipboardText} @click=${() => this._contextAction(clearClipboardContext)}>Clear clipboard context</button>
+                <span>${pack.clipboardText ? `${pack.clipboardText.length} characters included` : 'Clipboard is not included'}</span></div>
+            ${error ? html`<p role="alert">${error}</p>` : ''}
+        </details>`;
     }
 
     _renderStartButton() {
@@ -1184,7 +1208,7 @@ export class MainView extends LitElement {
         return html`
             <button
                 class="start-button ${this.isInitializing || isDownloading ? 'disabled' : ''}"
-                ?disabled=${this.isInitializing || isDownloading}
+                ?disabled=${this.isInitializing || isDownloading || this.retryBlocked}
                 @click=${() => this._handleStart()}
             >
                 <canvas class="btn-aurora"></canvas>
@@ -1239,94 +1263,58 @@ export class MainView extends LitElement {
         `;
     }
 
-    _renderByokMode() {
+    _renderByokMode() { return this._renderHostedProvider('gemini'); }
+    _renderGroqMode() { return this._renderHostedProvider('groq'); }
+
+    _renderHostedProvider(provider) {
+        const gemini = provider === 'gemini';
+        const label = gemini ? 'Gemini' : 'Groq';
+        const catalog = gemini ? this._geminiCatalog : this._groqCatalog;
+        const all = catalog?.all || [];
+        const fields = gemini ? [
+            { label: 'Gemini Live Model', value: this._geminiLiveModel, preferred: catalog?.live, all: catalog?.live || [],
+                allowAdvanced: false, onSave: this._saveGeminiLiveModel, helper: 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
+            { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all,
+                onSave: this._saveGeminiHttpModel, helper: 'Text and screenshots share this model. Advanced choices may not support every input or tool.' },
+        ] : [
+            { label: 'Text / Reasoning Model', value: this._groqModel, preferred: catalog?.chat, all, onSave: this._saveGroqModel },
+            { label: 'Screenshot / Vision Model', value: this._groqImageModel, preferred: catalog?.vision, all, onSave: this._saveGroqImageModel,
+                helper: 'The advanced list may include models without image input. Saved manual IDs are preserved.' },
+            { label: 'Audio Transcription Model', value: this._groqTranscriptionModel, preferred: catalog?.transcription,
+                all: catalog?.transcription || [], allowAdvanced: false, onSave: this._saveGroqTranscriptionModel },
+        ];
+        const loading = gemini ? this._geminiCatalogLoading : this._groqCatalogLoading;
+        const error = gemini ? this._geminiCatalogError : this._groqCatalogError;
         return html`
-            <details class="config-section">
-                <summary class="config-summary">
-                    <span class="config-summary-text">
-                        <span class="config-summary-title">Transcription</span>
-                        <span class="config-summary-description">Gemini Live connection</span>
-                    </span>
-                    ${this._renderConfigChevron()}
-                </summary>
+            <details class="config-section" open>
+                <summary class="config-summary"><span class="config-summary-text">
+                    <span class="config-summary-title">${label}</span>
+                    <span class="config-summary-description">${gemini ? 'Live audio, typed answers and screen analysis' : 'Transcription, reasoning and vision'}</span>
+                </span>${this._renderConfigChevron()}</summary>
                 <div class="config-content">
                     <div class="form-group">
-                        <label class="form-label">Gemini API Key</label>
-                        <input
-                            type="password"
-                            placeholder="Required"
-                            .value=${this._geminiKey}
-                            @input=${e => this._saveGeminiKey(e.target.value)}
-                            class=${this._keyError ? 'error' : ''}
-                        />
+                        <label class="form-label" for="provider-api-key">${label} API Key</label>
+                        <input id="provider-api-key" type="password" autocomplete="off" spellcheck="false"
+                            placeholder="Required" .value=${gemini ? this._geminiKey : this._groqKey}
+                            @input=${event => this._saveProviderKey(provider, event.target.value)}
+                            aria-invalid=${this._keyError ? 'true' : 'false'} class=${this._keyError ? 'error' : ''} />
                         <div class="form-hint">
-                            <span class="link" @click=${() => this.onExternalLink('https://aistudio.google.com/apikey')}>Get Gemini key</span>
+                            <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : 'https://console.groq.com/keys')}>Get ${label} key</button>
+                            <button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh models'}</button>
                         </div>
+                        ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Gemini Live Model</label>
-                        <input type="text" .value=${this._geminiLiveModel} @input=${e => this._saveGeminiLiveModel(e.target.value)} />
-                    </div>
+                    ${fields.map(field => renderModelPicker(this, field))}
+                    <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live, typed and screen requests share its effective Search setting.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
                 </div>
             </details>
-
-            <details class="config-section">
-                <summary class="config-summary">
-                    <span class="config-summary-text">
-                        <span class="config-summary-title">AI responses</span>
-                        <span class="config-summary-description">Groq key and response model</span>
-                    </span>
-                    ${this._renderConfigChevron()}
-                </summary>
-                <div class="config-content">
-                    <div class="form-group">
-                        <label class="form-label">Groq API Key</label>
-                        <input type="password" placeholder="Optional" .value=${this._groqKey} @input=${e => this._saveGroqKey(e.target.value)} />
-                        <div class="form-hint">
-                            <span class="link" @click=${() => this.onExternalLink('https://console.groq.com/keys')}>Get Groq key</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Groq Model</label>
-                        <input type="text" .value=${this._groqModel} @input=${e => this._saveGroqModel(e.target.value)} />
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Groq Image Model</label>
-                        <input type="text" .value=${this._groqImageModel} @input=${e => this._saveGroqImageModel(e.target.value)} />
-                    </div>
-
-                    <label class="config-checkbox">
-                        <input
-                            type="checkbox"
-                            .checked=${this._disableGroqThinking}
-                            @change=${e => this._saveDisableGroqThinking(e.target.checked)}
-                        />
-                        <span class="config-checkbox-text">
-                            <span class="config-summary-title">Disable thinking</span>
-                            <span class="config-summary-description">Faster responses with less internal reasoning</span>
-                        </span>
-                    </label>
-
-                    <div class="config-note">
-                        If the Groq API key is empty, Gemini Live is used for answers instead. Its answer quality may be lower.
-                    </div>
-                </div>
-            </details>
-
-            ${this._renderStartButton()} ${this._renderDivider()}
-
-            <!-- Cloud promo intentionally removed from the active UI. -->
-
+            ${this.renderPreparation()} ${this._renderStartButton()} ${this._renderDivider()}
             <div class="mode-links">
+                <button class="mode-link" @click=${() => this._saveMode(gemini ? 'groq' : 'byok')}>Use ${gemini ? 'Groq' : 'Gemini'} API</button>
                 <button class="mode-link" @click=${() => this._saveMode('local')}>Use local AI</button>
             </div>
         `;
     }
-
-    // ── Local AI mode ──
 
     _renderLocalMode() {
         return html`
@@ -1389,12 +1377,13 @@ export class MainView extends LitElement {
                 </div>
             </details>
 
-            ${this._renderStartButton()} ${this._renderDivider()}
+            ${this.renderPreparation()} ${this._renderStartButton()} ${this._renderDivider()}
 
             <!-- Cloud promo intentionally removed from the active UI. -->
 
             <div class="mode-links">
-                <button class="mode-link" @click=${() => this._saveMode('byok')}>Use own API keys</button>
+                <button class="mode-link" @click=${() => this._saveMode('byok')}>Use Gemini API</button>
+                <button class="mode-link" @click=${() => this._saveMode('groq')}>Use Groq API</button>
             </div>
         `;
     }
@@ -1422,14 +1411,15 @@ export class MainView extends LitElement {
                                   <button class="help-btn" @click=${this._openLocalHelp} aria-label="Open Local AI help">${helpIcon}</button>
                               </div>
                           `
-                        : html` <div class="page-title">${html`ContextHalo <span class="mode-suffix">BYOK</span>`}</div> `
+                        : html` <div class="page-title">${html`ContextHalo <span class="mode-suffix">${this._mode === 'groq' ? 'Groq API' : 'Gemini API'}</span>`}</div> `
                 }
-                <div class="page-subtitle">${this._mode === 'byok' ? 'Bring your own API keys' : 'Run models locally on your machine'}</div>
+                <div class="page-subtitle">${this._mode === 'local' ? 'Run models locally on your machine' : 'Choose your provider and prepare a session'}</div>
                 ${this._renderProfileSelector()}
                 ${this._renderSessionStatus()}
+                ${this.unsavedSession ? html`<button type="button" @click=${this.onRetrySave}>Retry saving final transcript</button>` : ''}
 
                 <!-- Cloud mode render branch intentionally disabled. -->
-                ${this._mode === 'byok' ? this._renderByokMode() : ''} ${this._mode === 'local' ? this._renderLocalMode() : ''}
+                ${this._mode === 'byok' ? this._renderByokMode() : this._mode === 'groq' ? this._renderGroqMode() : this._renderLocalMode()}
             </div>
             ${this._mode === 'local' && this._showLocalHelp ? this._renderLocalHelp(closeIcon) : ''}
         `;

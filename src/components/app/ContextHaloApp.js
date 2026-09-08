@@ -1,3 +1,6 @@
+import { initRealtimeContext, refreshPreferences, resolveSessionId, flushSessionContext } from '../../utils/realtimeContextRenderer.js';
+import { loadContextState, saveSessionPack, persistPackToCurrentSession } from '../../utils/contextCaptureRenderer.js';
+import { openPanel, closePanel } from '../../utils/phase4Renderer.js';
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
@@ -10,6 +13,132 @@ import { FeedbackView } from '../views/FeedbackView.js';
 
 export class ContextHaloApp extends LitElement {
     static styles = css`
+    .phase4-overlay {
+        position: fixed;
+        inset: 48px 28px 28px calc(var(--sidebar-width) + 28px);
+        z-index: 20000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg-surface);
+        box-shadow: 0 28px 90px rgba(0,0,0,.55);
+        backdrop-filter: blur(28px) saturate(130%);
+        -webkit-app-region: no-drag;
+    }
+    :host([live-hud]) .phase4-overlay {
+        inset: 58px 22px 22px 22px;
+    }
+    .phase4-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 58px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--border);
+    }
+    .phase4-title {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        color: var(--text-primary);
+        font-size: 15px;
+        font-weight: 650;
+    }
+    .phase4-subtitle { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+    .phase4-close, .phase4-btn, .phase4-tab, .phase4-source-button {
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border-radius: 9px;
+        cursor: pointer;
+        font: inherit;
+    }
+    .phase4-close { min-height: 32px; padding: 0 10px; font-size: 13px; }
+    .phase4-close:hover, .phase4-btn:hover, .phase4-tab:hover, .phase4-source-button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+    .phase4-tabs { display: flex; gap: 6px; padding: 10px 18px 0; }
+    .phase4-tab { padding: 7px 11px; font-size: 11px; }
+    .phase4-tab.active { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.13); color: var(--accent); }
+    .phase4-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 22px; }
+    .phase4-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+    .phase4-btn { min-height: 32px; padding: 0 11px; font-size: 11px; }
+    .phase4-btn.primary { border-color: rgba(96,165,250,.55); background: rgba(59,130,246,.18); color: var(--text-primary); }
+    .phase4-btn.danger { border-color: rgba(248,113,113,.25); color: #fecaca; }
+    .phase4-btn:disabled { opacity: .45; cursor: default; }
+    .phase4-input, .phase4-textarea, .phase4-select {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font: inherit;
+        outline: none;
+    }
+    .phase4-input, .phase4-select { height: 34px; padding: 0 10px; }
+    .phase4-textarea { min-height: 110px; padding: 9px 10px; resize: vertical; user-select: text; cursor: text; }
+    .phase4-input:focus, .phase4-textarea:focus, .phase4-select:focus { border-color: rgba(96,165,250,.65); }
+    .phase4-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
+    .phase4-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg-elevated);
+        padding: 13px;
+    }
+    .phase4-card-title { color: var(--text-primary); font-size: 12px; font-weight: 650; margin-bottom: 5px; }
+    .phase4-muted { color: var(--text-secondary); font-size: 10px; line-height: 1.55; }
+    .phase4-note { color: var(--text-secondary); font-size: 10px; line-height: 1.55; margin: 8px 0 14px; }
+    .phase4-list { display: flex; flex-direction: column; gap: 7px; }
+    .phase4-doc, .phase4-session {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 48px;
+        padding: 9px 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-elevated);
+    }
+    .phase4-doc-main, .phase4-session-main { flex: 1; min-width: 0; }
+    .phase4-doc-title, .phase4-session-title { color: var(--text-primary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .phase4-doc-meta, .phase4-session-meta { color: var(--text-secondary); font-size: 9px; margin-top: 3px; }
+    .phase4-toggle { width: 15px; height: 15px; accent-color: #60a5fa; cursor: pointer; }
+    .phase4-search-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin-bottom: 14px; }
+    .phase4-result { margin-top: 8px; padding: 10px; border-left: 2px solid rgba(96,165,250,.5); background: rgba(59,130,246,.05); }
+    .phase4-result-title { color: var(--accent); font-size: 10px; font-weight: 600; }
+    .phase4-result-text { color: var(--text-secondary); font-size: 10px; line-height: 1.55; margin-top: 5px; white-space: pre-wrap; user-select: text; }
+    .phase4-form { display: none; margin: 10px 0 14px; gap: 8px; }
+    .phase4-form.visible { display: grid; }
+    .phase4-practice-question { font-size: 14px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; user-select: text; margin: 12px 0; }
+    .phase4-progress { color: var(--text-secondary); font-size: 10px; }
+    .phase4-feedback { margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--bg-elevated); font-size: 10px; line-height: 1.55; color: var(--text-secondary); }
+    .phase4-feedback.strong { background: rgba(34,197,94,.08); color: #bbf7d0; }
+    .phase4-feedback.partial { background: rgba(234,179,8,.08); color: #fef08a; }
+    .phase4-feedback.retry { background: rgba(248,113,113,.08); color: #fecaca; }
+    .phase4-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .phase4-tag { padding: 4px 7px; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 9px; }
+    .phase4-review-section { margin-top: 14px; }
+    .phase4-review-section h4 { margin: 0 0 7px; color: var(--text-primary); font-size: 11px; }
+    .phase4-review-section ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 10px; line-height: 1.6; user-select: text; }
+    .phase4-empty { padding: 32px 16px; text-align: center; color: var(--text-secondary); font-size: 11px; }
+    .phase4-live-chip {
+        min-height: 24px;
+        padding: 0 8px;
+        border: 1px solid rgba(96,165,250,.2);
+        border-radius: 999px;
+        background: rgba(59,130,246,.07);
+        color: var(--accent);
+        font-size: 9px;
+        cursor: pointer;
+    }
+    @media (max-width: 900px) { .phase4-grid { grid-template-columns: 1fr; } }
+
+        .phase4-overlay { position: fixed; inset: 16px; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-strong); }
+        .phase4-overlay:not([open]) { display: none; }
+        .phase4-overlay::backdrop { background: rgb(0 0 0 / 0.3); }
+        .phase4-overlay :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
         * {
             box-sizing: border-box;
             font-family: var(--font);
@@ -24,7 +153,7 @@ export class ContextHaloApp extends LitElement {
             height: 100vh;
             overflow: hidden;
             border-radius: 12px;
-            background: var(--bg-app);
+            background: transparent;
             color: var(--text-primary);
         }
 
@@ -37,6 +166,7 @@ export class ContextHaloApp extends LitElement {
             overflow: hidden;
             border: 2px solid rgba(255, 255, 255, 0.18);
             border-radius: 11px;
+            background: var(--bg-app);
         }
 
         .top-drag-bar {
@@ -253,81 +383,97 @@ export class ContextHaloApp extends LitElement {
             background: var(--bg-app);
         }
 
-        /* Live mode top bar */
+        /* A single alpha surface; child backgrounds must not compound it. */
+        .app-shell.live-hud { background: var(--hud-background, rgba(10,10,10,0.8)); }
+        .live-hud .content, .content-inner.live { background: transparent; }
         .live-bar {
-            position: relative;
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+            gap: 12px;
             align-items: center;
-            justify-content: space-between;
-            padding: 0 var(--space-md);
-            background: var(--bg-surface);
-            border-bottom: 1px solid var(--border);
-            height: 36px;
+            padding: 8px 12px;
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--border-strong);
             -webkit-app-region: drag;
         }
-
-        .live-bar-left {
+        .live-bar-left, .live-bar-right {
             display: flex;
             align-items: center;
+            gap: 8px;
+            min-width: 0;
             -webkit-app-region: no-drag;
-            z-index: 1;
         }
-
-        .live-bar-back {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-muted);
-            cursor: pointer;
-            background: none;
-            border: none;
-            padding: var(--space-xs);
-            border-radius: var(--radius-sm);
-            transition: color var(--transition);
-        }
-
-        .live-bar-back:hover {
-            color: var(--text-primary);
-        }
-
-        .live-bar-back svg {
-            width: 14px;
-            height: 14px;
-        }
-
+        .live-bar-right { justify-content: flex-end; }
         .live-bar-center {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: var(--font-size-xs);
-            color: var(--text-muted);
-            font-weight: var(--font-weight-medium);
-            white-space: nowrap;
-            pointer-events: none;
+            min-width: 0;
+            font-size: 14px;
+            font-weight: 600;
+            text-shadow: var(--hud-text-shadow);
         }
-
-        .live-bar-right {
-            display: flex;
-            align-items: center;
-            gap: var(--space-md);
-            -webkit-app-region: no-drag;
-            z-index: 1;
-        }
-
-        .live-bar-text {
-            font-size: var(--font-size-xs);
-            color: var(--text-muted);
-            font-family: var(--font-mono);
-            white-space: nowrap;
-        }
-
-        .live-bar-text.clickable {
-            cursor: pointer;
-            transition: color var(--transition);
-        }
-
-        .live-bar-text.clickable:hover {
+        .live-bar button, .session-actions button {
+            min-height: 32px;
+            padding: 6px 10px;
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
             color: var(--text-primary);
+            background: var(--bg-elevated);
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+        }
+        .live-bar button:hover, .session-actions button:hover { background: var(--bg-hover); }
+        button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .live-bar-text { font-size: 12px; white-space: nowrap; text-shadow: var(--hud-text-shadow); }
+        .session-state {
+            max-height: 96px; overflow-y: auto;
+            padding: 6px 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            flex-shrink: 0;
+            font-size: 12px;
+            color: var(--text-primary);
+            text-shadow: var(--hud-text-shadow);
+        }
+        .session-state .status-detail {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            overflow: auto;
+            max-height: 3.2em;
+            flex: 1 1 200px;
+            user-select: text;
+        }
+        .session-state .search-state { flex-shrink: 0; }
+        .session-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+        .session-actions > span { flex-basis: 100%; max-height: 3.2em; overflow: auto; overflow-wrap: anywhere; }
+        @media (max-height: 400px) { .session-state { max-height: 64px; padding: 4px 8px; } }
+        :host([windows]) .top-drag-bar { height: 38px; background: var(--bg-surface); }
+        :host([windows]) .drag-region { order: 1; }
+        :host([windows]) .traffic-lights { order: 2; padding: 0; gap: 0; }
+        :host([windows]) .traffic-light {
+            position: relative; width: 46px; height: 38px;
+            border-radius: 0; background: transparent; opacity: 1;
+        }
+        :host([windows]) .traffic-light:hover { background: var(--bg-hover); }
+        :host([windows]) .traffic-light.close { order: 3; }
+        :host([windows]) .traffic-light.close:hover { background: #c42b1c; color: white; }
+        :host([windows]) .traffic-light::before, :host([windows]) .traffic-light::after {
+            content: ''; position: absolute; left: 50%; top: 50%;
+            color: var(--text-primary); pointer-events: none;
+        }
+        :host([windows]) .traffic-light.minimize::before {
+            width: 10px; height: 1px; background: currentColor; transform: translate(-50%, 2px);
+        }
+        :host([windows]) .traffic-light.maximize::before {
+            width: 9px; height: 8px; border: 1px solid currentColor; transform: translate(-50%, -50%);
+        }
+        :host([windows]) .traffic-light.close::before, :host([windows]) .traffic-light.close::after {
+            width: 12px; height: 1px; background: currentColor; transform: translate(-50%, -50%) rotate(45deg);
+        }
+        :host([windows]) .traffic-light.close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+        @media (max-width: 700px) {
+            .live-bar { gap: 6px; padding: 6px 8px; }
+            .live-bar-center { font-size: 13px; }
+            .live-bar-text.elapsed { display: none; }
         }
 
         /* Content inner */
@@ -413,12 +559,23 @@ export class ContextHaloApp extends LitElement {
     `;
 
     static properties = {
+        workspaceTab: { state: true },
+        _unsavedSession: { state: true },
         currentView: { type: String },
         statusText: { type: String },
         startTime: { type: Number },
         isRecording: { type: Boolean },
         sessionActive: { type: Boolean },
         isInitializing: { type: Boolean },
+        lifecycleState: { state: true },
+        providerState: { state: true },
+        providerMode: { state: true },
+        providerError: { state: true },
+        requestError: { state: true },
+        shortcut: { state: true },
+        captureState: { state: true },
+        searchState: { state: true },
+        sessionDraft: { state: true },
         startError: { type: String },
         selectedProfile: { type: String },
         selectedLanguage: { type: String },
@@ -445,6 +602,24 @@ export class ContextHaloApp extends LitElement {
         this.isRecording = false;
         this.sessionActive = false;
         this.isInitializing = false;
+        this.lifecycleState = 'idle';
+        this.providerState = 'disconnected';
+        this.providerMode = 'byok';
+        this.providerError = null;
+        this.captureState = { state: 'stopped', audioReady: false, screen: false, warning: '' };
+        this.searchState = { requested: false, effective: false, status: 'off' };
+        this.sessionDraft = '';
+        this.requestError = null;
+        this.shortcut = '';
+        this._responseGrounding = [];
+        this._unsavedSession = false;
+        this._needsRestart = false;
+        this._sessionStarted = false;
+        this._uiSessionEpoch = 0;
+        this._startPromise = null;
+        this._stopPromise = null;
+        this._startController = null;
+        this._captureStateListener = event => this._captureChanged(event.detail);
         this.startError = '';
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
@@ -496,6 +671,7 @@ export class ContextHaloApp extends LitElement {
             this.selectedImageQuality = prefs.selectedImageQuality || 'medium';
             this.layoutMode = config.layout || 'normal';
 
+            this.shortcut = (await contextHalo.storage.getKeybinds())?.nextStep || (window.process?.platform === 'darwin' ? 'Cmd+Enter' : 'Ctrl+Enter');
             this._storageLoaded = true;
             this.requestUpdate();
         } catch (error) {
@@ -507,6 +683,12 @@ export class ContextHaloApp extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
+        this._disposeRealtime = initRealtimeContext();
+        this._captureSourceChanged = () => { if (this.sessionActive) void this.restartCapture(); };
+        window.addEventListener('capture-source-changed', this._captureSourceChanged);
+        void Promise.all([loadContextState(), refreshPreferences()]).catch(() => { this.startError = 'Session context could not be loaded.'; });
+        this.toggleAttribute('windows', window.process?.platform === 'win32');
+        window.addEventListener('capture-state-changed', this._captureStateListener);
 
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -514,15 +696,16 @@ export class ContextHaloApp extends LitElement {
             listen('new-response', (_, response, metadata) => this.addNewResponse(response, metadata));
             listen('update-response', (_, response, metadata) => this.updateCurrentResponse(response, metadata));
             listen('update-status', (_, status) => this.setStatus(status));
-            listen('session-initializing', (_, active) => {
-                this.isInitializing = Boolean(active);
-                if (active) this.startError = '';
-                this.requestUpdate();
-            });
+            // Provider setup events must not release the UI's duplicate-start
+            // guard while screen/audio permission and capture are still pending.
+            listen('provider-state', (_, state) => this.setProviderState(state));
+            listen('search-state', (_, state) => { this.searchState = state; });
+            listen('provider-request-error', (_, failure) => { this.requestError = failure; this._scheduleRecoveryRefresh(); });
+            listen('shortcut', (_, shortcut) => contextHalo.handleShortcut(shortcut));
             listen('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
-            listen('reconnect-failed', (_, data) => this.addNewResponse(data.message));
+            listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
             listen('whisper-downloading', (_, downloading) => {
                 this._whisperDownloading = downloading;
             });
@@ -534,7 +717,13 @@ export class ContextHaloApp extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
+        window.removeEventListener('capture-source-changed', this._captureSourceChanged);
         this._stopTimer();
+        clearTimeout(this._recoveryTimer);
+        window.removeEventListener('capture-state-changed', this._captureStateListener);
+        this._startController?.abort();
+        if (this.sessionActive || this.isInitializing) void this.endSession().finally(() => this._disposeRealtime?.());
+        else this._disposeRealtime?.();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             for (const [channel, handler] of this._ipcSubscriptions) ipcRenderer.removeListener(channel, handler);
@@ -571,13 +760,96 @@ export class ContextHaloApp extends LitElement {
 
     // ── Status & Responses ──
 
-    setStatus(text) { this.statusText = String(text || ''); }
+    setStatus(text) {
+        const status = String(text || '').slice(0, 4000);
+        this.statusText = /listening/i.test(status) && !this.isRecording ? this._readyStatus() : status;
+    }
+
+    _readyStatus() {
+        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI' }[this.providerMode] || 'Provider';
+        if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
+        if (!this.captureState.audioReady) return `${provider} ready; audio capture is unavailable. Typed questions still work.`;
+        const channels = [this.captureState.microphone ? 'microphone' : '', this.captureState.system ? 'speaker audio' : ''].filter(Boolean).join(' + ');
+        return this.captureState.warning || `${provider} ready \u00b7 ${channels || 'audio'} active`;
+    }
+
+    _setLifecycle(state, status) {
+        this.lifecycleState = state;
+        this.isInitializing = ['preparing', 'connecting', 'preparing-capture', 'capture-ready', 'stopping'].includes(state);
+        this.sessionActive = Boolean(this._sessionStarted);
+        this.isRecording = this.sessionActive && this.providerState === 'ready' && this.captureState.audioReady === true;
+        if (status !== undefined) this.setStatus(status);
+        this.requestUpdate();
+    }
+
+    _captureChanged(state) {
+        this.captureState = { ...state };
+        this.isRecording = this.sessionActive && this.providerState === 'ready' && state.audioReady === true;
+        if (this.sessionActive && !this.isInitializing && this.providerState === 'ready') {
+            this._setLifecycle(state.state === 'ready' ? 'active' : 'capture-stopped', state.warning || this._readyStatus());
+        }
+    }
+
+    setProviderState(data) {
+        if (!data || typeof data.state !== 'string') return;
+        if (data.uiEpoch !== undefined && data.uiEpoch !== this._uiSessionEpoch) return;
+        this.providerState = data.state;
+        if (data.provider) this.providerMode = data.provider;
+        if (data.search) this.searchState = data.search;
+        this.providerError = data.error || null;
+        this._scheduleRecoveryRefresh();
+        this.isRecording = this.sessionActive && this.providerState === 'ready' && this.captureState.audioReady === true;
+        if (this.sessionActive && !this.isInitializing) {
+            const state = data.state === 'ready' ? (this.captureState.state === 'ready' ? 'active' : 'capture-stopped')
+                : data.state === 'reconnecting' ? 'reconnecting' : 'failed';
+            this._setLifecycle(state, data.error?.message || this._readyStatus());
+        }
+    }
+
+    _scheduleRecoveryRefresh() {
+        clearTimeout(this._recoveryTimer);
+        const retryAt = Math.max(this.providerError?.retryAt || 0, this.requestError?.retryAt || 0);
+        if (retryAt > Date.now()) this._recoveryTimer = setTimeout(() => this.requestUpdate(), Math.min(2147483647, retryAt - Date.now() + 30));
+        this.requestUpdate();
+    }
+
+    retryRequest() {
+        if (this.requestError?.retryAt > Date.now()) return;
+        this.navigate('assistant');
+        this.updateComplete.then(() => {
+            const view = this.shadowRoot.querySelector('assistant-view');
+            if (this.requestError?.operation === 'screen') return view?.handleScreenAnswer();
+            return view?.handleSendText();
+        });
+    }
+
+    _checkStart(epoch) {
+        if (epoch !== this._uiSessionEpoch || this._startController?.signal.aborted) {
+            throw Object.assign(new Error('Session start cancelled'), { name: 'AbortError' });
+        }
+    }
+
+    async _awaitStart(work, epoch) {
+        const signal = this._startController?.signal;
+        let onAbort;
+        const cancelled = new Promise((_, reject) => {
+            onAbort = () => reject(Object.assign(new Error('Session start cancelled'), { name: 'AbortError' }));
+            if (signal?.aborted) onAbort();
+            else signal?.addEventListener('abort', onAbort, { once: true });
+        });
+        try {
+            const result = await Promise.race([work, cancelled]);
+            this._checkStart(epoch);
+            return result;
+        } finally { signal?.removeEventListener('abort', onAbort); }
+    }
 
     addNewResponse(response, metadata) {
         const id = metadata?.requestId;
         if (id && this._responseRequestIndex.has(id)) return this.updateCurrentResponse(response, metadata);
         const wasOnLatest = this.currentResponseIndex === this.responses.length - 1;
         this.responses = [...this.responses, String(response || '')];
+        (this._responseGrounding ||= []).push(metadata?.grounding);
         this._responseIds.push(id || null);
         if (id) this._responseRequestIndex.set(id, this.responses.length - 1);
         if (wasOnLatest || this.currentResponseIndex === -1) this.currentResponseIndex = this.responses.length - 1;
@@ -589,6 +861,7 @@ export class ContextHaloApp extends LitElement {
         if (id && !this._responseRequestIndex.has(id)) return this.addNewResponse(response, metadata);
         const index = id ? this._responseRequestIndex.get(id) : this.responses.length - 1;
         if (index < 0) return this.addNewResponse(response, metadata);
+        if (metadata?.grounding) (this._responseGrounding ||= [])[index] = metadata.grounding;
         const next = [...this.responses];
         next[index] = String(response || '');
         this.responses = next;
@@ -613,19 +886,55 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleClose() {
-        this._uiSessionEpoch = (this._uiSessionEpoch || 0) + 1;
-        if (this.sessionActive || this.currentView === 'assistant') {
-            try {
-                try { await window.contextHalo.flushSessionContext?.(); }
-                catch (error) { this.setStatus('Could not save the final transcript: ' + error.message); }
-                try { contextHalo.stopCapture(); }
-                finally { await window.electronAPI.invoke('close-session'); }
-            } finally {
-                this.sessionActive = false;
-                this._stopTimer();
-                this.currentView = 'main';
-            }
-        } else { await window.electronAPI.invoke('quit-application'); }
+        if (this.sessionActive || this.isInitializing || this.currentView === 'assistant') return this.endSession();
+        if (this._unsavedSession && !(await this.retrySave()).success) return;
+        await window.electronAPI.invoke('quit-application');
+    }
+
+    endSession() {
+        if (this._stopPromise) return this._stopPromise;
+        this._uiSessionEpoch += 1;
+        this._startController?.abort();
+        this._setLifecycle('stopping', 'Stopping capture and closing the provider...');
+        contextHalo.stopCapture();
+        const operation = (async () => {
+            const results = await Promise.allSettled([
+                Promise.resolve().then(() => flushSessionContext()),
+                window.electronAPI.invoke('cancel-local-initialization'),
+                window.electronAPI.invoke('close-session'),
+            ]);
+            const failedSave = results[0].status === 'rejected';
+            const failedClose = results[2].status === 'rejected' || results[2].value?.success === false;
+            this._unsavedSession = failedSave;
+            this._needsRestart = failedClose;
+            this._sessionStarted = false;
+            this.providerState = 'disconnected';
+            this._stopTimer();
+            clearTimeout(this._recoveryTimer);
+            this.startTime = null;
+            this.currentView = 'main';
+            this.startError = failedSave ? 'The final transcript is retained in memory. Retry saving before closing or starting another session; existing history is unchanged.' : failedClose ? 'Capture stopped, but provider cleanup failed. Restart ContextHalo before another session.' : '';
+            this.requestError = null;
+            this._setLifecycle(failedClose ? 'failed' : 'idle', this.startError || 'Session ended');
+            return { success: !failedSave && !failedClose };
+        })().finally(() => { if (this._stopPromise === operation) this._stopPromise = null; });
+        this._stopPromise = operation;
+        return operation;
+    }
+
+    async retrySave() {
+        try {
+            await flushSessionContext();
+            this._unsavedSession = false;
+            this.startError = this._needsRestart ? 'Provider cleanup failed. Restart ContextHalo before another session.' : '';
+            this.requestUpdate();
+            return { success: true };
+        } catch {
+            this._unsavedSession = true;
+            this.startError = 'The final transcript is still retained in memory. Check storage permissions and retry saving.';
+            this.requestUpdate();
+            return { success: false };
+        }
     }
 
     async _handleMinimize() {
@@ -651,94 +960,113 @@ export class ContextHaloApp extends LitElement {
 
     // ── Session start ──
 
-    async handleStart() {
-        if (this.isInitializing || this.sessionActive) return;
-        this._uiSessionEpoch = (this._uiSessionEpoch || 0) + 1;
+    handleStart(options = {}) {
+        if (this._needsRestart) return Promise.resolve({ success: false, error: 'Restart ContextHalo to finish provider cleanup.' });
+        if (this._stopPromise) return this._stopPromise.then(() => this.handleStart(options));
+        if (this._startPromise && this._startEpoch === this._uiSessionEpoch) return this._startPromise;
+        if (this.sessionActive) { this.navigate('assistant'); return Promise.resolve({ success: true }); }
+        if (this.providerError?.retryAt > Date.now()) return Promise.resolve({ success: false, error: this.providerError.message });
+        const epoch = ++this._uiSessionEpoch;
+        this._startEpoch = epoch;
+        this._startController = new AbortController();
+        const operation = this._prepareSession(epoch, options).finally(() => {
+            if (this._startPromise === operation) this._startPromise = null;
+        });
+        this._startPromise = operation;
+        return operation;
+    }
 
-        this.isInitializing = true;
+    async _prepareSession(epoch, options) {
         this.startError = '';
-        this.setStatus('Preparing session...');
-        this.requestUpdate();
-
-        const failStart = message => {
-            const detail = String(message || 'Session could not be started');
-            this.startError = detail;
-            this.setStatus(detail);
-            const mainView = this.shadowRoot.querySelector('main-view');
-            if (/api key|authentication|credential/i.test(detail) && mainView?.triggerApiKeyError) {
-                mainView.triggerApiKeyError();
-            }
-            this.requestUpdate();
-        };
-
+        this.providerError = null;
+        this.providerState = 'disconnected';
+        this._setLifecycle('preparing', 'Loading saved session settings...');
         try {
-            const prefs = await contextHalo.storage.getPreferences();
-            const providerMode = prefs.providerMode || 'byok';
-            let success = false;
-
-            if (providerMode === 'local') {
-                this.setStatus('Preparing local AI...');
-                success = await contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage);
-            } else if (providerMode === 'groq') {
-                const groqKey = await contextHalo.storage.getGroqApiKey();
-                if (!groqKey || groqKey.trim() === '') {
-                    failStart('No Groq API key configured');
-                    return;
-                }
-                this.setStatus('Connecting to Groq...');
-                success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
-            } else {
-                const apiKey = await contextHalo.storage.getApiKey();
-                if (!apiKey || apiKey.trim() === '') {
-                    failStart('No Gemini API key configured');
-                    return;
-                }
-                this.setStatus('Connecting to Gemini Live...');
-                success = await contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage);
+            if (this._unsavedSession) {
+                await this._awaitStart(flushSessionContext(), epoch);
+                this._unsavedSession = false;
             }
-
-            if (!success) {
-                failStart(this.statusText || 'Could not connect to the selected AI provider');
-                return;
+            await this._awaitStart(Promise.resolve(saveSessionPack()), epoch);
+            const prefs = await this._awaitStart(contextHalo.storage.getPreferences(), epoch);
+            this.providerMode = prefs.providerMode || 'byok';
+            if (!['byok', 'groq', 'local'].includes(this.providerMode)) throw new Error('Choose Gemini, Groq or Local AI in provider settings.');
+            if (this.providerMode !== 'local') {
+                const key = await this._awaitStart(this.providerMode === 'groq' ? contextHalo.storage.getGroqApiKey() : contextHalo.storage.getApiKey(), epoch);
+                if (!key?.trim()) throw new Error(`No ${this.providerMode === 'groq' ? 'Groq' : 'Gemini'} API key configured. Open provider settings.`);
             }
-
-            this.setStatus('Starting Windows screen and audio capture...');
-            const captureStarted = await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
-            if (!captureStarted) {
-                if (window.require) {
-                    const { ipcRenderer } = window.require('electron');
-                    await ipcRenderer.invoke('close-session');
-                }
-                failStart(this.statusText || 'Could not start screen/audio capture');
-                return;
-            }
-
+            this.providerState = 'connecting';
+            this._setLifecycle('connecting', this.providerMode === 'local' ? 'Preparing local AI and speech models...' : `Connecting to ${this.providerMode === 'groq' ? 'Groq' : 'Gemini Live'}...`);
+            const requestOptions = { ...options, uiEpoch: epoch };
+            const success = await this._awaitStart(this.providerMode === 'local'
+                ? contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage, requestOptions)
+                : contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage, requestOptions), epoch);
+            if (!success) throw new Error(this.providerError?.message || this.statusText || 'The provider could not connect.');
+            this.providerState = 'ready';
+            this._setLifecycle('preparing-capture', 'Provider connected. Preparing the selected screen and audio inputs...');
+            const captured = await this._awaitStart(contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality), epoch);
+            if (!captured) throw new Error(contextHalo.getCaptureState?.().warning || this.statusText || 'Capture could not start.');
+            this.captureState = contextHalo.getCaptureState?.() || { state: 'ready', audioReady: true, screen: true };
+            this._setLifecycle('capture-ready', 'Screen and audio capture ready');
             this.responses = [];
             this._responseIds = [];
+            this._responseGrounding = [];
+            this.requestError = null;
             this._responseRequestIndex.clear();
             this.currentResponseIndex = -1;
             this.startTime = Date.now();
-            this.sessionActive = true;
-            this.startError = '';
+            this._sessionStarted = true;
+            await this._awaitStart(persistPackToCurrentSession(), epoch);
+            await this._awaitStart(resolveSessionId(), epoch);
             this.currentView = 'assistant';
-            this.setStatus(providerMode === 'groq' ? 'Groq ready' : providerMode === 'local' ? 'Local AI ready' : 'Listening...');
+            this._setLifecycle('active', this._readyStatus());
             this._startTimer();
+            return { success: true };
         } catch (error) {
-            try {
-                if (window.require) {
-                    const { ipcRenderer } = window.require('electron');
-                    await ipcRenderer.invoke('close-session');
-                }
-            } catch {}
-            failStart(error?.message || String(error));
-        } finally {
-            this.isInitializing = false;
-            this.requestUpdate();
+            if (epoch !== this._uiSessionEpoch) return { success: false, cancelled: true };
+            contextHalo.stopCapture();
+            await window.electronAPI.invoke('close-session').catch(() => {});
+            if (epoch !== this._uiSessionEpoch) return { success: false, cancelled: true };
+            this._sessionStarted = false;
+            this.providerState = 'failed';
+            this.startError = error?.message || 'The session could not start.';
+            this._setLifecycle('failed', this.startError);
+            return { success: false, error: this.startError };
         }
     }
 
+    async restartCapture() {
+        if (!this.sessionActive || this.isInitializing) return;
+        const epoch = this._uiSessionEpoch;
+        this._setLifecycle('preparing-capture', 'Restarting the selected screen and audio inputs...');
+        contextHalo.stopCapture();
+        try { await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality); }
+        catch { /* The capture owner publishes its recoverable failure state. */ }
+        if (epoch !== this._uiSessionEpoch) return;
+        this.captureState = contextHalo.getCaptureState();
+        this._setLifecycle(this.captureState.state === 'ready' ? 'active' : 'capture-stopped', this.captureState.warning || this._readyStatus());
+    }
+
+    retryProvider(withoutSearch = false) {
+        if (Math.max(this.providerError?.retryAt || 0, this.requestError?.retryAt || 0) > Date.now()) return Promise.resolve({ success: false });
+        if (!this.sessionActive) return this.handleStart(withoutSearch ? { searchEnabled: false } : {});
+        if (this._retryPromise) return this._retryPromise;
+        const epoch = this._uiSessionEpoch;
+        this.providerState = 'reconnecting';
+        this._setLifecycle('reconnecting', 'Reconnecting the provider. Your draft and session history are retained.');
+        const operation = window.electronAPI.invoke('retry-session-connection', { withoutSearch }).then(result => {
+            if (epoch === this._uiSessionEpoch) this.setProviderState({ state: result.success ? 'ready' : 'failed', error: result.failure, search: result.search });
+            if (epoch === this._uiSessionEpoch && result.success) this.requestError = null;
+            return result;
+        }).catch(error => {
+            if (epoch === this._uiSessionEpoch) this.setProviderState({ state: 'failed', error: { message: error.message } });
+            return { success: false, error: error.message };
+        }).finally(() => { if (this._retryPromise === operation) this._retryPromise = null; });
+        this._retryPromise = operation;
+        return operation;
+    }
+
     async handleCancelLocalDownload() {
-        await contextHalo.cancelLocalInitialization();
+        await this.endSession();
     }
 
     async handleAPIKeyHelp() {
@@ -847,11 +1175,20 @@ export class ContextHaloApp extends LitElement {
             case 'main':
                 return html`
                     <main-view
+                        .unsavedSession=${this._unsavedSession}
+                        .onRetrySave=${() => this.retrySave()}
                         .selectedProfile=${this.selectedProfile}
                         .onProfileChange=${p => this.handleProfileChange(p)}
                         .onStart=${() => this.handleStart()}
                         .onExternalLink=${url => this.handleExternalLinkClick(url)}
                         .isInitializing=${this.isInitializing}
+                        .onCancelStart=${() => this.endSession()}
+                        .shortcut=${this.shortcut}
+                        .onRetryWithoutSearch=${() => this.retryProvider(true)}
+                        .providerError=${this.providerError}
+                        .searchState=${this.searchState}
+                        .lifecycleState=${this.lifecycleState}
+                        .retryBlocked=${this.providerError?.retryAt > Date.now()}
                         .statusText=${this.statusText}
                         .startError=${this.startError}
                         .whisperDownloading=${this._whisperDownloading}
@@ -897,10 +1234,16 @@ export class ContextHaloApp extends LitElement {
             case 'assistant':
                 return html`
                     <assistant-view
+                        .grounding=${this._responseGrounding[this.currentResponseIndex]}
+                        .retryBlocked=${this.requestError?.retryAt > Date.now()}
+                        .shortcut=${this.shortcut}
                         .responses=${this.responses}
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
                         .onSendText=${msg => this.handleSendText(msg)}
+                        .onOpenKnowledge=${() => openPanel(this, 'knowledge')}
+                        .draft=${this.sessionDraft}
+                        @draft-changed=${event => { this.sessionDraft = event.detail; }}
                         .shouldAnimateResponse=${this.shouldAnimateResponse}
                         @response-index-changed=${this.handleResponseIndexChanged}
                         @response-animation-complete=${() => {
@@ -1007,6 +1350,8 @@ export class ContextHaloApp extends LitElement {
                             </button>
                         `
                     )}
+                ${[['knowledge', 'Knowledge'], ['practice', 'Practice Lab'], ['review', 'Session Review']].map(([tab, label]) => html`
+                    <button type="button" id=${`phase4-${tab}-nav`} class="nav-item" @click=${() => openPanel(this, tab)} title=${label}><span>${label}</span></button>`)}
                 </nav>
                 <div class="sidebar-footer">
                     ${
@@ -1034,39 +1379,50 @@ export class ContextHaloApp extends LitElement {
     }
 
     renderLiveBar() {
-        if (!this._isLiveMode()) return '';
-
-        const profileLabels = {
-            interview: 'Interview',
-            sales: 'Sales Call',
-            meeting: 'Meeting',
-            presentation: 'Presentation',
-            negotiation: 'Negotiation',
-            exam: 'Exam',
-        };
-
+        const profileLabels = { interview: 'Interview workspace', meeting: 'Meeting workspace',
+            sales: 'Sales workspace', presentation: 'Presentation', negotiation: 'Negotiation', exam: 'Study workspace' };
         return html`
-            <div class="live-bar">
+            <header class="live-bar">
                 <div class="live-bar-left">
-                    <button class="live-bar-back" @click=${() => this.handleClose()} title="End session">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path
-                                fill-rule="evenodd"
-                                d="M12.79 5.23a.75.75 0 0 1-.02 1.06L8.832 10l3.938 3.71a.75.75 0 1 1-1.04 1.08l-4.5-4.25a.75.75 0 0 1 0-1.08l4.5-4.25a.75.75 0 0 1 1.06.02Z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                    </button>
+                    <button type="button" @click=${() => this.handleClose()} title="End session and stop capture">End</button>
                 </div>
-                <div class="live-bar-center">${profileLabels[this.selectedProfile] || 'Session'}</div>
+                <div class="live-bar-center">${profileLabels[this.selectedProfile] || 'Session workspace'}</div>
                 <div class="live-bar-right">
-                    ${this.statusText ? html`<span class="live-bar-text">${this.statusText}</span>` : ''}
-                    <span class="live-bar-text">${this.getElapsedTime()}</span>
-                    ${this._isClickThrough ? html`<span class="live-bar-text">[click through]</span>` : ''}
-                    <span class="live-bar-text clickable" @click=${() => this.handleHideToggle()}>[hide]</span>
+                    <span class="live-bar-text elapsed">${this.getElapsedTime()}</span>
+                    <button type="button" @click=${() => this.handleHideToggle()} title="Hide window; capture continues. Use your visibility shortcut to show it again.">Hide</button>
                 </div>
+            </header>
+            <div class="session-state">
+                <span class="status-detail" role="status" title=${this.statusText}>${this.statusText || 'Session ready'}</span>
+                <span class="search-state" title="Google Search applies to Gemini Live, typed questions and screen analysis for this session.">
+                    ${this.searchState.status === 'pending' ? 'Search requested; connecting' : this.searchState.status === 'not-supported' ? 'Search unavailable with this provider' : this.searchState.effective ? 'Search enabled: Live, text, screen' : this.searchState.requested ? 'Search off for this session' : 'Search off'}
+                </span>
+                ${this._isClickThrough ? html`<span>Click-through on</span>` : ''}
+                ${this.captureState.state !== 'ready' && this.sessionActive ? html`<div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div>` : ''}
+                ${this.providerError ? html`<div class="session-actions" role="group" aria-label="Provider recovery">
+                    <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
+                    ${this.searchState.requested && this.searchState.effective && this.providerError.canDisableSearch ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.providerError.retryAt > Date.now()}>Continue without Search</button>` : ''}
+                    <button @click=${() => this.navigate('main')}>Provider settings</button>
+                </div>` : ''}
+                ${this.requestError ? html`<div class="session-actions" role="alert">
+                    <span>${this.requestError.message}</span>
+                    <button @click=${this.retryRequest} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'draft'}</button>
+                    ${this.requestError.canDisableSearch && this.searchState.effective ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.requestError.retryAt > Date.now()}>Continue without Search</button>` : ''}
+                    <button @click=${() => this.navigate('main')}>Provider settings</button>
+                </div>` : ''}
             </div>
         `;
+    }
+
+    renderWorkspace() {
+        const titles = { knowledge: 'Knowledge Library', practice: 'Practice Lab', review: 'Session Review' };
+        return html`<dialog class="phase4-overlay" aria-label=${titles[this.workspaceTab] || 'Session tools'} @cancel=${event => { event.preventDefault(); closePanel(this); }}>
+            <div class="phase4-header"><div class="phase4-title">${titles[this.workspaceTab] || 'Session tools'}</div>
+                <button type="button" class="phase4-close" aria-label="Close session tools" @click=${() => closePanel(this)}>Close</button></div>
+            <div class="phase4-tabs">${[['knowledge', 'Knowledge'], ['practice', 'Practice'], ['review', 'Review']].map(([tab, label]) => html`
+                <button type="button" class=${`phase4-tab ${tab === this.workspaceTab ? 'active' : ''}`} @click=${() => openPanel(this, tab)}>${label}</button>`)}</div>
+            <div class="phase4-body"></div>
+        </dialog>`;
     }
 
     render() {
@@ -1086,7 +1442,7 @@ export class ContextHaloApp extends LitElement {
         const isLive = this._isLiveMode();
 
         return html`
-            <div class="app-shell ${this.layoutMode === 'compact' ? 'compact' : ''}">
+            <div class="app-shell ${isLive ? 'live-hud' : ''} ${this.layoutMode === 'compact' ? 'compact' : ''}">
                 <div class="top-drag-bar ${isLive ? 'hidden' : ''}">
                     <div class="traffic-lights">
                         <button class="traffic-light close" @click=${() => this.handleClose()} title="Close"></button>
@@ -1097,10 +1453,11 @@ export class ContextHaloApp extends LitElement {
                 </div>
                 ${this.renderSidebar()}
                 <div class="content">
-                    ${isLive ? this.renderLiveBar() : ''}
+                    ${isLive ? this.renderLiveBar() : this.sessionActive ? html`<div class="session-actions"><button @click=${() => this.navigate('assistant')}>Return to active session</button><button @click=${() => this.endSession()}>End session</button></div>` : ''}
                     <div class="content-inner ${isLive ? 'live' : ''}">${this.renderCurrentView()}</div>
                 </div>
             </div>
+                ${this.renderWorkspace()}
         `;
     }
 }

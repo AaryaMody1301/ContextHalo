@@ -13,7 +13,9 @@ async function rendererBehaviorSmoke() {
     const app = document.querySelector('context-halo-app');
     const api = window.contextHalo;
     await waitUntil(()=>app._storageLoaded);
-    app.currentView='assistant'; app.sessionActive=true; app.requestUpdate(); await settle(app);
+    app.currentView='assistant'; app._sessionStarted=true; app.providerState='ready';
+    app.captureState={state:'ready',screen:true,audioReady:true,microphone:true};
+    app._setLifecycle('active','Controlled renderer fixture - no live account or device'); await settle(app);
     const assistant=app.shadowRoot.querySelector('assistant-view');
     await settle(assistant);
     const root=assistant.shadowRoot;
@@ -21,12 +23,14 @@ async function rendererBehaviorSmoke() {
     const button=root.querySelector('.send-btn');
     verify(input?.tagName==='TEXTAREA' && button,'Multiline composer and Send button render');
     await waitUntil(()=>root.querySelector('.phase3-capture-tools'));
+    root.querySelector('details').open=true;
     root.querySelector('.phase3-transcript-toggle').click(); await settle(assistant);
     verify(Boolean(root.querySelector('.phase3-capture-tools')),'Capture tools survive transcript refresh');
-    [...root.querySelectorAll('.phase3-tool-button')].find(b=>b.textContent==='Context').click();
+    root.querySelector('.phase3-context-toggle').click();
     root.querySelector('.phase3-transcript-toggle').click(); await settle(assistant);
     verify(Boolean(root.querySelector('.phase3-context-inspector')),'Context inspector survives transcript refresh');
-    [...root.querySelectorAll('.phase3-tool-button')].find(b=>b.textContent==='Context').click();
+    root.querySelector('.phase3-context-toggle').click();
+    root.querySelector('details').open=false;
     const setDraft=async text=>{ input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));await settle(assistant); };
     const original=api.sendTextMessage;
     try {
@@ -66,7 +70,7 @@ async function rendererBehaviorSmoke() {
         app.currentResponseIndex=app.responses.length-1;await settle(app);await settle(assistant);
         const response=root.querySelector('#responseContainer');
         verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe && response.querySelector('strong')?.textContent==='Safe','Rendered Markdown removes active HTML but preserves formatting');
-    } finally { api.sendTextMessage=original;app.sessionActive=false; }
+    } finally { api.sendTextMessage=original;app._sessionStarted=false;app._setLifecycle('idle','Fixture complete'); }
 
     const ipc=window.electronAPI;
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
@@ -100,9 +104,27 @@ async function rendererBehaviorSmoke() {
         await waitUntil(()=>app.shadowRoot.getElementById(id));
         app.shadowRoot.getElementById(id).click();
         await new Promise(resolve=>setTimeout(resolve,80));
-        verify(Boolean(app.shadowRoot.querySelector('.phase4-overlay')),'Workspace opens: '+id);
+        verify(app.shadowRoot.querySelector('.phase4-overlay')?.open,'Workspace opens: '+id);
+        verify(app.shadowRoot.activeElement?.closest('.phase4-overlay'),'Workspace focus is inside the modal: '+id);
         app.shadowRoot.querySelector('.phase4-close')?.click();
     }
+    // Real native controls and isolated provider attribution; no external account needed.
+    app.navigate('assistant');await settle(app);
+    const live=app.shadowRoot.querySelector('.live-bar');
+    verify([...live.querySelectorAll('button')].some(b=>b.textContent==='Hide'),'Hide is a keyboard-accessible native button');
+    const liveView=app.shadowRoot.querySelector('assistant-view'); await settle(liveView);
+    liveView.grounding={sources:[{uri:'https://ai.google.dev/',title:'Fixture source'}],renderedContent:'<style>p{margin:4px}</style><p><a href="https://www.google.com/search?q=fixture">Google Search suggestion</a></p><script>window.__unsafe=true</script>'};
+    await settle(liveView);const attribution=liveView.shadowRoot.querySelector('grounding-sources');await settle(attribution);
+    verify(attribution.shadowRoot.querySelector('a')?.href==='https://ai.google.dev/','Grounding source links are usable HTTP(S) URLs');
+    const frame=attribution.shadowRoot.querySelector('iframe');
+    await waitUntil(()=>frame?.contentDocument?.querySelector('a'));
+    verify(!frame.contentDocument.querySelector('script') && !window.__unsafe,'Search attribution is displayed without active provider HTML');
+    const storedAlpha=(await api.storage.getPreferences()).backgroundTransparency ?? 0.8;
+    await api.storage.updatePreference('backgroundTransparency',0.37);await api.theme.save('light');await api.theme.save('dark');await api.theme.load();
+    verify(api.theme.currentAlpha===0.37,'Changing theme and reloading appearance preserve saved alpha');
+    await api.storage.updatePreference('backgroundTransparency',storedAlpha);
+    app.searchState={requested:true,effective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
+    verify(app.shadowRoot.querySelector('.search-state').textContent.includes('off for this session'),'Requested/effective Search remains visible independently of transient status');
     return checks;
 }
 module.exports={rendererBehaviorSmoke};

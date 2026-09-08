@@ -159,6 +159,7 @@ async function transcribeAudio(pcm16kBuffer) {
 
     const response = await fetch(`${whisperBaseUrl}/inference`, {
         method: 'POST',
+        signal: getRequestSignal(),
         body: formData,
     });
 
@@ -199,7 +200,7 @@ async function handleSpeechEndNow(audioData) {
         sendToRenderer('update-status', 'Generating response...');
         await sendToLlama(transcription);
     } catch (error) {
-        console.error('[LocalAI] Transcription error:', error);
+        console.warn('[LocalAI] Transcription error:');
         sendToRenderer('update-status', 'Transcription error: ' + error.message);
     }
 }
@@ -222,6 +223,7 @@ async function requestLlama(messages, onText) {
 
     const response = await fetch(`${llamaBaseUrl}/v1/chat/completions`, {
         method: 'POST',
+        signal: getRequestSignal(),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             model: 'local',
@@ -235,15 +237,15 @@ async function requestLlama(messages, onText) {
     });
 
     if (!response.ok || !response.body) {
-        const errorText = await response.text();
-        throw new Error(`Llama server returned HTTP ${response.status}: ${errorText}`);
+        await response.body?.cancel().catch(() => {});
+        throw new Error(`Llama server returned HTTP ${response.status}. Check the local runner and retry.`);
     }
 
     return readStreamingResponse(response, onText);
 }
 
 async function sendToLlama(transcription) {
-    let requestHistory = [...requestHistory];
+    let requestHistory = [...localConversationHistory];
     requestHistory.push({
         role: 'user',
         content: transcription.trim(),
@@ -271,7 +273,7 @@ async function sendToLlama(transcription) {
         sendToRenderer('update-status', 'Listening...');
         return fullText;
     } catch (error) {
-        console.error('[LocalAI] Llama error:', error);
+        console.warn('[LocalAI] Llama error:');
         sendToRenderer('update-status', 'Local AI error: ' + error.message);
         throw error;
     }
@@ -473,7 +475,7 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
         if (wasCancelled) {
             console.log('[LocalAI] Initialization cancelled');
         } else {
-            console.error('[LocalAI] Initialization error:', error);
+            console.warn('[LocalAI] Initialization error:');
         }
         closeLocalSession();
         if (wasCancelled) {
@@ -567,7 +569,7 @@ async function sendLocalImage(base64Data, prompt) {
         ],
     };
 
-    let requestHistory = [...requestHistory];
+    let requestHistory = [...localConversationHistory];
     requestHistory.push({ role: 'user', content: prompt });
     if (requestHistory.length > 20) {
         requestHistory = requestHistory.slice(-20);
@@ -596,7 +598,7 @@ async function sendLocalImage(base64Data, prompt) {
         sendToRenderer('update-status', 'Listening...');
         return { success: true, text: fullText, model: llamaModel };
     } catch (error) {
-        console.error('[LocalAI] Image error:', error);
+        console.warn('[LocalAI] Image error:');
         sendToRenderer('update-status', 'Local AI image error: ' + error.message);
         return { success: false, error: error.message };
     }

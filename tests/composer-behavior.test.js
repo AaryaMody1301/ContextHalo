@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function loadClass(file, name) {
     const source = fs.readFileSync(file, 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class ', 'class ');
-    const context = { LitElement: class {}, html: () => '', css: () => '', customElements: { define() {} }, window: {}, console };
+    const context = { LitElement: class { dispatchEvent() {} }, html: () => '', css: () => '', customElements: { define() {} }, window: {}, console, CustomEvent: class { constructor(type, init) { this.type=type; Object.assign(this, init); } }, expandQuickCommand: text => text === '/shorter' ? 'Make the previous answer shorter.' : null };
     vm.runInNewContext(source + `\nthis.Target = ${name};`, context);
     return context.Target;
 }

@@ -7,7 +7,7 @@ let mouseEventsIgnored = false;
 
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1100, height: 800 };
 const MIN_WINDOW_SIZE = { width: 700, height: 320 };
-const WINDOWS_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'";
+const WINDOWS_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 function isTrustedEvent(event, mainWindow) {
     return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
@@ -68,22 +68,33 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         return isTrustedMainFramePermission(webContents, permission, details);
     });
 
-    appSession.setDisplayMediaRequestHandler(
-        (request, callback) => {
-            desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
-                callback({ video: sources[0], audio: 'loopback' });
-            }).catch(() => callback({}));
+    let boundsTimer;
+    let pendingBounds;
+    const saveBounds = () => {
+        clearTimeout(boundsTimer);
+        if (!pendingBounds) return;
+        try { storage.updateConfig('windowBounds', pendingBounds); }
+        catch { console.warn('Could not save window bounds'); }
+        pendingBounds = null;
+    };
+    const windowModeController = createWindowModeController(mainWindow, screen, {
+        bounds: storage.getConfig().windowBounds,
+        saveBounds(value) {
+            pendingBounds = value;
+            clearTimeout(boundsTimer);
+            boundsTimer = setTimeout(saveBounds, 200);
         },
-        { useSystemPicker: false }
-    );
-
-    const windowModeController = createWindowModeController(mainWindow, screen);
+    });
+    mainWindow.on('moved', windowModeController.rememberBounds);
+    mainWindow.on('resized', windowModeController.rememberBounds);
+    mainWindow.on('close', saveBounds);
     const handleDisplayMetricsChanged = () => windowModeController.repositionHud();
-    screen.on('display-metrics-changed', handleDisplayMetricsChanged);
+    for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(event, handleDisplayMetricsChanged);
 
     mainWindow.on('show', () => windowModeController.reassertHudMode());
     mainWindow.on('closed', () => {
-        screen.removeListener('display-metrics-changed', handleDisplayMetricsChanged);
+        saveBounds();
+        for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) screen.removeListener(event, handleDisplayMetricsChanged);
     });
 
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
