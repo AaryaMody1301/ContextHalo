@@ -82,15 +82,6 @@ jobs:
             throw "Electron behavior smoke test failed with exit code $LASTEXITCODE"
           }
 
-      - name: Upload behavior evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ContextHalo-Behavior-Evidence
-          path: qa-results/
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: Build portable Windows EXE
         run: npm run build:portable -- --publish never
 
@@ -102,6 +93,43 @@ jobs:
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  ContextHalo-Windows-x64.exe" | Set-Content -Encoding utf8 "dist/SHA256SUMS.txt"
           Write-Host "Portable EXE SHA-256: $hash"
+
+      - name: Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale
+        shell: pwsh
+        run: |
+          $exe = (Get-Item "dist/ContextHalo-Windows-x64.exe").FullName
+          try {
+            foreach ($scale in @('1', '1.25', '1.5', '2')) {
+              $directory = Join-Path $env:GITHUB_WORKSPACE "qa-results/portable-$scale"
+              New-Item -ItemType Directory -Force -Path $directory | Out-Null
+              $env:CONTEXTHALO_QA_DIR = $directory
+              $process = Start-Process -FilePath $exe -ArgumentList @('--ci-smoke-test', "--force-device-scale-factor=$scale") -PassThru
+              $outcomePath = Join-Path $directory 'outcome.json'
+              $deadline = (Get-Date).AddSeconds(150)
+              while (!(Test-Path $outcomePath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+              if (!(Test-Path $outcomePath)) {
+                if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+                throw "Packaged smoke timed out at Chromium scale $scale"
+              }
+              $outcome = Get-Content -Raw $outcomePath | ConvertFrom-Json
+              $outcome | ConvertTo-Json -Depth 8 | Write-Host
+              if (!$outcome.success -or !$outcome.packaged -or $outcome.platform -ne 'win32' -or $outcome.arch -ne 'x64') {
+                throw "Packaged smoke failed at Chromium scale $scale"
+              }
+              if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
+            }
+          } finally {
+            Remove-Item Env:CONTEXTHALO_QA_DIR -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload behavior evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextHalo-Behavior-Evidence
+          path: qa-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload portable EXE artifact
         uses: actions/upload-artifact@v4
