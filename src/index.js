@@ -222,6 +222,7 @@ function installWindowsSmokeCheck(window) {
             if (!keyboard.tabReachesHide) throw new Error('Native Tab did not reach the Hide button');
             await window.webContents.executeJavaScript(`document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('summary').focus()`);
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+            window.webContents.sendInputEvent({ type: 'char', keyCode: String.fromCharCode(13) });
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
             await new Promise(resolve => setTimeout(resolve, 75));
             keyboard.enterCollapsesSecondary = await window.webContents.executeJavaScript(`!document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('details').open`);
