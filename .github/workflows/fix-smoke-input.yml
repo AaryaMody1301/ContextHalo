@@ -1,0 +1,43 @@
+name: Correct Windows smoke keyboard sequence
+on:
+  push:
+    branches: [fix/windows-workspace-search-recovery]
+    paths: ['.github/workflows/fix-smoke-input.yml']
+permissions:
+  contents: read
+jobs:
+  apply:
+    if: github.repository == 'AaryaMody1301/ContextHalo' && github.ref == 'refs/heads/fix/windows-workspace-search-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/windows-workspace-search-recovery
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Correct the input harness without changing the application controls
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const hash = s => require('node:crypto').createHash('sha256').update(s).digest('hex');
+          const path = 'src/index.js';
+          const before = fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+          if (hash(before) !== 'e2a1e0cf2f44db5846b0b012dc11e24764b1ae86dfe5b26cda59cfb9d09a7bfb') throw Error('Unexpected source revision');
+          const line = "            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });\n";
+          const after = before.replace(line, line + "            window.webContents.sendInputEvent({ type: 'char', keyCode: String.fromCharCode(13) });\n");
+          if (hash(after) !== 'f1f25f3bdee1ec9bac875710639b48dfe8e46cb7523a6f18e4385616b1787f2a') throw Error('Unexpected output');
+          fs.writeFileSync(path, after);
+          NODE
+          npm run check
+          npm test
+      - name: Commit the harness correction on the repair branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/index.js
+          git commit -m 'test: send the character event required for native Enter activation'
+          git push origin HEAD:fix/windows-workspace-search-recovery
