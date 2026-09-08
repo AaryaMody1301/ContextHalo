@@ -7,7 +7,8 @@ permissions:
   contents: read
 jobs:
   apply:
-    if: github.repository == 'AaryaMody1301/ContextHalo' && github.ref == 'refs/heads/fix/remaining-ui-ux' && github.event.head_commit.message == 'build: transfer checksum-verified UI repair'
+    if: >-
+      github.repository == 'AaryaMody1301/ContextHalo' && github.ref == 'refs/heads/fix/remaining-ui-ux'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -22,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = 'b23676432095bf6f3c187007bb06d66f76251129'
+          test "$(git rev-parse HEAD^)" = 'b3e3281faf0812fa214220927182f5e19bcfe785'
           python3 - <<'PY'
           import base64, hashlib, lzma, pathlib, subprocess
           parts = sorted(pathlib.Path('.github/ui-transfer').glob('part??'))
