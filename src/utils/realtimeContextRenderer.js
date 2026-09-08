@@ -19,6 +19,7 @@ let markers = [];
 let currentSessionId = null;
 let generation = 0;
 let persistTimer = null;
+let resolvingSession = null;
 let error = '';
 let notice = '';
 
@@ -52,7 +53,16 @@ function mergeByTimestamp(existing, incoming) {
     return output.slice(-1000);
 }
 
-export async function resolveSessionId() {
+export function resolveSessionId() {
+    if (resolvingSession) return resolvingSession;
+    const pending = loadSessionContext().finally(() => {
+        if (resolvingSession === pending) resolvingSession = null;
+    });
+    resolvingSession = pending;
+    return pending;
+}
+
+async function loadSessionContext() {
     const epoch = generation;
     const result = await ipcRenderer.invoke('get-current-session');
     if (epoch !== generation) return currentSessionId;
@@ -70,7 +80,7 @@ export async function resolveSessionId() {
 
 export async function flushSessionContext() {
     clearTimeout(persistTimer);
-    const id = currentSessionId || await resolveSessionId();
+    const id = resolvingSession ? await resolvingSession : currentSessionId || await resolveSessionId();
     if (!id) return;
     // Snapshot before the await: an ended session must never receive the next session's transcript.
     const snapshot = { liveTranscript: [...transcriptEntries], markers: [...markers] };
@@ -101,7 +111,9 @@ function handleTranscript(_event, payload) {
 }
 export async function addMarker(type) {
     if (!MARKER_TYPES.some(marker => marker.id === type)) return;
-    if (!(currentSessionId || await resolveSessionId())) return;
+    const epoch = generation;
+    const id = resolvingSession ? await resolvingSession : currentSessionId || await resolveSessionId();
+    if (!id || epoch !== generation) return;
     const latest = transcriptEntries.at(-1) || interimTranscript;
     markers = [...markers, { type, timestamp: Date.now(), transcript: latest?.text || '' }].slice(-500);
     notice = `Marked ${MARKER_TYPES.find(marker => marker.id === type).label}`;
@@ -110,6 +122,7 @@ export async function addMarker(type) {
 export function initRealtimeContext() {
     const reset = (_event, data) => {
         generation++; clearTimeout(persistTimer);
+        resolvingSession = null;
         currentSessionId = data?.sessionId || null;
         transcriptEntries = []; markers = []; interimTranscript = null; error = ''; notice = '';
         changed();

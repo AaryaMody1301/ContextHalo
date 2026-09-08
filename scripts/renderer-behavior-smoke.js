@@ -100,6 +100,18 @@ async function rendererBehaviorSmoke() {
     await waitUntil(()=>home.shadowRoot.querySelector('.page-title')?.getBoundingClientRect().top>=40);
     verify(home.shadowRoot.querySelector('.page-title').getBoundingClientRect().top>=40,'Home heading is below the draggable caption');
     verify(getComputedStyle(app.shadowRoot.querySelector('.sidebar-nav')).overflowY==='auto','Sidebar navigation remains scrollable in short windows');
+    const previousLayout = app.layoutMode;
+    for (const layout of ['normal', 'compact']) {
+        app.layoutMode = layout; await settle(app);
+        const content = app.shadowRoot.querySelector('.content-inner');
+        verify(content.clientWidth >= 250 && getComputedStyle(content).overflowY === 'auto', `${layout} pages retain a usable scroll owner`);
+        const settingsButton = [...app.shadowRoot.querySelectorAll('.nav-item')].find(element => element.title === 'Settings');
+        verify(Boolean(settingsButton), `${layout} navigation retains Settings`);
+        settingsButton.click(); await settle(app);
+        verify(Boolean(app.shadowRoot.querySelector('customize-view')), `${layout} Settings opens`);
+        app.navigate('main'); await settle(app);
+    }
+    app.layoutMode = previousLayout; await settle(app);
     for (const id of ['phase4-knowledge-nav','phase4-practice-nav','phase4-review-nav']) {
         await waitUntil(()=>app.shadowRoot.getElementById(id));
         app.shadowRoot.getElementById(id).click();

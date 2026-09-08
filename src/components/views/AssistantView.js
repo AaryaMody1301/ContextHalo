@@ -347,13 +347,15 @@ export class AssistantView extends LitElement {
         button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .composer-state { padding: 0 16px 6px; font-size: 12px; color: var(--text-secondary); }
         .composer-state.error { color: var(--danger); user-select: text; }
-        .response-toolbar { display: flex; justify-content: flex-end; padding: 4px 16px; }
+        .response-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 16px; flex-shrink: 0; }
+        .response-toolbar .copy-btn { margin-left: auto; }
+        .response-toolbar .response-nav { padding: 0; border: 0; }
         .input-bar { flex-shrink: 0; flex-wrap: wrap; }
         .input-bar-inner { flex-basis: 240px; }
         @media (max-width: 540px) {
-            .input-bar { padding: 8px; gap: 6px; }
-            .input-bar-inner { flex-basis: 100%; }
-            .analyze-btn { margin-left: auto; }
+            .input-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 8px; gap: 6px; }
+            .input-bar-inner { flex-basis: auto; }
+            .input-bar > .copy-btn { grid-column: 1 / -1; justify-self: end; }
         }
         @media (max-height: 400px) {
             .secondary-panels { max-height: 56px; margin: 2px 8px; }
@@ -676,8 +678,7 @@ ${pack.notes}</p>
         return html`
             ${this.renderSecondary()}
             <div class="response-container" id="responseContainer" aria-label="Assistant response" tabindex="0" @click=${this.handleResponseLink}><div class="response-body"></div><grounding-sources .grounding=${this.grounding}></grounding-sources></div>
-            <div class="response-toolbar"><button class="copy-btn" @click=${this.copyResponse} ?disabled=${!this.responses.length}>${this.copyStatus || 'Copy response'}</button></div>
-
+            <div class="response-toolbar">
             ${hasMultipleResponses ? html`
                 <div class="response-nav">
                     <button class="nav-btn" @click=${this.navigateToPreviousResponse} ?disabled=${this.currentResponseIndex <= 0} title="Previous response">
@@ -693,6 +694,8 @@ ${pack.notes}</p>
                     </button>
                 </div>
             ` : ''}
+                <button class="copy-btn" @click=${this.copyResponse} ?disabled=${!this.responses.length}>${this.copyStatus || 'Copy response'}</button>
+            </div>
 
             <div class="input-bar">
                 <div class="input-bar-inner">

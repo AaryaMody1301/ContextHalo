@@ -51,3 +51,51 @@ test('capture selection includes monitors/windows but never the app; untrusted f
     assert.equal((await handlers.get('context-capture:set-source')({sender:{id:1},senderFrame:{}},{kind:'primary-display'})).success,false);
     const selected=await new Promise(resolve=>capture({},resolve));assert.equal(selected.video.id,'screen:2:0');assert.equal(selected.audio,'loopback');
 });
+
+
+test('rapid marker actions share the initial history read and never cross a session epoch', async () => {
+    let release;
+    let reads = 0;
+    const f = rendererModule('src/utils/realtimeContextRenderer.js',
+        ['getRealtimeState', 'initRealtimeContext', 'addMarker'], {
+            getSession: async () => { reads++; return new Promise(resolve => { release = resolve; }); },
+            saveSession: async () => ({ success: true }),
+        }, async () => ({ success: true, data: { sessionId: 'one' } }));
+    const dispose = f.api.initRealtimeContext();
+    const first = f.api.addMarker('decision');
+    const second = f.api.addMarker('important');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(reads, 1);
+    release({ markers: [{ type: 'action', timestamp: 1, transcript: 'Stored fixture' }] });
+    await Promise.all([first, second]);
+    assert.deepEqual(f.api.getRealtimeState().markers.map(marker => marker.type), ['action', 'decision', 'important']);
+    f.ipc.emit('save-session-context', null, {});
+    const late = f.api.addMarker('question');
+    await new Promise(resolve => setImmediate(resolve));
+    f.ipc.emit('save-session-context', null, { sessionId: 'two' });
+    release({ markers: [{ type: 'important', timestamp: 2, transcript: 'Old fixture' }] });
+    await late;
+    assert.equal(f.api.getRealtimeState().markers.length, 0);
+    dispose();
+});
+
+test('missing explicitly selected monitor or window denies capture rather than sharing a different screen', async () => {
+    let capture;
+    const preferences = { captureSource: { kind: 'window', sourceId: 'window:closed:0' } };
+    const mainWindow = { webContents: { id: 1, mainFrame: {} }, isDestroyed: () => false, getBounds: () => ({}) };
+    const f = loadMain('src/utils/contextCaptureMain.js', {
+        electron: {
+            desktopCapturer: { getSources: async () => [{ id: 'screen:1:0', display_id: '1', name: 'Primary' }] },
+            screen: { getPrimaryDisplay: () => ({ id: 1 }), getDisplayMatching: () => ({ id: 1 }) },
+            session: { defaultSession: { setDisplayMediaRequestHandler(fn) { capture = fn; } } },
+        },
+        '../storage': { getPreferences: () => preferences },
+    }, { process: { platform: 'win32' } });
+    f.setupContextCaptureMain(mainWindow, { handle() {}, removeHandler() {} });
+    for (const selection of [{ kind: 'window', sourceId: 'window:closed:0' }, { kind: 'screen', displayId: '2' }]) {
+        preferences.captureSource = selection;
+        const result = await new Promise(resolve => capture({}, resolve));
+        assert.deepEqual(result, {});
+        assert.deepEqual(preferences.captureSource, selection);
+    }
+});

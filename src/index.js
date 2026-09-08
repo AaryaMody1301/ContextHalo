@@ -190,7 +190,11 @@ function installWindowsSmokeCheck(window) {
                     fs.writeFileSync(path.join(directory, `hud-${theme}-${alpha}.png`), (await window.webContents.capturePage()).toPNG());
                 }
             }
-            window.setMinimumSize(640, 320); window.setBounds({...window.getBounds(),width:640,height:320});
+            const workArea = require('electron').screen.getDisplayMatching(window.getBounds()).workArea;
+            const minimumWidth = Math.min(640, workArea.width);
+            const minimumHeight = Math.min(320, workArea.height);
+            window.setMinimumSize(minimumWidth, minimumHeight);
+            window.setBounds({ x: workArea.x, y: workArea.y, width: minimumWidth, height: minimumHeight });
             const minimum = await window.webContents.executeJavaScript(`(async()=>{
                 const app=document.querySelector('context-halo-app');
                 contextHalo.theme.apply('dark',0.5); app.statusText='Long status '.repeat(100);
@@ -206,7 +210,23 @@ function installWindowsSmokeCheck(window) {
                 return result;
             })()`);
             fs.writeFileSync(path.join(directory,'hud-minimum-expanded.png'),(await window.webContents.capturePage()).toPNG());
-            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
+            window.show(); window.focus();
+            await window.webContents.executeJavaScript(`document.querySelector('context-halo-app').shadowRoot.querySelector('.live-bar button').focus()`);
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+            await new Promise(resolve => setTimeout(resolve, 75));
+            const keyboard = await window.webContents.executeJavaScript(`(() => {
+                const app=document.querySelector('context-halo-app');
+                return { tabReachesHide:app.shadowRoot.activeElement?.textContent.trim()==='Hide' };
+            })()`);
+            if (!keyboard.tabReachesHide) throw new Error('Native Tab did not reach the Hide button');
+            await window.webContents.executeJavaScript(`document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('summary').focus()`);
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+            await new Promise(resolve => setTimeout(resolve, 75));
+            keyboard.enterCollapsesSecondary = await window.webContents.executeJavaScript(`!document.querySelector('context-halo-app').shadowRoot.querySelector('assistant-view').shadowRoot.querySelector('details').open`);
+            if (!keyboard.enterCollapsesSecondary) throw new Error('Native Enter did not collapse secondary controls');
+            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, keyboard, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
             if (rendererErrors.length) throw new Error('Renderer console errors: '+rendererErrors.join('; '));
             finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {

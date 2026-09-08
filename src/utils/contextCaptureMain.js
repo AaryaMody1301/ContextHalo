@@ -111,14 +111,17 @@ async function resolveVideoSource(mainWindow) {
     const selection = getStoredSelection();
     const sources = await getDesktopSources();
 
-    if (selection.kind === 'window' && selection.sourceId) {
-        const windowSource = sources.find(source => source.id === selection.sourceId);
+    if (selection.kind === 'window') {
+        const windowSource = sources.find(source => sourceType(source) === 'window' && source.id === selection.sourceId);
         if (windowSource) return { source: windowSource, selection };
+        throw new Error('The selected window is unavailable. Choose a capture source in session settings.');
     }
 
-    if (selection.kind === 'screen' && selection.displayId) {
-        const screenSource = sources.find(source => String(source.display_id) === String(selection.displayId));
+    if (selection.kind === 'screen') {
+        const screenSource = sources.find(source => sourceType(source) === 'screen' &&
+            (selection.displayId ? String(source.display_id) === String(selection.displayId) : source.id === selection.sourceId));
         if (screenSource) return { source: screenSource, selection };
+        throw new Error('The selected display is unavailable. Choose a capture source in session settings.');
     }
 
     const display = selection.kind === 'primary-display'
@@ -127,12 +130,7 @@ async function resolveVideoSource(mainWindow) {
     const source = sources.find(candidate => String(candidate.display_id) === String(display.id))
         || sources.find(candidate => sourceType(candidate) === 'screen');
 
-    return {
-        source,
-        selection: selection.kind === 'window' || selection.kind === 'screen'
-            ? { ...DEFAULT_SELECTION, label: `${DEFAULT_SELECTION.label} (fallback)` }
-            : selection,
-    };
+    return { source, selection };
 }
 
 function installDisplayCaptureHandler(mainWindow) {
@@ -142,7 +140,7 @@ function installDisplayCaptureHandler(mainWindow) {
                 const { source } = await resolveVideoSource(mainWindow);
                 callback(source ? { video: source, audio: 'loopback' } : {});
             } catch (error) {
-                console.error('Context capture source selection failed:', error);
+                console.warn('Context capture source selection unavailable; capture denied.');
                 callback({});
             }
         },
