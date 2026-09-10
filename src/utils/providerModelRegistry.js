@@ -49,7 +49,10 @@ function normalizeGeminiModel(raw) {
 
 function buildGeminiCatalog(rawModels) {
     const all = sortModels(rawModels.map(normalizeGeminiModel).filter(Boolean));
-    const live = all.filter(model => model.methods.includes('bidiGenerateContent'));
+    // The method list is authoritative for capability, but explicitly exclude
+    // Omni video-generation models from interview Live recommendations. Omni is
+    // documented as text/image/video -> video and is not the audio dialogue model.
+    const live = all.filter(model => model.methods.includes('bidiGenerateContent') && !/^gemini-omni-/i.test(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
     const screen = generate.filter(
         model => !/(embedding|imagen|veo|lyria|tts|transcribe|robotics|computer-use|(?:^|-)image(?:-|$))/i.test(model.id)
@@ -70,7 +73,7 @@ function buildGeminiCatalog(rawModels) {
         generate,
         screen,
         recommended: {
-            live: pick(live, ['gemini-3.1-flash-live-preview', 'gemini-omni-1.1-flash']),
+            live: pick(live, ['gemini-3.1-flash-live-preview']),
             screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
         },
     };

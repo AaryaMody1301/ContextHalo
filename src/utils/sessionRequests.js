@@ -4,11 +4,22 @@ const { randomUUID } = require('node:crypto');
 const context = new AsyncLocalStorage();
 let epoch = 0;
 let active = false;
-let queue = Promise.resolve();
+const queues = new Map();
 const controllers = new Map();
 
 function abortError(message) {
     return Object.assign(new Error(message), { name: 'AbortError' });
+}
+
+function laneForRequest(kind) {
+    // Screen analysis owns a separate lane so continuous interview transcription
+    // cannot consume its deadline while it waits behind voice/text work. Voice and
+    // typed questions stay serialized because both can mutate conversation history.
+    return kind === 'screen' ? 'screen' : 'conversation';
+}
+
+function resetQueues() {
+    queues.clear();
 }
 
 function closeSessionRequests() {
@@ -16,7 +27,7 @@ function closeSessionRequests() {
     epoch += 1;
     for (const controller of controllers.keys()) controller.abort(abortError('Session ended'));
     controllers.clear();
-    queue = Promise.resolve();
+    resetQueues();
 }
 
 function cancelSessionRequests(kind) {
@@ -48,8 +59,10 @@ function getRequestSignal() {
     return context.getStore()?.signal;
 }
 
-// Serialize history-mutating work. Deadlines include queue time. Closing a
-// session invalidates queued work and late callbacks, even for a non-abortable SDK.
+// Serialize work only where shared state requires it. Screen analysis uses an
+// independent lane so it stays responsive during long-running voice activity.
+// Deadlines still include queue time within each lane. Closing a session
+// invalidates queued work and late callbacks, even for a non-abortable SDK.
 function runSessionRequest(kind, work, options = {}) {
     if (context.getStore()) {
         assertCurrentRequest();
@@ -70,7 +83,9 @@ function runSessionRequest(kind, work, options = {}) {
         controller.signal.addEventListener('abort', onAbort, { once: true });
         timer = setTimeout(() => controller.abort(abortError(`${kind} request timed out. Try again.`)), timeoutMs);
     });
-    const workPromise = queue.then(() => context.run(request, async () => {
+    const lane = options.lane || laneForRequest(kind);
+    const previous = queues.get(lane) || Promise.resolve();
+    const workPromise = previous.then(() => context.run(request, async () => {
         assertCurrentRequest();
         const result = await work();
         assertCurrentRequest();
@@ -82,7 +97,7 @@ function runSessionRequest(kind, work, options = {}) {
         controllers.delete(controller);
         controller.abort(abortError('Request finished'));
     });
-    queue = result.catch(() => {});
+    queues.set(lane, result.catch(() => {}));
     return result;
 }
 

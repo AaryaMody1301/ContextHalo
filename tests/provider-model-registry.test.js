@@ -37,6 +37,27 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
 });
 
+test('Gemini Omni is never offered as an interview Live model', () => {
+    const catalog = buildGeminiCatalog([
+        {
+            name: 'models/gemini-omni-1.1-flash',
+            displayName: 'Gemini Omni 1.1 Flash',
+            // Defensive fixture: even if a future/incorrect catalog advertises a
+            // bidirectional method, Omni is a video-generation family, not the
+            // real-time audio dialogue model ContextHalo needs.
+            supportedGenerationMethods: ['bidiGenerateContent'],
+        },
+        {
+            name: 'models/example-live-preview',
+            displayName: 'Example Live Preview',
+            supportedGenerationMethods: ['bidiGenerateContent'],
+        },
+    ]);
+
+    assert.equal(catalog.live.some(model => model.id === 'gemini-omni-1.1-flash'), false);
+    assert.equal(catalog.recommended.live, 'example-live-preview');
+});
+
 test('Groq catalog keeps all active models while grouping task models conservatively', () => {
     const catalog = buildGroqCatalog([
         { id: 'openai/gpt-oss-120b', active: true, owned_by: 'OpenAI' },
