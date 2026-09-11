@@ -1,0 +1,104 @@
+name: Apply Settings smoke hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/settings-smoke-save-states
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Patch mounted Settings save state
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const viewPath = 'src/components/views/CustomizeView.js';
+          let source = fs.readFileSync(viewPath, 'utf8');
+
+          const oldBlock = `    retrySaves() {
+              if (this.saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
+              return Promise.all([...this._failedWrites.values()].map(retry => retry()));
+          }
+
+          renderSaveFeedback() {
+              const values = Object.values(this.saveStates);
+              const failed = values.includes('failed') || this.saveStates.load;
+              const saving = values.includes('saving');
+              return html\`<div class="save-feedback" role="status" aria-live="polite" data-state=\${failed ? 'error' : saving ? 'saving' : 'saved'}>
+                  <span>\${this.settingsLoading ? 'Loading settings...' : failed ? (this.saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
+                  \${failed ? html\`<button class="control" @click=\${this.retrySaves} ?disabled=\${saving}>Retry save</button>\` : ''}
+              </div>\`;
+          }`;
+
+          const newBlock = `    retrySaves() {
+              const saveStates = this.saveStates || {};
+              if (saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
+              return Promise.all([...this._failedWrites.values()].map(retry => retry()));
+          }
+
+          renderSaveFeedback() {
+              const saveStates = this.saveStates || {};
+              const values = Object.values(saveStates);
+              const failed = values.includes('failed') || Boolean(saveStates.load);
+              const saving = values.includes('saving');
+              return html\`<div class="save-feedback" role="status" aria-live="polite" data-state=\${failed ? 'error' : saving ? 'saving' : 'saved'}>
+                  <span>\${this.settingsLoading ? 'Loading settings...' : failed ? (saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
+                  \${failed ? html\`<button class="control" @click=\${this.retrySaves} ?disabled=\${saving}>Retry save</button>\` : ''}
+              </div>\`;
+          }`;
+
+          if (!source.includes(oldBlock)) throw new Error('Expected save-feedback block was not found exactly once.');
+          source = source.replace(oldBlock, newBlock);
+
+          const oldFieldset = '<fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates.load)}>';
+          const newFieldset = '<fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates?.load)}>';
+          if (!source.includes(oldFieldset)) throw new Error('Expected Settings fieldset guard was not found.');
+          source = source.replace(oldFieldset, newFieldset);
+          fs.writeFileSync(viewPath, source);
+
+          const testPath = 'tests/ui-save-feedback.test.js';
+          let tests = fs.readFileSync(testPath, 'utf8');
+          const anchor = "test('storage writes are checked, serialized and snapshotted; failed writes do not block later edits', async () => {";
+          const regression = `test('Settings first render tolerates an unset save-state bag', () => {
+              const view = settings({ updatePreference: async () => ({ success: true }) });
+              view.saveStates = undefined;
+              assert.doesNotThrow(() => view.renderSaveFeedback());
+              assert.doesNotThrow(() => view.retrySaves());
+          });
+
+          `;
+          if (!tests.includes(anchor)) throw new Error('Expected UI feedback test anchor was not found.');
+          if (!tests.includes("Settings first render tolerates an unset save-state bag")) tests = tests.replace(anchor, regression + anchor);
+          fs.writeFileSync(testPath, tests);
+          NODE
+
+      - name: Validate targeted repair
+        run: |
+          node scripts/check-source.js
+          node --test tests/ui-save-feedback.test.js
+
+      - name: Remove one-time workflow
+        run: git rm .github/workflows/apply-settings-smoke-hotfix.yml
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/views/CustomizeView.js tests/ui-save-feedback.test.js
+          git commit -m "fix: guard Settings save feedback during mounted render"
+          git push origin HEAD:hotfix/settings-smoke-save-states
