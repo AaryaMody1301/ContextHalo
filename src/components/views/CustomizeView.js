@@ -239,6 +239,10 @@ export class CustomizeView extends LitElement {
         this._loadFromStorage();
     }
 
+    connectedCallback() {
+        super.connectedCallback();
+    }
+
     getThemes() {
         return contextHalo.theme.getAll();
     }
