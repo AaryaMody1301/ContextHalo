@@ -1,1 +1,0 @@
-Temporary validation trigger for the renderer smoke readiness repair.
