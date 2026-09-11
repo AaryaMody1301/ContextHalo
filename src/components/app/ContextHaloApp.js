@@ -1218,6 +1218,15 @@ export class ContextHaloApp extends LitElement {
 
         if (changedProperties.has('currentView')) {
             this._resetContentScroll();
+            // Windows CI exposed an upgraded, connected Settings element whose Lit
+            // connection gate had not run after dynamic navigation. Normal custom-element
+            // lifecycle is left alone; only recover a connected child with no render root.
+            if (this.currentView === 'customize') {
+                const settingsView = this.shadowRoot?.querySelector('customize-view');
+                if (settingsView?.isConnected && !settingsView.renderRoot && typeof settingsView.connectedCallback === 'function') {
+                    settingsView.connectedCallback();
+                }
+            }
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 ipcRenderer.send('view-changed', this.currentView);

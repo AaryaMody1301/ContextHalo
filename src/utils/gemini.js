@@ -15,6 +15,7 @@ const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
 const { createGeminiLiveRuntime } = require('./geminiLiveRuntime');
+const { SCREEN_PROVIDER_BUDGET_MS, SCREEN_SESSION_TIMEOUT_MS, screenThinkingConfig } = require('./geminiScreenReliability');
 let liveGeneration = 0;
 let manualReconnectPromise = null;
 let initializePromise = null;
@@ -1178,13 +1179,13 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     try {
         const ai = new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } });
         const tools = await getEnabledTools();
-        const response = await runGeminiRequest(remaining => ai.models.generateContent(augmentGenerateParams({
+        const response = await runGeminiRequest(() => ai.models.generateContent(augmentGenerateParams({
             model,
             contents: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }],
             config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.effective)),
-                maxOutputTokens: 4096, ...(tools.length ? { tools } : {}), abortSignal: getRequestSignal(),
-                httpOptions: { timeout: Math.min(27000, remaining), retryOptions: { attempts: 1 } } },
-        })), { operation: 'screen', model, apiKey, signal: getRequestSignal() });
+                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}), abortSignal: getRequestSignal(),
+                httpOptions: { retryOptions: { attempts: 1 } } },
+        })), { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
         assertCurrentRequest();
         const text = response.text?.trim();
         if (!text) throw new Error('Empty Gemini response');
@@ -1502,7 +1503,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             result = reportUserRequestResult(result, 'screen');
             sendToRenderer('screen-analysis-complete', result);
             return result;
-        }, { ...request, timeoutMs: 58000 });
+        }, { ...request, timeoutMs: SCREEN_SESSION_TIMEOUT_MS });
     });
 
     register('send-text-message', async (event, text, options) => {

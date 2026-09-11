@@ -81,7 +81,6 @@ async function rendererBehaviorSmoke() {
         const response=root.querySelector('#responseContainer');
         verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe && response.querySelector('strong')?.textContent==='Safe','Rendered Markdown removes active HTML but preserves formatting');
     } finally { api.sendTextMessage=original;app._sessionStarted=false;app._setLifecycle('idle','Fixture complete'); }
-
     const ipc=window.electronAPI;
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
     const text='The data pipeline uses idempotent ingestion to prevent duplicate events. Atomic checkpoints record the last committed offset so interrupted jobs resume safely. Partitioned tables and bounded retries improve recovery without silently discarding records.';
@@ -252,15 +251,7 @@ function installWindowsSmokeCheck(window) {
                     const homeReady = Boolean(mainView.shadowRoot.querySelector('.start-button') && mainView.shadowRoot.querySelector('label[for="session-profile"]'));
                     const errorReady = Boolean(mainView.shadowRoot?.querySelector('.session-status.error'));
 
-                    const settingsView = document.createElement('customize-view');
-                    settingsView.style.display = 'none';
-                    document.body.appendChild(settingsView);
-                    await settingsView.updateComplete;
-                    const settingsText = settingsView.shadowRoot?.textContent || '';
-                    const settingsReady = settingsText.includes('Session Defaults') &&
-                        settingsText.includes('AI Provider & Models') &&
-                        settingsText.includes('AI Behavior') &&
-                        settingsText.includes('Keyboard Shortcuts');
+                    await customElements.whenDefined('customize-view');
 
                     const app = document.querySelector('context-halo-app');
                     for (let i = 0; i < 80 && app?._storageLoaded !== true; i++) {
@@ -279,14 +270,34 @@ function installWindowsSmokeCheck(window) {
                     app.navigate('customize');
                     await app.updateComplete;
                     await new Promise(resolve => requestAnimationFrame(resolve));
-                    const settingsInApp = app.shadowRoot?.querySelector('customize-view');
+                    let settingsInApp = null;
+                    let settingsReady = false;
+                    for (let attempt = 0; attempt < 200 && !settingsReady; attempt++) {
+                        settingsInApp = app.shadowRoot?.querySelector('customize-view') || null;
+                        const settingsText = settingsInApp?.shadowRoot?.textContent || '';
+                        settingsReady = Boolean(settingsInApp?.shadowRoot?.querySelector('.unified-page')) &&
+                            settingsText.includes('Session Defaults') &&
+                            settingsText.includes('AI Provider & Models') &&
+                            settingsText.includes('AI Behavior') &&
+                            settingsText.includes('Keyboard Shortcuts');
+                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 25));
+                    }
+                    let settingsUpdateError = '';
+                    if (settingsInApp) {
+                        try {
+                            const updateResult = await Promise.race([
+                                settingsInApp.updateComplete.then(() => 'complete', error => { throw error; }),
+                                new Promise(resolve => setTimeout(() => resolve('timeout'), 2000)),
+                            ]);
+                            if (updateResult === 'timeout') settingsUpdateError = 'updateComplete timed out after 2000ms';
+                        } catch (error) { settingsUpdateError = String(error?.stack || error?.message || error).slice(0, 4000); }
+                    }
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
                     const navigationReset = Boolean(content && content.scrollTop === 0);
                     const singleScrollOwner = mainOverflow !== 'auto' && settingsOverflow !== 'auto';
 
                     mainView.remove();
-                    settingsView.remove();
 
                     return {
                         bridge: Boolean(window.electronAPI && window.require),
@@ -296,6 +307,21 @@ function installWindowsSmokeCheck(window) {
                         home: homeReady,
                         sessionError: errorReady,
                         settings: settingsReady,
+                        settingsDebug: {
+                            currentView: app?.currentView || null,
+                            appConnected: Boolean(app?.isConnected),
+                            present: Boolean(settingsInApp),
+                            isConnected: Boolean(settingsInApp?.isConnected),
+                            parentClass: settingsInApp?.parentElement?.className || null,
+                            rootIsAppShadow: settingsInApp?.getRootNode?.() === app?.shadowRoot,
+                            shadow: Boolean(settingsInApp?.shadowRoot),
+                            childCount: settingsInApp?.shadowRoot?.childNodes?.length ?? -1,
+                            text: String(settingsInApp?.shadowRoot?.textContent || '').slice(0, 2000),
+                            html: String(settingsInApp?.shadowRoot?.innerHTML || '').slice(0, 4000),
+                            updateError: settingsUpdateError,
+                            constructorName: settingsInApp?.constructor?.name || null,
+                            definedName: customElements.get('customize-view')?.name || null,
+                        },
                         parentCanScroll,
                         navigationReset,
                         singleScrollOwner,

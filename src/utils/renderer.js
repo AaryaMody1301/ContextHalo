@@ -1,5 +1,6 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
+const { SCREEN_RENDERER_TIMEOUT_MS } = require('./geminiScreenReliability');
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -505,7 +506,7 @@ async function captureManualScreenshot(imageQuality = null, options = {}) {
     const cancel = () => { void ipcRenderer.invoke('cancel-screen-analysis').catch(() => {}); };
     signal?.addEventListener('abort', cancel, { once: true });
     try {
-        const result = await waitForCapture(ipcRenderer.invoke('send-image-content', { data, prompt: MANUAL_SCREENSHOT_PROMPT, request: options.request }), signal, 60000);
+        const result = await waitForCapture(ipcRenderer.invoke('send-image-content', { data, prompt: MANUAL_SCREENSHOT_PROMPT, request: options.request }), signal, SCREEN_RENDERER_TIMEOUT_MS);
         check();
         return result;
     } catch (error) {
