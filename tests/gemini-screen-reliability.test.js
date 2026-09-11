@@ -72,7 +72,6 @@ test('screen 504 retry does not reconnect or end the Live interview', async t =>
     assert.equal(f.connections.length, liveConnections);
 });
 
-
 test('Assistant screen UI leaves the renderer watchdog as the only UI deadline owner', () => {
     const source = fs.readFileSync('src/components/views/AssistantView.js', 'utf8');
     const start = source.indexOf('    async handleScreenAnswer(options = {}) {');
@@ -82,4 +81,15 @@ test('Assistant screen UI leaves the renderer watchdog as the only UI deadline o
     assert.doesNotMatch(handler, /setTimeout\s*\(/);
     assert.doesNotMatch(handler, /clearTimeout\s*\(/);
     assert.match(handler, /new AbortController\(\)/);
+});
+
+test('Windows Electron smoke re-queries mounted Settings instead of caching a missing view', () => {
+    const source = fs.readFileSync('scripts/renderer-behavior-smoke.js', 'utf8');
+    const navigation = source.indexOf("app.navigate('customize');");
+    const readyCheck = source.indexOf('const unifiedPage = settingsInApp?.shadowRoot?.querySelector', navigation);
+    assert.ok(navigation >= 0 && readyCheck > navigation);
+    const probe = source.slice(navigation, readyCheck);
+    assert.match(probe, /for \(let attempt = 0; attempt < 200 && !settingsReady; attempt\+\+\)/);
+    assert.match(probe, /settingsInApp = app\.shadowRoot\?\.querySelector\('customize-view'\) \|\| null/);
+    assert.match(probe, /settingsReady = Boolean\(settingsInApp\?\.shadowRoot\?\.querySelector\('\.unified-page'\)\)/);
 });
