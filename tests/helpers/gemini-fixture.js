@@ -48,7 +48,10 @@ function geminiFixture(options = {}) {
         sendLocalImage: async () => ({ success: true, text: 'Local screen answer' }),
         ...options.local,
     };
-    const liveRuntimeOverrides = options.immediateLiveReconnect ? {
+    // The production runtime intentionally backs off before reconnecting. Unit tests
+    // flush those timers on the next microtask so recovery assertions stay fast and
+    // deterministic without weakening production retry behavior.
+    const liveRuntimeOverrides = {
         setTimer(fn) {
             const timer = { cancelled: false };
             queueMicrotask(() => { if (!timer.cancelled) void fn(); });
@@ -57,7 +60,7 @@ function geminiFixture(options = {}) {
         clearTimer(timer) {
             if (timer) timer.cancelled = true;
         },
-    } : {};
+    };
     const scope = {
         module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process, Buffer, URL,
         AbortController, setTimeout, clearTimeout, global: {},
