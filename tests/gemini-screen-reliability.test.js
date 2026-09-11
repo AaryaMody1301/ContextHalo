@@ -93,3 +93,10 @@ test('Windows Electron smoke re-queries mounted Settings instead of caching a mi
     assert.match(probe, /settingsInApp = app\.shadowRoot\?\.querySelector\('customize-view'\) \|\| null/);
     assert.match(probe, /settingsReady = Boolean\(settingsInApp\?\.shadowRoot\?\.querySelector\('\.unified-page'\)\)/);
 });
+
+test('Windows Electron smoke exposes mounted Settings render diagnostics while the CI regression is repaired', () => {
+    const source = fs.readFileSync('scripts/renderer-behavior-smoke.js', 'utf8');
+    assert.match(source, /settingsDebug:/);
+    assert.match(source, /updateError: settingsUpdateError/);
+    assert.match(source, /constructorName: settingsInApp\?\.constructor\?\.name/);
+});
