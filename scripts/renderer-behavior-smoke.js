@@ -270,15 +270,17 @@ function installWindowsSmokeCheck(window) {
                     app.navigate('customize');
                     await app.updateComplete;
                     await new Promise(resolve => requestAnimationFrame(resolve));
-                    const settingsInApp = app.shadowRoot?.querySelector('customize-view');
+                    let settingsInApp = null;
                     let settingsReady = false;
-                    for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
+                    for (let attempt = 0; attempt < 200 && !settingsReady; attempt++) {
+                        settingsInApp = app.shadowRoot?.querySelector('customize-view') || null;
                         const settingsText = settingsInApp?.shadowRoot?.textContent || '';
-                        settingsReady = settingsText.includes('Session Defaults') &&
+                        settingsReady = Boolean(settingsInApp?.shadowRoot?.querySelector('.unified-page')) &&
+                            settingsText.includes('Session Defaults') &&
                             settingsText.includes('AI Provider & Models') &&
                             settingsText.includes('AI Behavior') &&
                             settingsText.includes('Keyboard Shortcuts');
-                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
+                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 25));
                     }
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
