@@ -282,6 +282,11 @@ function installWindowsSmokeCheck(window) {
                             settingsText.includes('Keyboard Shortcuts');
                         if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 25));
                     }
+                    let settingsUpdateError = '';
+                    if (settingsInApp) {
+                        try { await settingsInApp.updateComplete; }
+                        catch (error) { settingsUpdateError = String(error?.stack || error?.message || error).slice(0, 4000); }
+                    }
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
                     const navigationReset = Boolean(content && content.scrollTop === 0);
@@ -297,6 +302,17 @@ function installWindowsSmokeCheck(window) {
                         home: homeReady,
                         sessionError: errorReady,
                         settings: settingsReady,
+                        settingsDebug: {
+                            currentView: app?.currentView || null,
+                            present: Boolean(settingsInApp),
+                            shadow: Boolean(settingsInApp?.shadowRoot),
+                            childCount: settingsInApp?.shadowRoot?.childNodes?.length ?? -1,
+                            text: String(settingsInApp?.shadowRoot?.textContent || '').slice(0, 2000),
+                            html: String(settingsInApp?.shadowRoot?.innerHTML || '').slice(0, 4000),
+                            updateError: settingsUpdateError,
+                            constructorName: settingsInApp?.constructor?.name || null,
+                            definedName: customElements.get('customize-view')?.name || null,
+                        },
                         parentCanScroll,
                         navigationReset,
                         singleScrollOwner,
