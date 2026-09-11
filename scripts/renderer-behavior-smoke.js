@@ -284,8 +284,13 @@ function installWindowsSmokeCheck(window) {
                     }
                     let settingsUpdateError = '';
                     if (settingsInApp) {
-                        try { await settingsInApp.updateComplete; }
-                        catch (error) { settingsUpdateError = String(error?.stack || error?.message || error).slice(0, 4000); }
+                        try {
+                            const updateResult = await Promise.race([
+                                settingsInApp.updateComplete.then(() => 'complete', error => { throw error; }),
+                                new Promise(resolve => setTimeout(() => resolve('timeout'), 2000)),
+                            ]);
+                            if (updateResult === 'timeout') settingsUpdateError = 'updateComplete timed out after 2000ms';
+                        } catch (error) { settingsUpdateError = String(error?.stack || error?.message || error).slice(0, 4000); }
                     }
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
