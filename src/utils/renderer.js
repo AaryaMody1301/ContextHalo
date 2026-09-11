@@ -1,6 +1,5 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
-const { SCREEN_RENDERER_TIMEOUT_MS } = require('./geminiScreenReliability');
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -13,6 +12,7 @@ let audioBuffer = [];
 const SAMPLE_RATE = 24000;
 const AUDIO_CHUNK_DURATION = 0.1; // seconds
 const BUFFER_SIZE = 4096; // Increased buffer size for smoother audio
+const SCREEN_RENDERER_TIMEOUT_MS = 80000; // Kept in sync with geminiScreenReliability by regression test.
 
 let hiddenVideo = null;
 let offscreenCanvas = null;
@@ -924,9 +924,7 @@ const theme = {
 };
 
 // Consolidated contextHalo object - all functions in one place
-// This file is a classic script while the Lit UI is loaded as ES modules. Use var so
-// the renderer API is a true global binding that module code can resolve reliably.
-var contextHalo = {
+const contextHalo = {
     // App version
     getVersion: async () => {
         const result = await ipcRenderer.invoke('get-app-version');
