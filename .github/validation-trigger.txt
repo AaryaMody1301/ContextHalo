@@ -1,1 +1,0 @@
-Temporary shell diagnostic trigger; removed immediately.
