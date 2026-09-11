@@ -309,7 +309,11 @@ function installWindowsSmokeCheck(window) {
                         settings: settingsReady,
                         settingsDebug: {
                             currentView: app?.currentView || null,
+                            appConnected: Boolean(app?.isConnected),
                             present: Boolean(settingsInApp),
+                            isConnected: Boolean(settingsInApp?.isConnected),
+                            parentClass: settingsInApp?.parentElement?.className || null,
+                            rootIsAppShadow: settingsInApp?.getRootNode?.() === app?.shadowRoot,
                             shadow: Boolean(settingsInApp?.shadowRoot),
                             childCount: settingsInApp?.shadowRoot?.childNodes?.length ?? -1,
                             text: String(settingsInApp?.shadowRoot?.textContent || '').slice(0, 2000),
