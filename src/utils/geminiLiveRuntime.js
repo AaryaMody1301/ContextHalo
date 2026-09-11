@@ -169,6 +169,7 @@ function createGeminiLiveRuntime(options = {}) {
         onMessage,
         onFailure,
         scheduleReconnect,
+        cancelScheduledReconnect: clearScheduledReconnect,
         stop,
     };
 }
