@@ -88,6 +88,13 @@ test('Settings explicitly enters the Lit connected lifecycle', () => {
     assert.match(source, /connectedCallback\(\)\s*\{\s*super\.connectedCallback\(\);\s*\}/);
 });
 
+test('app recovers a connected Settings view whose Lit render root has not initialized', () => {
+    const source = fs.readFileSync('src/components/app/ContextHaloApp.js', 'utf8');
+    assert.match(source, /this\.currentView === 'customize'/);
+    assert.match(source, /settingsView\?\.isConnected && !settingsView\.renderRoot/);
+    assert.match(source, /settingsView\.connectedCallback\(\)/);
+});
+
 test('Windows Electron smoke re-queries mounted Settings instead of caching a missing view', () => {
     const source = fs.readFileSync('scripts/renderer-behavior-smoke.js', 'utf8');
     const navigation = source.indexOf("app.navigate('customize');");
