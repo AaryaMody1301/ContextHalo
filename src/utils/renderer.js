@@ -924,7 +924,9 @@ const theme = {
 };
 
 // Consolidated contextHalo object - all functions in one place
-const contextHalo = {
+// This file is a classic script while the Lit UI is loaded as ES modules. Use var so
+// the renderer API is a true global binding that module code can resolve reliably.
+var contextHalo = {
     // App version
     getVersion: async () => {
         const result = await ipcRenderer.invoke('get-app-version');
