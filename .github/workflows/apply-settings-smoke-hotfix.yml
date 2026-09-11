@@ -26,48 +26,40 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
 
+          const replaceOnce = (source, from, to, label) => {
+              const first = source.indexOf(from);
+              if (first < 0) throw new Error(`Expected ${label} was not found.`);
+              if (source.indexOf(from, first + from.length) >= 0) throw new Error(`Expected exactly one ${label}.`);
+              return source.slice(0, first) + to + source.slice(first + from.length);
+          };
+
           const viewPath = 'src/components/views/CustomizeView.js';
           let source = fs.readFileSync(viewPath, 'utf8');
 
-          const oldBlock = `    retrySaves() {
-              if (this.saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
-              return Promise.all([...this._failedWrites.values()].map(retry => retry()));
-          }
-
-          renderSaveFeedback() {
-              const values = Object.values(this.saveStates);
-              const failed = values.includes('failed') || this.saveStates.load;
-              const saving = values.includes('saving');
-              return html\`<div class="save-feedback" role="status" aria-live="polite" data-state=\${failed ? 'error' : saving ? 'saving' : 'saved'}>
-                  <span>\${this.settingsLoading ? 'Loading settings...' : failed ? (this.saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
-                  \${failed ? html\`<button class="control" @click=\${this.retrySaves} ?disabled=\${saving}>Retry save</button>\` : ''}
-              </div>\`;
-          }`;
-
-          const newBlock = `    retrySaves() {
-              const saveStates = this.saveStates || {};
-              if (saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
-              return Promise.all([...this._failedWrites.values()].map(retry => retry()));
-          }
-
-          renderSaveFeedback() {
-              const saveStates = this.saveStates || {};
-              const values = Object.values(saveStates);
-              const failed = values.includes('failed') || Boolean(saveStates.load);
-              const saving = values.includes('saving');
-              return html\`<div class="save-feedback" role="status" aria-live="polite" data-state=\${failed ? 'error' : saving ? 'saving' : 'saved'}>
-                  <span>\${this.settingsLoading ? 'Loading settings...' : failed ? (saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
-                  \${failed ? html\`<button class="control" @click=\${this.retrySaves} ?disabled=\${saving}>Retry save</button>\` : ''}
-              </div>\`;
-          }`;
-
-          if (!source.includes(oldBlock)) throw new Error('Expected save-feedback block was not found exactly once.');
-          source = source.replace(oldBlock, newBlock);
-
-          const oldFieldset = '<fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates.load)}>';
-          const newFieldset = '<fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates?.load)}>';
-          if (!source.includes(oldFieldset)) throw new Error('Expected Settings fieldset guard was not found.');
-          source = source.replace(oldFieldset, newFieldset);
+          source = replaceOnce(
+              source,
+              "    retrySaves() {\n        if (this.saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }",
+              "    retrySaves() {\n        const saveStates = this.saveStates || {};\n        if (saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }",
+              'retrySaves save-state access'
+          );
+          source = replaceOnce(
+              source,
+              "    renderSaveFeedback() {\n        const values = Object.values(this.saveStates);\n        const failed = values.includes('failed') || this.saveStates.load;",
+              "    renderSaveFeedback() {\n        const saveStates = this.saveStates || {};\n        const values = Object.values(saveStates);\n        const failed = values.includes('failed') || Boolean(saveStates.load);",
+              'renderSaveFeedback save-state access'
+          );
+          source = replaceOnce(
+              source,
+              "failed ? (this.saveStates.load || 'Some changes are not saved. Your edits are retained.')",
+              "failed ? (saveStates.load || 'Some changes are not saved. Your edits are retained.')",
+              'renderSaveFeedback load message'
+          );
+          source = replaceOnce(
+              source,
+              'Boolean(this.saveStates.load)',
+              'Boolean(this.saveStates?.load)',
+              'Settings fieldset save-state guard'
+          );
           fs.writeFileSync(viewPath, source);
 
           const testPath = 'tests/ui-save-feedback.test.js';
