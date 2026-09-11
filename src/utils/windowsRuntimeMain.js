@@ -5,6 +5,7 @@ const {
     resetProviderSession,
     runWithProviderScope,
 } = require('./windowsProviderTransport');
+const { SCREEN_WINDOWS_SCOPE_MS } = require('./geminiScreenReliability');
 
 const windowsHandlers = new Map();
 
@@ -12,18 +13,20 @@ let originalIpcHandle = null;
 let providerMode = 'byok';
 let systemAudioQueue = [];
 let microphoneAudioQueue = [];
-let mixedAudioDispatch = Promise.resolve();
+let mixedAudioDispatchQueue = [];
+let mixedAudioDispatchGeneration = null;
 let mixerGeneration = 0;
 let lastAudioFallbackNoticeAt = 0;
 
 const MAX_UNPAIRED_AUDIO_CHUNKS = 12;
-const ANALYZE_SCOPE_MS = 58000;
+const MAX_MIXED_DISPATCH_CHUNKS = 6;
+const MAX_MIXED_DISPATCH_AGE_MS = 900;
 
 function resetAudioMixer() {
     mixerGeneration += 1;
     systemAudioQueue = [];
     microphoneAudioQueue = [];
-    mixedAudioDispatch = Promise.resolve();
+    mixedAudioDispatchQueue = [];
 }
 
 function mixPcm16(systemBuffer, microphoneBuffer) {
@@ -47,17 +50,35 @@ function sendRendererStatus(message) {
     window.webContents.send('update-status', message);
 }
 
-function dispatchMixedPayload(event, payload) {
-    const systemHandler = windowsHandlers.get('send-audio-content');
-    if (!systemHandler) return;
+async function drainMixedAudioDispatch(generation) {
+    if (generation !== mixerGeneration || mixedAudioDispatchGeneration === generation) return;
+    mixedAudioDispatchGeneration = generation;
+    try {
+        while (generation === mixerGeneration && mixedAudioDispatchQueue.length) {
+            const entry = mixedAudioDispatchQueue.shift();
+            if (!entry || entry.generation !== generation) continue;
+            if (Date.now() - entry.queuedAt > MAX_MIXED_DISPATCH_AGE_MS) continue;
+            const systemHandler = windowsHandlers.get('send-audio-content');
+            if (!systemHandler) continue;
+            try {
+                await systemHandler(entry.event, entry.payload);
+            } catch (error) {
+                if (generation !== mixerGeneration) continue;
+                console.error('Mixed Windows audio dispatch failed:', error);
+                sendRendererStatus('Audio error: ' + error.message);
+            }
+        }
+    } finally {
+        if (mixedAudioDispatchGeneration === generation) mixedAudioDispatchGeneration = null;
+        if (generation === mixerGeneration && mixedAudioDispatchQueue.length) void drainMixedAudioDispatch(generation);
+    }
+}
 
+function dispatchMixedPayload(event, payload) {
+    if (mixedAudioDispatchQueue.length >= MAX_MIXED_DISPATCH_CHUNKS) mixedAudioDispatchQueue.shift();
     const generation = mixerGeneration;
-    mixedAudioDispatch = mixedAudioDispatch
-        .then(() => generation === mixerGeneration ? systemHandler(event, payload) : undefined)
-        .catch(error => {
-            console.error('Mixed Windows audio dispatch failed:', error);
-            sendRendererStatus('Audio error: ' + error.message);
-        });
+    mixedAudioDispatchQueue.push({ event, payload, generation, queuedAt: Date.now() });
+    void drainMixedAudioDispatch(generation);
 }
 
 function flushUnpairedAudioIfNeeded() {
@@ -135,7 +156,7 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-image-content') {
         return async (event, ...args) => {
-            const result = await runWithProviderScope('Analyze Screen', ANALYZE_SCOPE_MS, () => handler(event, ...args));
+            const result = await runWithProviderScope('Analyze Screen', SCREEN_WINDOWS_SCOPE_MS, () => handler(event, ...args));
             return result;
         };
     }
@@ -184,4 +205,6 @@ module.exports = {
     prepareWindowsProvider,
     mixPcm16,
     resetAudioMixer,
+    MAX_MIXED_DISPATCH_CHUNKS,
+    MAX_MIXED_DISPATCH_AGE_MS,
 };

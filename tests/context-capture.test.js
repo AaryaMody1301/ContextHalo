@@ -67,8 +67,51 @@ test('desktop source selection stays in the trusted main process and region sele
     assert.match(preload, /context-capture:list-sources/);
     assert.match(preload, /context-capture:select-region/);
     assert.match(preload, /context-capture:read-clipboard/);
+    assert.match(preload, /capture-source-invalidated/);
+    assert.match(main, /mainWindow\.on\('moved', schedule\)/);
+    assert.match(main, /capture-source-invalidated/);
+    assert.match(main, /active-display-changed/);
     assert.match(selectorPreload, /region-selector-complete/);
     assert.match(selectorHtml, /Content-Security-Policy/);
 });
 
 
+
+test('active-display capture is invalidated after the app moves to another display', async () => {
+    const { EventEmitter } = require('node:events');
+    const { setTimeout: sleep } = require('node:timers/promises');
+    const handlers = new Map();
+    const preferences = { captureSource: { kind: 'window', sourceId: 'window:editor:0' } };
+    let displayId = 1;
+    const sends = [];
+    const mainWindow = new EventEmitter();
+    mainWindow.isDestroyed = () => false;
+    mainWindow.getBounds = () => ({});
+    mainWindow.getMediaSourceId = () => 'window:context-halo:0';
+    mainWindow.webContents = { id: 1, mainFrame: {}, send: (...args) => sends.push(args) };
+    const screen = new EventEmitter();
+    screen.getPrimaryDisplay = () => ({ id: 1 });
+    screen.getDisplayMatching = () => ({ id: displayId });
+    const main = loadMain('src/utils/contextCaptureMain.js', {
+        electron: {
+            desktopCapturer: { getSources: async () => [] },
+            screen,
+            session: { defaultSession: { setDisplayMediaRequestHandler() {} } },
+        },
+        '../storage': {
+            getPreferences: () => preferences,
+            updatePreference: (key, value) => { preferences[key] = value; return true; },
+        },
+    }, { process: { platform: 'win32' } });
+
+    main.setupContextCaptureMain(mainWindow, { handle: (key, handler) => handlers.set(key, handler), removeHandler() {} });
+    const event = { sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame };
+    const selected = await handlers.get('context-capture:set-source')(event, { kind: 'active-display' });
+    assert.equal(selected.success, true);
+
+    displayId = 2;
+    mainWindow.emit('moved');
+    await sleep(220);
+    assert.deepEqual(sends.at(-1), ['capture-source-invalidated', { reason: 'active-display-changed', displayId: '2' }]);
+    mainWindow.emit('closed');
+});

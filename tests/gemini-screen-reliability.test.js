@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const {
     SCREEN_PROVIDER_BUDGET_MS,
     SCREEN_SESSION_TIMEOUT_MS,
+    SCREEN_WINDOWS_SCOPE_MS,
     SCREEN_RENDERER_TIMEOUT_MS,
     screenThinkingConfig,
 } = require('../src/utils/geminiScreenReliability');
@@ -18,9 +19,14 @@ const imagePayload = () => ({
 test('screen reliability budgets leave one owner at each layer', () => {
     assert.equal(SCREEN_PROVIDER_BUDGET_MS, 70000);
     assert.equal(SCREEN_SESSION_TIMEOUT_MS, 75000);
+    assert.equal(SCREEN_WINDOWS_SCOPE_MS, 77000);
     assert.equal(SCREEN_RENDERER_TIMEOUT_MS, 80000);
     assert.ok(SCREEN_PROVIDER_BUDGET_MS < SCREEN_SESSION_TIMEOUT_MS);
-    assert.ok(SCREEN_SESSION_TIMEOUT_MS < SCREEN_RENDERER_TIMEOUT_MS);
+    assert.ok(SCREEN_SESSION_TIMEOUT_MS < SCREEN_WINDOWS_SCOPE_MS);
+    assert.ok(SCREEN_WINDOWS_SCOPE_MS < SCREEN_RENDERER_TIMEOUT_MS);
+    const windowsRuntime = fs.readFileSync('src/utils/windowsRuntimeMain.js', 'utf8');
+    assert.match(windowsRuntime, /runWithProviderScope\('Analyze Screen', SCREEN_WINDOWS_SCOPE_MS/);
+    assert.doesNotMatch(windowsRuntime, /ANALYZE_SCOPE_MS = 58000/);
 });
 
 test('renderer watchdog does not depend on a page-relative CommonJS require', () => {
