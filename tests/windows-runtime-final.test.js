@@ -103,6 +103,16 @@ test('Windows both-audio mixer produces one clipped PCM16 stream', () => {
     assert.equal(mixed.readInt16LE(4), 32767);
 });
 
+
+test('Windows mixed-audio dispatch is bounded and drops stale queued work', () => {
+    const source = read('src/utils/windowsRuntimeMain.js');
+    assert.match(source, /MAX_MIXED_DISPATCH_CHUNKS = 6/);
+    assert.match(source, /MAX_MIXED_DISPATCH_AGE_MS = 900/);
+    assert.match(source, /mixedAudioDispatchQueue\.length >= MAX_MIXED_DISPATCH_CHUNKS/);
+    assert.match(source, /Date\.now\(\) - entry\.queuedAt > MAX_MIXED_DISPATCH_AGE_MS/);
+    assert.equal(source.includes('mixedAudioDispatch = mixedAudioDispatch'), false);
+});
+
 test('Hugging Face Xet helpers require SHA-256 ETags and safe model references', () => {
     const hash = 'A'.repeat(64);
     assert.equal(normalizeEtag(`"${hash}"`), hash.toLowerCase());

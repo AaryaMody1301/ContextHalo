@@ -246,9 +246,46 @@ function selectRegion(mainWindow) {
     });
 }
 
+function installActiveDisplayWatcher(mainWindow) {
+    let lastDisplayId = null;
+    let timer = null;
+    const evaluate = () => {
+        timer = null;
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        const selection = getStoredSelection();
+        if (selection.kind !== 'active-display') {
+            lastDisplayId = null;
+            return;
+        }
+        const displayId = String(screen.getDisplayMatching(mainWindow.getBounds()).id);
+        if (lastDisplayId === null) {
+            lastDisplayId = displayId;
+            return;
+        }
+        if (displayId === lastDisplayId) return;
+        lastDisplayId = displayId;
+        mainWindow.webContents.send('capture-source-invalidated', { reason: 'active-display-changed', displayId });
+    };
+    const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(evaluate, 180);
+    };
+    evaluate();
+    const displayEvents = ['display-metrics-changed', 'display-added', 'display-removed'];
+    if (typeof mainWindow.on === 'function') mainWindow.on('moved', schedule);
+    if (typeof screen.on === 'function') for (const event of displayEvents) screen.on(event, schedule);
+    if (typeof mainWindow.once === 'function') mainWindow.once('closed', () => {
+        clearTimeout(timer);
+        if (typeof mainWindow.removeListener === 'function') mainWindow.removeListener('moved', schedule);
+        if (typeof screen.removeListener === 'function') for (const event of displayEvents) screen.removeListener(event, schedule);
+    });
+    return evaluate;
+}
+
 function setupContextCaptureMain(mainWindow, ipcMain) {
     if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
     installDisplayCaptureHandler(mainWindow);
+    const refreshActiveDisplay = installActiveDisplayWatcher(mainWindow);
 
     const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
     const installHandler = (channel, handler) => {
@@ -265,7 +302,11 @@ function setupContextCaptureMain(mainWindow, ipcMain) {
 
     installHandler('context-capture:list-sources', async () => ({ success: true, data: await listCaptureSources(mainWindow) }));
     installHandler('context-capture:get-state', () => ({ success: true, data: getStoredSelection() }));
-    installHandler('context-capture:set-source', selection => ({ success: true, data: saveSelection(selection) }));
+    installHandler('context-capture:set-source', selection => {
+        const data = saveSelection(selection);
+        refreshActiveDisplay?.();
+        return { success: true, data };
+    });
     installHandler('context-capture:read-clipboard', async () => {
         const text = sanitizeText(await Promise.resolve(clipboard.readText()), 20000);
         return text ? { success: true, text } : { success: false, error: 'Clipboard does not contain plain text.' };

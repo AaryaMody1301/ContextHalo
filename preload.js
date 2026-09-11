@@ -52,6 +52,7 @@ const allowedChannels = {
         'cancel-local-initialization',
         'send-audio-content',
         'send-mic-audio-content',
+        'audio-stream-end',
         'send-image-content',
         'cancel-screen-analysis',
         'retry-session-connection',
@@ -88,6 +89,7 @@ const allowedChannels = {
         'local-ai-download-progress',
         'groq-rate-limit',
         'live-transcript',
+        'capture-source-invalidated',
     ],
 };
 

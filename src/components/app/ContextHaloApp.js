@@ -609,6 +609,7 @@ export class ContextHaloApp extends LitElement {
         this._stopPromise = null;
         this._startController = null;
         this._captureStateListener = event => this._captureChanged(event.detail);
+        this._captureRestartPromise = null;
         this.startError = '';
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
@@ -694,6 +695,9 @@ export class ContextHaloApp extends LitElement {
             listen('shortcut', (_, shortcut) => contextHalo.handleShortcut(shortcut));
             listen('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
+            });
+            listen('capture-source-invalidated', (_, detail) => {
+                if (this.sessionActive && detail?.reason === 'active-display-changed') void this.restartCapture();
             });
             listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
             listen('whisper-downloading', (_, downloading) => {
@@ -1092,16 +1096,21 @@ export class ContextHaloApp extends LitElement {
         }
     }
 
-    async restartCapture() {
-        if (!this.sessionActive || this.isInitializing) return;
+    restartCapture() {
+        if (!this.sessionActive || this.isInitializing) return Promise.resolve();
+        if (this._captureRestartPromise) return this._captureRestartPromise;
         const epoch = this._uiSessionEpoch;
-        this._setLifecycle('preparing-capture', 'Restarting the selected screen and audio inputs...');
-        contextHalo.stopCapture();
-        try { await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality); }
-        catch { /* The capture owner publishes its recoverable failure state. */ }
-        if (epoch !== this._uiSessionEpoch) return;
-        this.captureState = contextHalo.getCaptureState();
-        this._setLifecycle(this.captureState.state === 'ready' ? 'active' : 'capture-stopped', this.captureState.warning || this._readyStatus());
+        const operation = (async () => {
+            this._setLifecycle('preparing-capture', 'Restarting the selected screen and audio inputs...');
+            contextHalo.stopCapture();
+            try { await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality); }
+            catch { /* The capture owner publishes its recoverable failure state. */ }
+            if (epoch !== this._uiSessionEpoch) return;
+            this.captureState = contextHalo.getCaptureState();
+            this._setLifecycle(this.captureState.state === 'ready' ? 'active' : 'capture-stopped', this.captureState.warning || this._readyStatus());
+        })().finally(() => { if (this._captureRestartPromise === operation) this._captureRestartPromise = null; });
+        this._captureRestartPromise = operation;
+        return operation;
     }
 
     retryProvider(withoutSearch = false) {

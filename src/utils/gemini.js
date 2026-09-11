@@ -1156,17 +1156,45 @@ function stopMacOSAudioCapture() {
     }
 }
 
-async function sendAudioToGemini(base64Data, geminiSessionRef) {
+function parsePcmSampleRate(mimeType) {
+    const match = String(mimeType || '').match(/rate=(16000|24000|48000)/i);
+    return match ? Number(match[1]) : 24000;
+}
+
+function resamplePcm16Mono(buffer, sourceRate, targetRate = 16000) {
+    if (!Buffer.isBuffer(buffer)) buffer = Buffer.from(buffer || []);
+    const sourceSamples = Math.floor(buffer.length / 2);
+    if (!sourceSamples || sourceRate <= 0 || targetRate <= 0) return Buffer.alloc(0);
+    if (sourceRate === targetRate) return buffer.subarray(0, sourceSamples * 2);
+    const targetSamples = Math.max(1, Math.floor(sourceSamples * targetRate / sourceRate));
+    const output = Buffer.alloc(targetSamples * 2);
+    for (let i = 0; i < targetSamples; i++) {
+        const position = i * sourceRate / targetRate;
+        const leftIndex = Math.min(sourceSamples - 1, Math.floor(position));
+        const rightIndex = Math.min(sourceSamples - 1, leftIndex + 1);
+        const fraction = position - leftIndex;
+        const left = buffer.readInt16LE(leftIndex * 2);
+        const right = buffer.readInt16LE(rightIndex * 2);
+        const value = Math.round(left + (right - left) * fraction);
+        output.writeInt16LE(Math.max(-32768, Math.min(32767, value)), i * 2);
+    }
+    return output;
+}
+
+function normalizeGeminiAudioPayload(base64Data, mimeType = 'audio/pcm;rate=24000') {
+    const sourceRate = parsePcmSampleRate(mimeType);
+    const source = Buffer.from(base64Data || '', 'base64');
+    const pcm = resamplePcm16Mono(source, sourceRate, 16000);
+    return { data: pcm.toString('base64'), mimeType: 'audio/pcm;rate=16000' };
+}
+
+async function sendAudioToGemini(base64Data, geminiSessionRef, mimeType = 'audio/pcm;rate=24000') {
     if (!geminiSessionRef.current) return;
 
     try {
         process.stdout.write('.');
-        await geminiSessionRef.current.sendRealtimeInput({
-            audio: {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            },
-        });
+        const audio = normalizeGeminiAudioPayload(base64Data, mimeType);
+        await geminiSessionRef.current.sendRealtimeInput({ audio });
     } catch (error) {
         console.warn('Error sending audio to Gemini:');
     }
@@ -1426,9 +1454,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             process.stdout.write('.');
-            await geminiSessionRef.current.sendRealtimeInput({
-                audio: { data: data, mimeType: mimeType },
-            });
+            const audio = normalizeGeminiAudioPayload(data, mimeType);
+            await geminiSessionRef.current.sendRealtimeInput({ audio });
             return { success: true };
         } catch (error) {
             console.warn('Error sending system audio:');
@@ -1467,12 +1494,22 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             process.stdout.write(',');
-            await geminiSessionRef.current.sendRealtimeInput({
-                audio: { data: data, mimeType: mimeType },
-            });
+            const audio = normalizeGeminiAudioPayload(data, mimeType);
+            await geminiSessionRef.current.sendRealtimeInput({ audio });
             return { success: true };
         } catch (error) {
             console.warn('Error sending mic audio:');
+            return { success: false, error: error.message };
+        }
+    });
+
+    register('audio-stream-end', async () => {
+        if (currentProviderMode !== 'byok' || !geminiSessionRef.current) return { success: true, ignored: true };
+        try {
+            await geminiSessionRef.current.sendRealtimeInput({ audioStreamEnd: true });
+            return { success: true };
+        } catch (error) {
+            console.warn('Error ending Gemini audio stream:');
             return { success: false, error: error.message };
         }
     });
@@ -1664,6 +1701,9 @@ module.exports = {
     convertStereoToMono,
     stopMacOSAudioCapture,
     sendAudioToGemini,
+    parsePcmSampleRate,
+    resamplePcm16Mono,
+    normalizeGeminiAudioPayload,
     sendImageToGeminiHttp,
     setupGeminiIpcHandlers,
     classifyGeminiFailure, runGeminiRequest, connectGeminiLiveWithGuard, groundingFromResponse, configureSearch,
