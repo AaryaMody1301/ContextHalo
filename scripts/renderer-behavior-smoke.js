@@ -252,15 +252,21 @@ function installWindowsSmokeCheck(window) {
                     const homeReady = Boolean(mainView.shadowRoot.querySelector('.start-button') && mainView.shadowRoot.querySelector('label[for="session-profile"]'));
                     const errorReady = Boolean(mainView.shadowRoot?.querySelector('.session-status.error'));
 
+                    await customElements.whenDefined('customize-view');
                     const settingsView = document.createElement('customize-view');
                     settingsView.style.display = 'none';
                     document.body.appendChild(settingsView);
-                    await settingsView.updateComplete;
-                    const settingsText = settingsView.shadowRoot?.textContent || '';
-                    const settingsReady = settingsText.includes('Session Defaults') &&
-                        settingsText.includes('AI Provider & Models') &&
-                        settingsText.includes('AI Behavior') &&
-                        settingsText.includes('Keyboard Shortcuts');
+                    let settingsReady = false;
+                    for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
+                        await settingsView.updateComplete;
+                        const settingsText = settingsView.shadowRoot?.textContent || '';
+                        settingsReady = settingsText.includes('Session Defaults') &&
+                            settingsText.includes('AI Provider & Models') &&
+                            settingsText.includes('AI Behavior') &&
+                            settingsText.includes('Keyboard Shortcuts');
+                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
+                    }
+                    settingsView.remove();
 
                     const app = document.querySelector('context-halo-app');
                     for (let i = 0; i < 80 && app?._storageLoaded !== true; i++) {
