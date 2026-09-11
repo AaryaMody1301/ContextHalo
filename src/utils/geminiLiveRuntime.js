@@ -6,6 +6,10 @@ const {
     recordLiveFailure,
 } = require('./geminiLiveSupervisor');
 
+function connectUsesResumption(config) {
+    return Boolean(config?.sessionResumption?.handle);
+}
+
 function createGeminiLiveRuntime(options = {}) {
     const reconnect = options.reconnect;
     if (typeof reconnect !== 'function') throw new TypeError('reconnect callback is required');
@@ -69,11 +73,14 @@ function createGeminiLiveRuntime(options = {}) {
 
             reconnecting = true;
             generation += 1;
+            const config = liveConnectReliabilityConfig(state);
+            const usedResumption = connectUsesResumption(config);
             try {
                 await reconnect({
                     reason: activeReason,
                     generation,
-                    config: liveConnectReliabilityConfig(state),
+                    config,
+                    usedResumption,
                     state: { ...state },
                 });
             } catch (error) {
@@ -123,12 +130,29 @@ function createGeminiLiveRuntime(options = {}) {
         return recorded;
     }
 
-    function callbacks() {
+    function callbacks(handlers = {}) {
+        const current = typeof handlers.current === 'function' ? handlers.current : () => true;
         return {
-            onopen: onOpen,
-            onmessage: onMessage,
-            onerror: event => onFailure(event, 'error'),
-            onclose: event => onFailure(event, 'close'),
+            onopen(event) {
+                if (!current()) return;
+                onOpen();
+                handlers.onopen?.(event, getState());
+            },
+            onmessage(message) {
+                if (!current()) return;
+                const observed = onMessage(message);
+                handlers.onmessage?.(message, observed, getState());
+            },
+            onerror(event) {
+                if (!current()) return;
+                const result = onFailure(event, 'error');
+                handlers.onerror?.(event, result, getState());
+            },
+            onclose(event) {
+                if (!current()) return;
+                const result = onFailure(event, 'close');
+                handlers.onclose?.(event, result, getState());
+            },
         };
     }
 
@@ -149,4 +173,4 @@ function createGeminiLiveRuntime(options = {}) {
     };
 }
 
-module.exports = { createGeminiLiveRuntime };
+module.exports = { createGeminiLiveRuntime, connectUsesResumption };
