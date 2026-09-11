@@ -1,5 +1,7 @@
 const SCREEN_PROVIDER_BUDGET_MS = 70000;
 const SCREEN_SESSION_TIMEOUT_MS = 75000;
+// The classic renderer mirrors this value locally because its page script cannot
+// safely resolve this CommonJS module path; regression coverage enforces parity.
 const SCREEN_RENDERER_TIMEOUT_MS = 80000;
 
 function normalizeModelId(model) {

@@ -9,6 +9,13 @@ function settings(storage) {
     return Object.assign(Object.create(Target.prototype), { _saveVersions: {}, _failedWrites: new Map(), saveStates: {}, theme: 'dark' });
 }
 
+test('Settings first render tolerates an unset save-state bag', () => {
+    const view = settings({ updatePreference: async () => ({ success: true }) });
+    view.saveStates = undefined;
+    assert.doesNotThrow(() => view.renderSaveFeedback());
+    assert.doesNotThrow(() => view.retrySaves());
+});
+
 test('storage writes are checked, serialized and snapshotted; failed writes do not block later edits', async () => {
     let release; const writes = [];
     const f = rendererFixture({ invoke: (channel, key, value) => {

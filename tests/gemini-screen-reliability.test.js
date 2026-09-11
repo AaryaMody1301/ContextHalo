@@ -23,6 +23,14 @@ test('screen reliability budgets leave one owner at each layer', () => {
     assert.ok(SCREEN_SESSION_TIMEOUT_MS < SCREEN_RENDERER_TIMEOUT_MS);
 });
 
+test('renderer watchdog does not depend on a page-relative CommonJS require', () => {
+    const source = fs.readFileSync('src/utils/renderer.js', 'utf8');
+    assert.doesNotMatch(source, /require\(['"]\.\/geminiScreenReliability['"]\)/);
+    const match = source.match(/const SCREEN_RENDERER_TIMEOUT_MS = (\d+);/);
+    assert.ok(match, 'renderer watchdog constant is declared locally');
+    assert.equal(Number(match[1]), SCREEN_RENDERER_TIMEOUT_MS);
+});
+
 test('low thinking is enabled only for compatible Gemini Flash models', () => {
     for (const model of ['gemini-3.8-flash', 'models/gemini-3.7-flash', 'gemini-3.6-flash-preview']) {
         assert.deepEqual(screenThinkingConfig(model), { thinkingConfig: { thinkingLevel: 'low' } });
