@@ -366,16 +366,18 @@ export class CustomizeView extends LitElement {
     }
 
     retrySaves() {
-        if (this.saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
+        const saveStates = this.saveStates || {};
+        if (saveStates.load) { this.saveStates = {}; this.settingsLoading = true; return this._loadFromStorage(); }
         return Promise.all([...this._failedWrites.values()].map(retry => retry()));
     }
 
     renderSaveFeedback() {
-        const values = Object.values(this.saveStates);
-        const failed = values.includes('failed') || this.saveStates.load;
+        const saveStates = this.saveStates || {};
+        const values = Object.values(saveStates);
+        const failed = values.includes('failed') || Boolean(saveStates.load);
         const saving = values.includes('saving');
         return html`<div class="save-feedback" role="status" aria-live="polite" data-state=${failed ? 'error' : saving ? 'saving' : 'saved'}>
-            <span>${this.settingsLoading ? 'Loading settings...' : failed ? (this.saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
+            <span>${this.settingsLoading ? 'Loading settings...' : failed ? (saveStates.load || 'Some changes are not saved. Your edits are retained.') : saving ? 'Saving changes...' : values.length ? 'Settings saved.' : 'Changes are saved automatically.'}</span>
             ${failed ? html`<button class="control" @click=${this.retrySaves} ?disabled=${saving}>Retry save</button>` : ''}
         </div>`;
     }
@@ -807,7 +809,7 @@ export class CustomizeView extends LitElement {
                     <div class="page-title">Settings</div>
                     <div class="page-subtitle">Configure session defaults, AI behavior, audio, appearance, keyboard shortcuts, and local data.</div>
                     ${this.renderSaveFeedback()}
-                    <fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates.load)}>
+                    <fieldset style="border:0;padding:0;margin:0;min-width:0;display:contents" ?disabled=${this.settingsLoading || Boolean(this.saveStates?.load)}>
                     ${this.renderSessionSection()}
                     ${this.renderProviderSection()}
                     ${this.renderAISection()}
