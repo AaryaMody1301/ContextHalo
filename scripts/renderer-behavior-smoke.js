@@ -236,7 +236,7 @@ function installWindowsSmokeCheck(window) {
         setTimeout(() => app.exit(success ? 0 : 1), 50);
     };
 
-    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 120 seconds'), 120000);
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within diagnostic 20 seconds'), 20000);
 
     window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
         finish(false, `load failed (${errorCode}): ${errorDescription}`);
@@ -252,6 +252,7 @@ function installWindowsSmokeCheck(window) {
                     await customElements.whenDefined('main-view');
                     await customElements.whenDefined('assistant-view');
                     await customElements.whenDefined('customize-view');
+                    console.log('[Smoke stage] shell-elements-defined');
 
                     const mainView = document.createElement('main-view');
                     mainView.style.display = 'none';
@@ -263,6 +264,7 @@ function installWindowsSmokeCheck(window) {
                     const mainText = mainView.shadowRoot?.textContent || '';
                     const homeReady = Boolean(mainView.shadowRoot.querySelector('.start-button') && mainView.shadowRoot.querySelector('label[for="session-profile"]'));
                     const errorReady = Boolean(mainView.shadowRoot?.querySelector('.session-status.error'));
+                    console.log('[Smoke stage] shell-main-ready');
 
                     await customElements.whenDefined('customize-view');
                     const settingsView = document.createElement('customize-view');
@@ -279,6 +281,7 @@ function installWindowsSmokeCheck(window) {
                         if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
                     }
                     settingsView.remove();
+                    console.log('[Smoke stage] shell-detached-settings-ready-' + settingsReady);
 
                     const app = document.querySelector('context-halo-app');
                     for (let i = 0; i < 80 && app?._storageLoaded !== true; i++) {
@@ -287,16 +290,20 @@ function installWindowsSmokeCheck(window) {
                     app.currentView = 'main';
                     app.requestUpdate();
                     await app.updateComplete;
+                    console.log('[Smoke stage] shell-app-main-ready');
                     const content = app.shadowRoot?.querySelector('.content-inner');
                     const liveMain = app.shadowRoot?.querySelector('main-view');
                     const mainOverflow = liveMain ? getComputedStyle(liveMain).overflowY : '';
                     if (liveMain) liveMain.style.minHeight = '1800px';
                     await new Promise(resolve => requestAnimationFrame(resolve));
+                    console.log('[Smoke stage] shell-main-frame');
                     if (content) content.scrollTop = content.scrollHeight;
                     const parentCanScroll = Boolean(content && content.scrollTop > 0);
                     app.navigate('customize');
                     await app.updateComplete;
+                    console.log('[Smoke stage] shell-customize-app-update');
                     await new Promise(resolve => requestAnimationFrame(resolve));
+                    console.log('[Smoke stage] shell-customize-frame');
                     const settingsInApp = app.shadowRoot?.querySelector('customize-view');
                     for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
                         await settingsInApp?.updateComplete;
@@ -307,6 +314,7 @@ function installWindowsSmokeCheck(window) {
                             settingsText.includes('Keyboard Shortcuts');
                         if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
                     }
+                    console.log('[Smoke stage] shell-mounted-settings-ready-' + settingsReady);
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
                     const navigationReset = Boolean(content && content.scrollTop === 0);
