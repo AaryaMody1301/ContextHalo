@@ -12,8 +12,6 @@ async function rendererBehaviorSmoke() {
     };
     const app = document.querySelector('context-halo-app');
     const api = window.contextHalo;
-    const stage = value => { window.__contextHaloSmokeStage = value; console.log('[Smoke stage] ' + value); };
-    stage('renderer-start');
     await waitUntil(()=>app._storageLoaded);
     app.currentView='assistant'; app._sessionStarted=true; app.providerState='ready';
     app.captureState={state:'ready',screen:true,audioReady:true,microphone:true};
@@ -83,8 +81,6 @@ async function rendererBehaviorSmoke() {
         const response=root.querySelector('#responseContainer');
         verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe && response.querySelector('strong')?.textContent==='Safe','Rendered Markdown removes active HTML but preserves formatting');
     } finally { api.sendTextMessage=original;app._sessionStarted=false;app._setLifecycle('idle','Fixture complete'); }
-
-    stage('knowledge');
     const ipc=window.electronAPI;
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
     const text='The data pipeline uses idempotent ingestion to prevent duplicate events. Atomic checkpoints record the last committed offset so interrupted jobs resume safely. Partitioned tables and bounded retries improve recovery without silently discarding records.';
@@ -99,7 +95,6 @@ async function rendererBehaviorSmoke() {
         await call('knowledge:set-enabled',knowledgeDoc.id,false);
         verify((await call('knowledge:search','idempotent ingestion')).length===0,'Disabled knowledge is excluded from retrieval');
     } finally { await call('knowledge:delete',knowledgeDoc.id); }
-    stage('history');
     const sessionId='1234567890123';
     await call('storage:save-session',sessionId,{profile:'meeting',liveTranscript:[{text:'We decided to deploy on Friday.',provider:'gemini',timestamp:1}],markers:[{type:'decision',timestamp:1}],sessionPack:{title:'Smoke session'}});
     await call('storage:save-session',sessionId,{conversationHistory:[{transcription:'What is next?',ai_response:'Test the deployment.'}]});
@@ -131,7 +126,6 @@ async function rendererBehaviorSmoke() {
     await waitUntil(()=>home.shadowRoot.querySelector('.page-title')?.getBoundingClientRect().top>=40);
     verify(home.shadowRoot.querySelector('.page-title').getBoundingClientRect().top>=40,'Home heading is below the draggable caption');
     verify(getComputedStyle(app.shadowRoot.querySelector('.sidebar-nav')).overflowY==='auto','Sidebar navigation remains scrollable in short windows');
-    stage('layout');
     const previousLayout = app.layoutMode;
     for (const layout of ['normal', 'compact']) {
         app.layoutMode = layout; await settle(app);
@@ -144,7 +138,6 @@ async function rendererBehaviorSmoke() {
         app.navigate('main'); await settle(app);
     }
     app.layoutMode = previousLayout; await settle(app);
-    stage('workspaces');
     for (const id of ['phase4-knowledge-nav','phase4-practice-nav','phase4-review-nav']) {
         await waitUntil(()=>app.shadowRoot.getElementById(id));
         app.shadowRoot.getElementById(id).click();
@@ -153,7 +146,6 @@ async function rendererBehaviorSmoke() {
         verify(app.shadowRoot.activeElement?.closest('.phase4-overlay'),'Workspace focus is inside the modal: '+id);
         app.shadowRoot.querySelector('.phase4-close')?.click();
     }
-    stage('grounding');
     // Real native controls and isolated provider attribution; no external account needed.
     app.navigate('assistant');await settle(app);
     const live=app.shadowRoot.querySelector('.live-bar');
@@ -171,7 +163,6 @@ async function rendererBehaviorSmoke() {
     await api.storage.updatePreference('backgroundTransparency',storedAlpha);
     app.searchState={requested:true,effective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
     verify(app.shadowRoot.querySelector('.search-state').textContent.includes('off (session)'),'Requested/effective Search remains visible independently of transient status');
-    stage('settings');
     app.navigate('customize'); await settle(app);
     const settings = app.shadowRoot.querySelector('customize-view'); await waitUntil(() => !settings.settingsLoading);
     const originalSave = api.storage.updatePreference;
@@ -183,7 +174,6 @@ async function rendererBehaviorSmoke() {
     await settings.retrySaves(); await settle(settings);
     verify(settings.saveStates.audioMode === 'saved', 'Settings Retry confirms persistence');
     await api.storage.updatePreference('audioMode', 'speaker_only');
-    stage('form-labels');
     for (const page of ['main','customize','ai-customize','history','help','feedback','onboarding']) {
         app.navigate(page); await settle(app);
         const view = app.shadowRoot.querySelector(page === 'customize' ? 'customize-view' : page === 'main' ? 'main-view' : page === 'ai-customize' ? 'ai-customize-view' : `${page}-view`);
@@ -191,7 +181,6 @@ async function rendererBehaviorSmoke() {
         const unnamed = [...view.shadowRoot.querySelectorAll('input,textarea,select')].filter(control => !control.labels?.length && !control.getAttribute('aria-label') && !control.getAttribute('aria-labelledby'));
         verify(unnamed.length === 0, `${page}: every form control has a programmatic label`);
     }
-    stage('reading');
     app.navigate('assistant'); await settle(app);
     const reading = app.shadowRoot.querySelector('assistant-view');
     app.responses = [Array.from({length:60}, (_,n)=>`Paragraph ${n}: long fixture answer with readable text.`).join('\n\n'), 'Background card'];
@@ -208,7 +197,6 @@ async function rendererBehaviorSmoke() {
     app.addNewResponse('A newly arrived voice answer', {requestId:'reading-voice-new',kind:'voice'});
     await settle(app); await settle(reading);
     verify(app.currentResponseIndex === 0 && scroll.scrollTop === latestPosition, 'A new voice card does not replace the latest answer while its earlier paragraphs are being read');
-    stage('renderer-complete');
     return checks;
 }
 
@@ -223,7 +211,6 @@ function installWindowsSmokeCheck(window) {
     const rendererErrors = [];
     window.webContents.on('console-message', (_event, ...details) => {
         const message = typeof details[0] === 'object' ? details[0] : { level: details[0], message: details[1] };
-        if (String(message.message || '').startsWith('[Smoke stage]')) console.log(String(message.message));
         if (message.level === 'error' || message.level === 3) rendererErrors.push(String(message.message).slice(0, 2000));
     });
     let finished = false;
@@ -236,7 +223,7 @@ function installWindowsSmokeCheck(window) {
         setTimeout(() => app.exit(success ? 0 : 1), 50);
     };
 
-    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within diagnostic 20 seconds'), 20000);
+    const timeout = setTimeout(() => finish(false, 'renderer did not become ready within 120 seconds'), 120000);
 
     window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
         finish(false, `load failed (${errorCode}): ${errorDescription}`);
@@ -252,7 +239,6 @@ function installWindowsSmokeCheck(window) {
                     await customElements.whenDefined('main-view');
                     await customElements.whenDefined('assistant-view');
                     await customElements.whenDefined('customize-view');
-                    console.log('[Smoke stage] shell-elements-defined');
 
                     const mainView = document.createElement('main-view');
                     mainView.style.display = 'none';
@@ -264,24 +250,8 @@ function installWindowsSmokeCheck(window) {
                     const mainText = mainView.shadowRoot?.textContent || '';
                     const homeReady = Boolean(mainView.shadowRoot.querySelector('.start-button') && mainView.shadowRoot.querySelector('label[for="session-profile"]'));
                     const errorReady = Boolean(mainView.shadowRoot?.querySelector('.session-status.error'));
-                    console.log('[Smoke stage] shell-main-ready');
 
                     await customElements.whenDefined('customize-view');
-                    const settingsView = document.createElement('customize-view');
-                    settingsView.style.display = 'none';
-                    document.body.appendChild(settingsView);
-                    let settingsReady = false;
-                    for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
-                        await settingsView.updateComplete;
-                        const settingsText = settingsView.shadowRoot?.textContent || '';
-                        settingsReady = settingsText.includes('Session Defaults') &&
-                            settingsText.includes('AI Provider & Models') &&
-                            settingsText.includes('AI Behavior') &&
-                            settingsText.includes('Keyboard Shortcuts');
-                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
-                    }
-                    settingsView.remove();
-                    console.log('[Smoke stage] shell-detached-settings-ready-' + settingsReady);
 
                     const app = document.querySelector('context-halo-app');
                     for (let i = 0; i < 80 && app?._storageLoaded !== true; i++) {
@@ -290,23 +260,19 @@ function installWindowsSmokeCheck(window) {
                     app.currentView = 'main';
                     app.requestUpdate();
                     await app.updateComplete;
-                    console.log('[Smoke stage] shell-app-main-ready');
                     const content = app.shadowRoot?.querySelector('.content-inner');
                     const liveMain = app.shadowRoot?.querySelector('main-view');
                     const mainOverflow = liveMain ? getComputedStyle(liveMain).overflowY : '';
                     if (liveMain) liveMain.style.minHeight = '1800px';
                     await new Promise(resolve => requestAnimationFrame(resolve));
-                    console.log('[Smoke stage] shell-main-frame');
                     if (content) content.scrollTop = content.scrollHeight;
                     const parentCanScroll = Boolean(content && content.scrollTop > 0);
                     app.navigate('customize');
                     await app.updateComplete;
-                    console.log('[Smoke stage] shell-customize-app-update');
                     await new Promise(resolve => requestAnimationFrame(resolve));
-                    console.log('[Smoke stage] shell-customize-frame');
                     const settingsInApp = app.shadowRoot?.querySelector('customize-view');
+                    let settingsReady = false;
                     for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
-                        await settingsInApp?.updateComplete;
                         const settingsText = settingsInApp?.shadowRoot?.textContent || '';
                         settingsReady = settingsText.includes('Session Defaults') &&
                             settingsText.includes('AI Provider & Models') &&
@@ -314,14 +280,12 @@ function installWindowsSmokeCheck(window) {
                             settingsText.includes('Keyboard Shortcuts');
                         if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
                     }
-                    console.log('[Smoke stage] shell-mounted-settings-ready-' + settingsReady);
                     const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');
                     const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';
                     const navigationReset = Boolean(content && content.scrollTop === 0);
                     const singleScrollOwner = mainOverflow !== 'auto' && settingsOverflow !== 'auto';
 
                     mainView.remove();
-                    settingsView.remove();
 
                     return {
                         bridge: Boolean(window.electronAPI && window.require),
@@ -349,7 +313,6 @@ function installWindowsSmokeCheck(window) {
                 result?.navigationReset === true &&
                 result?.singleScrollOwner === true;
             if (!ready) throw new Error(`unexpected renderer state ${JSON.stringify(result)}`);
-            console.log('[Windows smoke] shell ready ' + JSON.stringify(result));
             
             const checks = await window.webContents.executeJavaScript(`(${rendererBehaviorSmoke.toString()})()`, true);
             console.log('[Windows behavior smoke] ' + JSON.stringify(checks));

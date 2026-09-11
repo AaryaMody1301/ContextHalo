@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const {
     SCREEN_PROVIDER_BUDGET_MS,
     SCREEN_SESSION_TIMEOUT_MS,
@@ -69,4 +70,16 @@ test('screen 504 retry does not reconnect or end the Live interview', async t =>
     assert.equal(result.text, 'Recovered after deadline');
     assert.equal(calls, 2);
     assert.equal(f.connections.length, liveConnections);
+});
+
+
+test('Assistant screen UI leaves the renderer watchdog as the only UI deadline owner', () => {
+    const source = fs.readFileSync('src/components/views/AssistantView.js', 'utf8');
+    const start = source.indexOf('    async handleScreenAnswer(options = {}) {');
+    const end = source.indexOf('    handleResponseLink(event) {', start);
+    assert.ok(start >= 0 && end > start);
+    const handler = source.slice(start, end);
+    assert.doesNotMatch(handler, /setTimeout\s*\(/);
+    assert.doesNotMatch(handler, /clearTimeout\s*\(/);
+    assert.match(handler, /new AbortController\(\)/);
 });

@@ -581,7 +581,6 @@ export class AssistantView extends LitElement {
         this._analysisController = controller;
         this.isAnalyzing = true;
         this.analysisError = '';
-        const timer = setTimeout(() => controller.abort(), 65000);
         try {
             if (!this.onAnalyzeScreen && typeof window.captureManualScreenshot !== 'function') throw new Error('Screen capture is not ready.');
             const captureOptions = { signal: controller.signal, region: options.region };
@@ -593,7 +592,6 @@ export class AssistantView extends LitElement {
             this.analysisError = controller.signal.aborted ? 'Screen analysis cancelled. Your draft is unchanged.' : error?.message || 'Screen analysis failed.';
             return { success: false, error: this.analysisError };
         } finally {
-            clearTimeout(timer);
             if (this._analysisController === controller) this._analysisController = null;
             this.isAnalyzing = false;
         }
