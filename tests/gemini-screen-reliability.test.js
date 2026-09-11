@@ -83,6 +83,11 @@ test('Assistant screen UI leaves the renderer watchdog as the only UI deadline o
     assert.match(handler, /new AbortController\(\)/);
 });
 
+test('Settings explicitly enters the Lit connected lifecycle', () => {
+    const source = fs.readFileSync('src/components/views/CustomizeView.js', 'utf8');
+    assert.match(source, /connectedCallback\(\)\s*\{\s*super\.connectedCallback\(\);\s*\}/);
+});
+
 test('Windows Electron smoke re-queries mounted Settings instead of caching a missing view', () => {
     const source = fs.readFileSync('scripts/renderer-behavior-smoke.js', 'utf8');
     const navigation = source.indexOf("app.navigate('customize');");
