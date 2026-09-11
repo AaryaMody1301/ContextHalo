@@ -1,0 +1,71 @@
+name: Apply renderer smoke readiness fix
+
+on:
+  push:
+    branches:
+      - fix/gemini-screen-reliability
+    paths:
+      - .github/workflows/apply-renderer-smoke-readiness-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/gemini-screen-reliability
+          fetch-depth: 0
+
+      - name: Patch renderer readiness probe
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'scripts/renderer-behavior-smoke.js';
+          let source = fs.readFileSync(file, 'utf8');
+          const before = `                    const settingsView = document.createElement('customize-view');
+                    settingsView.style.display = 'none';
+                    document.body.appendChild(settingsView);
+                    await settingsView.updateComplete;
+                    const settingsText = settingsView.shadowRoot?.textContent || '';
+                    const settingsReady = settingsText.includes('Session Defaults') &&
+                        settingsText.includes('AI Provider & Models') &&
+                        settingsText.includes('AI Behavior') &&
+                        settingsText.includes('Keyboard Shortcuts');`;
+          const after = `                    await customElements.whenDefined('customize-view');
+                    const settingsView = document.createElement('customize-view');
+                    settingsView.style.display = 'none';
+                    document.body.appendChild(settingsView);
+                    let settingsReady = false;
+                    for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {
+                        await settingsView.updateComplete;
+                        const settingsText = settingsView.shadowRoot?.textContent || '';
+                        settingsReady = settingsText.includes('Session Defaults') &&
+                            settingsText.includes('AI Provider & Models') &&
+                            settingsText.includes('AI Behavior') &&
+                            settingsText.includes('Keyboard Shortcuts');
+                        if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));
+                    }
+                    settingsView.remove();`;
+          if (!source.includes(before)) throw new Error('Expected settings readiness probe was not found exactly once.');
+          if (source.indexOf(before) !== source.lastIndexOf(before)) throw new Error('Settings readiness probe matched more than once.');
+          source = source.replace(before, after);
+          fs.writeFileSync(file, source);
+          NODE
+
+      - name: Validate source syntax
+        run: npm run check
+
+      - name: Remove one-time workflow and commit
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-renderer-smoke-readiness-fix.yml
+          git add scripts/renderer-behavior-smoke.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test: wait for Settings readiness in Electron smoke"
+          git push origin HEAD:fix/gemini-screen-reliability
