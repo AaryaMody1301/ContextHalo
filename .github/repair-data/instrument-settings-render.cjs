@@ -1,0 +1,12 @@
+const fs = require('node:fs');
+const path = 'scripts/renderer-behavior-smoke.js';
+let source = fs.readFileSync(path, 'utf8');
+const first = `                    const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');\n                    const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';`;
+const firstReplacement = `                    let settingsUpdateError = '';\n                    if (settingsInApp) {\n                        try { await settingsInApp.updateComplete; }\n                        catch (error) { settingsUpdateError = String(error?.stack || error?.message || error).slice(0, 4000); }\n                    }\n                    const unifiedPage = settingsInApp?.shadowRoot?.querySelector('.unified-page');\n                    const settingsOverflow = unifiedPage ? getComputedStyle(unifiedPage).overflowY : '';`;
+if (!source.includes(first)) throw new Error('Settings diagnostic insertion point not found');
+source = source.replace(first, firstReplacement);
+const second = `                        settings: settingsReady,\n                        parentCanScroll,`;
+const secondReplacement = `                        settings: settingsReady,\n                        settingsDebug: {\n                            currentView: app?.currentView || null,\n                            present: Boolean(settingsInApp),\n                            shadow: Boolean(settingsInApp?.shadowRoot),\n                            childCount: settingsInApp?.shadowRoot?.childNodes?.length ?? -1,\n                            text: String(settingsInApp?.shadowRoot?.textContent || '').slice(0, 2000),\n                            html: String(settingsInApp?.shadowRoot?.innerHTML || '').slice(0, 4000),\n                            updateError: settingsUpdateError,\n                            constructorName: settingsInApp?.constructor?.name || null,\n                            definedName: customElements.get('customize-view')?.name || null,\n                        },\n                        parentCanScroll,`;
+if (!source.includes(second)) throw new Error('Settings diagnostic result point not found');
+source = source.replace(second, secondReplacement);
+fs.writeFileSync(path, source);
