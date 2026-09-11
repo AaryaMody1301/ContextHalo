@@ -8,6 +8,7 @@ const { createRequire } = require('node:module');
 function geminiFixture(options = {}) {
     const filename = path.resolve('src/utils/gemini.js');
     const actual = createRequire(filename);
+    const liveRuntimeModule = actual('./geminiLiveRuntime');
     const handlers = new Map();
     const events = [];
     const generated = [];
@@ -47,6 +48,19 @@ function geminiFixture(options = {}) {
         sendLocalImage: async () => ({ success: true, text: 'Local screen answer' }),
         ...options.local,
     };
+    // The production runtime intentionally backs off before reconnecting. Unit tests
+    // flush those timers on the next microtask so recovery assertions stay fast and
+    // deterministic without weakening production retry behavior.
+    const liveRuntimeOverrides = {
+        setTimer(fn) {
+            const timer = { cancelled: false };
+            queueMicrotask(() => { if (!timer.cancelled) void fn(); });
+            return timer;
+        },
+        clearTimer(timer) {
+            if (timer) timer.cancelled = true;
+        },
+    };
     const scope = {
         module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process, Buffer, URL,
         AbortController, setTimeout, clearTimeout, global: {},
@@ -73,6 +87,13 @@ function geminiFixture(options = {}) {
             if (name === './windowsRuntimeMain') return { prepareWindowsProvider: mode => preparations.push(['windows', mode]) };
             if (name === './runtimeHardeningMain') return { prepareRuntimeProvider: mode => preparations.push(['runtime', mode]) };
             if (name === './contextCaptureMain') return { cancelRegionSelection() {} };
+            if (name === './geminiLiveRuntime') return {
+                ...liveRuntimeModule,
+                createGeminiLiveRuntime: runtimeOptions => liveRuntimeModule.createGeminiLiveRuntime({
+                    ...runtimeOptions,
+                    ...liveRuntimeOverrides,
+                }),
+            };
             return actual(name);
         },
     };

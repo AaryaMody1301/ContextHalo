@@ -14,8 +14,9 @@ const { readSseJson } = require('./sse');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
+const { createGeminiLiveRuntime } = require('./geminiLiveRuntime');
 let liveGeneration = 0;
-let reconnectPromise = null;
+let manualReconnectPromise = null;
 let initializePromise = null;
 let liveController = new AbortController();
 let mainSessionActive = false;
@@ -73,7 +74,7 @@ const GROQ_AUDIO_CHUNK_SECONDS = 8;
 let groqSystemAudioBuffer = Buffer.alloc(0);
 let groqTranscriptionInFlight = false;
 let groqRateLimitState = null;
-let geminiSessionResumptionHandle = null;
+let geminiLiveRuntime = null;
 let lastGeminiInitializationError = '';
 const GROQ_EMPTY_RESPONSE_MESSAGE =
     'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
@@ -81,8 +82,6 @@ const GROQ_EMPTY_RESPONSE_MESSAGE =
 // Reconnection variables
 let isUserClosing = false;
 let sessionParams = null;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 2;
 
 function sendToRenderer(channel, data, metadata = getRequestMetadata()) {
     metadata = { uiEpoch: providerUiEpoch, ...metadata };
@@ -223,7 +222,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         .filter(value => typeof value === 'string').join(' ').slice(0, 32000).toLowerCase();
     const number = [error?.status, error?.statusCode, detail?.code, error?.code]
         .map(Number).find(value => value >= 400 && value <= 599);
-    const httpStatus = number || Number(text.match(/\b(400|401|403|404|408|429|500|502|503|504)\b/)?.[1]) || null;
+    const httpStatus = number || Number(text.match(/\b(400|401|403|404|408|409|429|500|502|503|504)\b/)?.[1]) || null;
     const socketCode = Number(error?.code) >= 1000 && Number(error?.code) <= 4999 ? Number(error.code) : null;
     const details = Array.isArray(detail.details) ? detail.details : [];
     const quotaText = JSON.stringify(details.filter(item => /QuotaFailure/.test(item?.['@type'] || ''))).toLowerCase();
@@ -255,6 +254,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     else if (httpStatus === 429 || /resource[_ -]?exhausted|quota_exceeded|rate_limit_exceeded/.test(text)) {
         category = quota ? 'quota-exhausted' : throttled || retryAfterMs !== null ? 'throttled' : 'rate-or-quota';
     } else if (httpStatus === 404 || /model_not_found|model.+not found/.test(text)) category = 'model-unavailable';
+    else if (httpStatus === 409 && /\baborted\b/.test(text) && !/already[_ -]?exists/.test(text)) category = 'aborted-conflict';
     else if ((httpStatus === 400 || socketCode === 1007 || socketCode === 1008) && /tool|google.?search|grounding/.test(text)) category = 'unsupported-tool';
     else if (httpStatus === 400 || socketCode === 1007 || socketCode === 1008) category = 'invalid-configuration';
     else if ([408, 500, 502, 503, 504].includes(httpStatus) || [1006, 1011, 1012, 1013].includes(socketCode)
@@ -267,6 +267,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         throttled: 'Gemini temporarily throttled this request. Wait before retrying; your session and draft are retained.',
         'rate-or-quota': 'Gemini returned 429 without enough detail to distinguish throttling from exhausted quota. Check project usage before retrying.',
         'model-unavailable': 'The configured Gemini model is unavailable to this project. Select a supported model in Home; your saved model has not been changed.',
+        'aborted-conflict': 'Gemini interrupted the Live connection because of a transient session conflict. ContextHalo will reconnect without ending the interview.',
         'unsupported-tool': 'Gemini rejected the configured tool/model combination. Review model capabilities, or explicitly continue this session without Search.',
         'invalid-configuration': 'Gemini rejected the session configuration. Review the selected model and API project settings.',
         transient: 'Gemini could not complete the request because of a network, timeout or server failure. Retry when connectivity recovers.',
@@ -274,7 +275,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         'empty-response': 'Gemini returned no text. Review the prompt or model safety settings, then retry.',
         unknown: 'Gemini could not complete the request. Review provider settings and retry. No provider or account was changed.',
     };
-    const retryable = ['throttled', 'transient'].includes(category);
+    const retryable = ['throttled', 'transient', 'aborted-conflict'].includes(category);
     const retryAt = retryAfterMs === null ? null : now + retryAfterMs;
     return { category, httpStatus, socketCode, operation, model: String(model).slice(0, 160), retryable,
         retryAfterMs, retryAt, canDisableSearch: category === 'unsupported-tool' || searchRelated && ['quota-exhausted', 'throttled', 'rate-or-quota'].includes(category),
@@ -831,9 +832,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     const signal = liveController.signal;
     isInitializingSession = true;
     if (!isReconnect) {
-        geminiSessionResumptionHandle = null;
+        geminiLiveRuntime?.stop();
+        geminiLiveRuntime = null;
         sessionParams = { apiKey, customPrompt, profile, language, provider: 'byok' };
-        reconnectAttempts = 0;
     }
     let liveSessionReady = false;
     let liveResponseId = randomUUID();
@@ -841,6 +842,25 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     let audioTextBuffer = '';
     let liveGrounding;
     const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
+    if (!geminiLiveRuntime) {
+        geminiLiveRuntime = createGeminiLiveRuntime({
+            reconnect: async details => {
+                const success = await attemptReconnect(details);
+                if (!success) throw failureError(lastGeminiFailure || classifyGeminiFailure(new Error('Gemini reconnect failed'), 'live', liveModel));
+            },
+            normalizeFailure: error => classifyGeminiFailure(error, 'live', liveModel),
+            publishState(state, detail) {
+                if (state === 'reconnecting') {
+                    publishProviderState('reconnecting');
+                    sendToRenderer('update-status', 'Gemini connection interrupted; reconnecting…');
+                } else if (state === 'failed') {
+                    lastGeminiFailure = detail || lastGeminiFailure;
+                    publishProviderState('failed', lastGeminiFailure);
+                    if (lastGeminiFailure?.message) sendToRenderer('update-status', lastGeminiFailure.message);
+                }
+            },
+        });
+    }
     const current = () => generation === liveGeneration && !signal.aborted;
     currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
     let instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt), getPreferences().responseMode);
@@ -853,8 +873,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             if (preflight) throw preflight;
         }
         const client = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
-        const callbacks = {
-            onopen() { if (current()) sendToRenderer('update-status', 'Gemini connected; preparing the session...'); },
+        const callbacks = geminiLiveRuntime.callbacks({
+            current,
+            onopen() {
+                liveSessionReady = true;
+                if (current()) sendToRenderer('update-status', 'Gemini connected; preparing the session...');
+            },
             onmessage(message) {
                 if (!current()) return;
                 const interim = extractGeminiTranscript(message, 'interimInputTranscription');
@@ -869,62 +893,64 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     liveGrounding = grounding;
                     if (messageBuffer) sendToRenderer('update-response', messageBuffer, { requestId: liveResponseId, kind: 'voice', grounding });
                 }
-                    const content = message.serverContent || {};
-                    for (const part of content.modelTurn?.parts || []) {
-                        if (part?.text && !part.thought) modelTextBuffer += part.text;
+                const content = message.serverContent || {};
+                for (const part of content.modelTurn?.parts || []) {
+                    if (part?.text && !part.thought) modelTextBuffer += part.text;
+                }
+                if (content.outputTranscription?.text) audioTextBuffer += content.outputTranscription.text;
+                // Some Live models emit both text parts and an audio transcript.
+                // They are alternative views, not two strings to concatenate.
+                const visible = audioTextBuffer || modelTextBuffer;
+                if (visible && visible !== messageBuffer) {
+                    const isFirstChunk = messageBuffer === '';
+                    messageBuffer = visible;
+                    sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer,
+                        { requestId: liveResponseId, kind: 'voice', grounding: liveGrounding });
+                }
+                // generationComplete can precede the final transcription. Save
+                // once at turnComplete (or interruption), not at generationComplete.
+                if (content.turnComplete || content.interrupted) {
+                    if (currentTranscription.trim() && messageBuffer.trim()) {
+                        saveConversationTurn(currentTranscription, messageBuffer, liveGrounding);
                     }
-                    if (content.outputTranscription?.text) audioTextBuffer += content.outputTranscription.text;
-                    // Some Live models emit both text parts and an audio transcript.
-                    // They are alternative views, not two strings to concatenate.
-                    const visible = audioTextBuffer || modelTextBuffer;
-                    if (visible && visible !== messageBuffer) {
-                        const isFirstChunk = messageBuffer === '';
-                        messageBuffer = visible;
-                        sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer,
-                            { requestId: liveResponseId, kind: 'voice', grounding: liveGrounding });
-                    }
-                    const resumeHandle = message.sessionResumptionUpdate?.newHandle;
-                    if (resumeHandle) geminiSessionResumptionHandle = resumeHandle;
-                    // generationComplete can precede the final transcription. Save
-                    // once at turnComplete (or interruption), not at generationComplete.
-                    if (content.turnComplete || content.interrupted) {
-                        if (currentTranscription.trim() && messageBuffer.trim()) {
-                            saveConversationTurn(currentTranscription, messageBuffer, liveGrounding);
-                        }
-                        currentTranscription = '';
-                        messageBuffer = '';
-                        modelTextBuffer = '';
-                        audioTextBuffer = '';
-                        liveGrounding = undefined;
-                        liveResponseId = randomUUID();
-                        sendToRenderer('update-status', content.interrupted ? 'Response interrupted' : 'Gemini ready');
-                    }
-
+                    currentTranscription = '';
+                    messageBuffer = '';
+                    modelTextBuffer = '';
+                    audioTextBuffer = '';
+                    liveGrounding = undefined;
+                    liveResponseId = randomUUID();
+                    sendToRenderer('update-status', content.interrupted ? 'Response interrupted' : 'Gemini ready');
+                }
             },
-            onerror(error) {
+            onerror(error, recovery) {
                 if (!current() || !liveSessionReady) return;
                 lastGeminiFailure = classifyGeminiFailure(error, 'live', liveModel);
-                publishProviderState('failed', lastGeminiFailure);
+                if (lastGeminiFailure.retryAt > Date.now()) {
+                    geminiCooldowns.set(cooldownKey(apiKey, liveModel), lastGeminiFailure);
+                }
+                if (!recovery?.recoverable) {
+                    publishProviderState('failed', lastGeminiFailure);
+                    sendToRenderer('update-status', lastGeminiFailure.message);
+                }
             },
-            onclose(event) {
+            onclose(event, recovery) {
                 if (!current() || !liveSessionReady || isUserClosing) return;
                 global.geminiSessionRef.current = null;
                 lastGeminiFailure = classifyGeminiFailure(event, 'live', liveModel);
                 if (lastGeminiFailure.retryAt > Date.now()) {
                     geminiCooldowns.set(cooldownKey(apiKey, liveModel), lastGeminiFailure);
                 }
-                publishProviderState('failed', lastGeminiFailure);
-                if (lastGeminiFailure.retryable && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectPromise) {
-                    reconnectAttempts++;
-                    reconnectPromise = attemptReconnect().finally(() => { reconnectPromise = null; });
+                if (!recovery?.recoverable) {
+                    publishProviderState('failed', lastGeminiFailure);
+                    sendToRenderer('update-status', lastGeminiFailure.message);
                 }
             },
-        };
+        });
         const tools = await getEnabledTools();
         const session = await runGeminiRequest(remaining => connectGeminiLiveWithGuard(client, {
             model: liveModel, callbacks,
             config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                ...geminiLiveRuntime.getConnectConfig(), systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
         }, Math.min(15000, remaining), signal), { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
         if (!current()) { session.close(); return null; }
         liveSessionReady = true;
@@ -949,12 +975,17 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     }
 }
 
-async function attemptReconnect() {
+async function attemptReconnect(details = {}) {
     const params = sessionParams;
     if (!params?.apiKey || isUserClosing) return false;
+    const usedResumption = details.usedResumption ?? Boolean(geminiLiveRuntime?.getConnectConfig?.().sessionResumption?.handle);
+    geminiLiveRuntime?.cancelScheduledReconnect?.();
     liveGeneration++;
     liveController.abort();
     liveController = new AbortController();
+    const previousSession = global.geminiSessionRef?.current;
+    global.geminiSessionRef.current = null;
+    if (previousSession) { try { previousSession.close(); } catch {} }
     isInitializingSession = false;
     const generation = liveGeneration;
     messageBuffer = '';
@@ -972,7 +1003,7 @@ async function attemptReconnect() {
     const session = await initializeGeminiSession(params.apiKey, params.customPrompt, params.profile, params.language, true);
     if (!session || generation !== liveGeneration || isUserClosing) return false;
     global.geminiSessionRef.current = session;
-    const contextMessage = buildContextMessage();
+    const contextMessage = usedResumption ? null : buildContextMessage();
     if (contextMessage) {
         try { await session.sendRealtimeInput(augmentLiveTextPayload({ text: contextMessage })); }
         catch { sendToRenderer('update-status', 'Connected, but restoring Live context failed. Typed answers still retain session history.'); }
@@ -1323,7 +1354,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
             initializeNewSession(profile, customPrompt);
             sessionParams = { language, profile, customPrompt, provider: 'groq' };
-            reconnectAttempts = 0;
             groqSystemAudioBuffer = Buffer.alloc(0);
             sendToRenderer('update-status', 'Groq ready');
             publishProviderState('ready');
@@ -1525,6 +1555,9 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         mainSessionActive = false;
         isUserClosing = true;
         sessionParams = null;
+        geminiLiveRuntime?.stop();
+        geminiLiveRuntime = null;
+        manualReconnectPromise = null;
         currentTranscription = '';
         messageBuffer = '';
         closeSessionRequests();
@@ -1597,23 +1630,22 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     register('retry-session-connection', async (_event, options = {}) => {
         if (!options || typeof options !== 'object' || typeof options.withoutSearch !== 'boolean') return { success: false, error: 'Invalid recovery options' };
         if (currentProviderMode !== 'byok' || !sessionParams?.apiKey || !mainSessionActive) return { success: false, error: 'No Gemini session to reconnect' };
-        if (reconnectPromise) return reconnectPromise.then(success => ({ success, failure: lastGeminiFailure, search: { ...searchState } }));
+        if (manualReconnectPromise) return manualReconnectPromise.then(success => ({ success, failure: lastGeminiFailure, search: { ...searchState } }));
         const model = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
         const cooldown = geminiCooldowns.get(cooldownKey(sessionParams.apiKey, model));
         if (cooldown?.retryAt > Date.now()) return { success: false, error: cooldown.message, failure: cooldown };
-        liveGeneration++;
-        liveController.abort();
-        liveController = new AbortController();
-        isInitializingSession = false;
-        if (geminiSessionRef.current) { geminiSessionRef.current.close(); geminiSessionRef.current = null; }
+        geminiLiveRuntime?.cancelScheduledReconnect?.();
         if (options.withoutSearch) {
             searchState = { ...searchState, effective: false, status: 'user-disabled' };
             currentSystemPrompt = getSystemPrompt(currentProfile, currentCustomPrompt, false);
             sendToRenderer('search-state', { ...searchState });
         }
         // Do not reset history, drafts, capture, HTTP epochs or provider identity.
-        reconnectPromise = attemptReconnect().finally(() => { reconnectPromise = null; });
-        const success = await reconnectPromise;
+        const usedResumption = Boolean(geminiLiveRuntime?.getConnectConfig?.().sessionResumption?.handle);
+        manualReconnectPromise = attemptReconnect({ reason: 'manual', usedResumption })
+            .catch(() => false)
+            .finally(() => { manualReconnectPromise = null; });
+        const success = await manualReconnectPromise;
         return { success, error: success ? undefined : lastGeminiFailure?.message, failure: lastGeminiFailure, search: { ...searchState } };
     });
 
