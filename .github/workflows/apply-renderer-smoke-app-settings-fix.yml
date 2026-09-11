@@ -1,0 +1,62 @@
+name: Apply in-app Settings smoke fix
+
+on:
+  push:
+    branches:
+      - fix/gemini-screen-reliability
+    paths:
+      - .github/workflows/apply-renderer-smoke-app-settings-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/gemini-screen-reliability
+          fetch-depth: 0
+
+      - name: Patch in-app Settings readiness probe
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'scripts/renderer-behavior-smoke.js';
+          let source = fs.readFileSync(file, 'utf8');
+          const marker = "const settingsInApp = app.shadowRoot?.querySelector('customize-view');";
+          const start = source.indexOf(marker);
+          if (start < 0 || source.indexOf(marker, start + marker.length) >= 0) throw new Error('Expected one in-app Settings probe.');
+          const lineStart = source.lastIndexOf('\n', start) + 1;
+          const indent = source.slice(lineStart, start);
+          const insertion = [
+            marker,
+            "for (let attempt = 0; attempt < 100 && !settingsReady; attempt++) {",
+            "    await settingsInApp?.updateComplete;",
+            "    const settingsText = settingsInApp?.shadowRoot?.textContent || '';",
+            "    settingsReady = settingsText.includes('Session Defaults') &&",
+            "        settingsText.includes('AI Provider & Models') &&",
+            "        settingsText.includes('AI Behavior') &&",
+            "        settingsText.includes('Keyboard Shortcuts');",
+            "    if (!settingsReady) await new Promise(resolve => setTimeout(resolve, 20));",
+            "}",
+          ].map(line => indent + line).join('\n');
+          source = source.slice(0, lineStart) + insertion + source.slice(start + marker.length);
+          fs.writeFileSync(file, source);
+          NODE
+
+      - name: Validate source syntax
+        run: npm run check
+
+      - name: Remove one-time workflow and commit
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-renderer-smoke-app-settings-fix.yml
+          git add scripts/renderer-behavior-smoke.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test: verify Settings readiness through the mounted app"
+          git push origin HEAD:fix/gemini-screen-reliability
