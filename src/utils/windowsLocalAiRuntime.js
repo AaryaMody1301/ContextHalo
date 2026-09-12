@@ -1,3 +1,4 @@
+const { listModelFiles, selectProjector } = require('./hubMetadata');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -41,7 +42,7 @@ async function getHuggingFaceFileSha256(repository, filePath, signal) {
     const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
-        signal,
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
     });
 
     if (response.status < 200 || response.status >= 400) {
@@ -75,6 +76,8 @@ async function downloadVerifiedFile(url, destinationPath, sha256, onProgress, si
     if (await matchesChecksum(destinationPath, sha256)) return destinationPath;
 
     const temporaryPath = `${destinationPath}.download-${process.pid}-${Date.now()}`;
+    const timeout = AbortSignal.timeout(30 * 60 * 1000);
+    signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const response = await fetch(url, { redirect: 'follow', signal });
     if (!response.ok || !response.body) {
         throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
@@ -91,14 +94,14 @@ async function downloadVerifiedFile(url, destinationPath, sha256, onProgress, si
                 callback(null, chunk);
             },
         });
-        await pipeline(input, progress, fs.createWriteStream(temporaryPath, { flags: 'wx' }));
+        await pipeline(input, progress, fs.createWriteStream(temporaryPath, { flags: 'wx' }), { signal });
 
         const actualSha256 = await calculateSha256(temporaryPath);
         if (actualSha256 !== sha256) {
             throw new Error(`Checksum verification failed for ${path.basename(destinationPath)}`);
         }
 
-        fs.rmSync(destinationPath, { force: true });
+        signal?.throwIfAborted();
         fs.renameSync(temporaryPath, destinationPath);
         return destinationPath;
     } catch (error) {
@@ -109,11 +112,7 @@ async function downloadVerifiedFile(url, destinationPath, sha256, onProgress, si
 
 async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onProjectorProgress, signal) {
     const { repository, quant } = parseModelReference(modelReference);
-    const repositoryUrl = encodePathParts(repository);
-    const response = await fetch(`https://huggingface.co/api/models/${repositoryUrl}/tree/main?recursive=true&expand=true`, { signal });
-    if (!response.ok) throw new Error(`Could not inspect Hugging Face model: HTTP ${response.status}`);
-
-    const files = await response.json();
+    const files = await listModelFiles(repository, signal);
     const normalizedQuant = quant.toUpperCase();
     const matches = files.filter(file => (
         file.type === 'file' &&
@@ -126,7 +125,7 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
     }
 
     const modelFile = matches[0];
-    const projectorFile = files.find(file => file.type === 'file' && file.path === 'mmproj-BF16.gguf');
+    const projectorFile = selectProjector(files);
     if (!projectorFile) throw new Error(`Hugging Face model ${repository} does not provide mmproj-BF16.gguf`);
 
     const [modelSha256, projectorSha256] = await Promise.all([

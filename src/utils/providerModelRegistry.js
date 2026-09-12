@@ -89,7 +89,7 @@ function normalizeGroqModel(raw) {
         owner: String(raw?.owned_by || ''),
         contextWindow: Number(raw?.context_window) || null,
         maxCompletionTokens: Number(raw?.max_completion_tokens) || null,
-        preview: isPreviewModel(id),
+        preview: raw?.preview === true || /^qwen\/qwen3\.(?:6|8)-27b$/.test(id) || isPreviewModel(id),
     };
 }
 

@@ -26,14 +26,14 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 ## Requirements
 
 - Windows 10 or Windows 11 x64
-- Node.js 22+ and npm 10+ for development
+- Node.js 22.16+ (Node.js 24 LTS recommended) and npm 10+ for development
 - A Gemini API key, Groq API key, or Local AI model depending on the selected provider
 - Screen/audio permissions required by Windows
 
 ## Quick start
 
 ```bash
-npm install
+npm ci
 npm start
 ```
 
@@ -75,9 +75,15 @@ Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No 
 - Keep API keys, private recordings, sensitive screenshots, personal data, and access tokens out of issues, logs, and source files.
 - See [SECURITY.md](SECURITY.md) for security reporting guidance.
 
+Saved API keys are not returned to renderer code. Home shows credential-presence flags and accepts explicit key replacement/removal; provider initialization reads credentials in the main process.
+
 Transport logs are off by default. `CONTEXTHALO_DIAGNOSTICS=1` enables size-limited, metadata-only diagnostic logs; prompts, API keys, audio and full responses are not recorded by this logger. Local history remains user data and can be deleted through Settings.
 
 ContextHalo has no application subscription requirement. Cloud providers may impose quotas, change access, or charge for usage; a model appearing in discovery does not guarantee free or unlimited requests. Screen requests are on demand only.
+
+## API and reliability verification
+
+See [the dated API compatibility audit](docs/API_COMPATIBILITY_AUDIT.md) for verified endpoints, model contracts, source references, and the boundary between automated verification and live-account/device acceptance. A virtual 60-minute test exercises 36,000 audio chunks and six reconnect rotations; it is not a real one-hour provider or hardware test.
 
 ## Contributing
 

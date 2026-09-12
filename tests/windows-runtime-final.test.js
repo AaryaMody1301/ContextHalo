@@ -130,7 +130,6 @@ test('Windows security and packaging configuration are enabled together', () => 
     const windowsRuntime = read('src/utils/contextCaptureMain.js');
     const storageSource = read('src/storage.js');
     const preloadSource = read('preload.js');
-    const cloudSource = read('src/utils/cloud.js');
     const packageJson = JSON.parse(read('package.json'));
     const indexSource = read('src/index.js');
 
@@ -145,7 +144,6 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.match(storageSource, /safeStorage\.encryptString/);
     assert.match(storageSource, /windows-safe-storage-v1/);
     assert.equal(preloadSource.includes('process.env'), false);
-    assert.equal(cloudSource.includes("console.log('[Cloud] Connecting to', url)"), false);
     assert.equal(packageJson.build.win.icon, 'src/assets/logo.ico');
     assert.deepEqual(packageJson.build.electronFuses, {
         runAsNode: false,

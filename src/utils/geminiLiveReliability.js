@@ -16,6 +16,7 @@ function buildLiveReliabilityConfig(resumptionHandle = null) {
 
 function retainSafeResumptionHandle(currentHandle, update) {
     const previous = normalizeHandle(currentHandle);
+    if (update?.resumable === false) return null;
     if (!update || update.resumable !== true) return previous;
     return normalizeHandle(update.newHandle) || previous;
 }

@@ -15,6 +15,7 @@ function geminiFixture(options = {}) {
     const connections = [];
     const clients = [];
     const realtime = [];
+    const clientContent = [];
     const diagnostics = [];
     const preparations = [];
     const frame = {};
@@ -24,11 +25,11 @@ function geminiFixture(options = {}) {
     const storage = {
         getConfig: () => config, getPreferences: () => preferences,
         getAvailableModel: () => options.model || 'selected-http-model',
-        getApiKey: () => 'test-key-not-a-real-credential', getGroqApiKey: () => 'groq-test-key',
+        getApiKey: options.getApiKey || (() => 'test-key-not-a-real-credential'), getGroqApiKey: () => 'groq-test-key',
         incrementLimitCount() {}, incrementCharUsage() {},
         getSession: () => ({ liveTranscript: [{ text: 'We discussed data pipelines' }] }),
     };
-    const readySession = { close() {}, sendRealtimeInput: data => realtime.push(data) };
+    const readySession = { close() {}, sendRealtimeInput: data => realtime.push(data), sendClientContent: data => clientContent.push(data) };
     class AI {
         constructor(params) { clients.push(params); }
         models = { generateContent: async params => {
@@ -62,14 +63,13 @@ function geminiFixture(options = {}) {
         },
     };
     const scope = {
-        module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process, Buffer, URL,
+        module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process: options.process || process, Buffer, URL,
         AbortController, setTimeout, clearTimeout, global: {},
         fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"}}]}\n\n')),
         require: name => {
             if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
             if (name === '@google/genai') return { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
-            if (name === './cloud') return { closeCloud() {}, isCloudActive: () => false };
             if (name === './localai') return local;
             if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.1-flash-live-preview' }] })) };
             if (name === './transportLogger') return { startTransportLog() {}, logTransportEvent: (...args) => diagnostics.push(args), closeTransportLog() {} };
@@ -92,6 +92,7 @@ function geminiFixture(options = {}) {
                 createGeminiLiveRuntime: runtimeOptions => liveRuntimeModule.createGeminiLiveRuntime({
                     ...runtimeOptions,
                     ...liveRuntimeOverrides,
+                    ...(options.runtime || {}),
                 }),
             };
             return actual(name);
@@ -102,7 +103,7 @@ function geminiFixture(options = {}) {
     api.setupGeminiIpcHandlers({ current: null });
     const event = { sender: webContents, senderFrame: frame };
     return {
-        api, handlers, event, events, generated, connections, clients, realtime, preparations, diagnostics, preferences,
+        api, handlers, event, events, generated, connections, clients, realtime, clientContent, preparations, diagnostics, preferences,
         get callbacks() { return connections.at(-1)?.callbacks; },
         call: (name, ...args) => handlers.get(name)(event, ...args),
         start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, 'test-key-not-a-real-credential', '', 'meeting', 'en-US', provider, settings),

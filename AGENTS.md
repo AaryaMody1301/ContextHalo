@@ -51,7 +51,7 @@ The supported target is Windows x64. Preserve these properties when changing win
 ## Provider integrations
 
 - Gemini Live handles real-time Gemini audio sessions.
-- Gemini Flash handles Gemini screen analysis with a bounded fallback strategy.
+- Gemini Flash handles Gemini screen analysis with a bounded retry policy; model/provider changes require explicit user selection.
 - Groq uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
 - Local AI uses checksum-verified native whisper.cpp and llama.cpp runners plus GGUF models.
 

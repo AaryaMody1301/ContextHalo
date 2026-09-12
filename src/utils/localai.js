@@ -25,7 +25,6 @@ let currentSystemPrompt = null;
 let currentLanguage = 'en';
 let isLocalActive = false;
 let initializationController = null;
-let llamaCacheSnapshot = new Set();
 
 let isSpeaking = false;
 let speechBuffers = [];
@@ -297,38 +296,6 @@ function sendDownloadProgress(label, progress = null) {
     });
 }
 
-function getDirectoryEntries(directoryPath) {
-    if (!fs.existsSync(directoryPath)) {
-        return new Set();
-    }
-
-    const entries = new Set();
-    const visit = currentPath => {
-        for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
-            const entryPath = path.join(currentPath, entry.name);
-            entries.add(entryPath);
-            if (entry.isDirectory()) {
-                visit(entryPath);
-            }
-        }
-    };
-
-    visit(directoryPath);
-    return entries;
-}
-
-function removeNewLlamaCacheEntries() {
-    const cacheDirectory = path.join(getModelsDirectory(), 'llama');
-    const currentEntries = Array.from(getDirectoryEntries(cacheDirectory));
-    currentEntries.sort((first, second) => second.length - first.length);
-
-    for (const entryPath of currentEntries) {
-        if (!llamaCacheSnapshot.has(entryPath)) {
-            fs.rmSync(entryPath, { recursive: true, force: true });
-        }
-    }
-}
-
 async function prepareNativeFiles(llamaModelReference, whisperModel, signal) {
     const binaryProgress = label => progress => {
         sendToRenderer('update-status', formatDownloadStatus(label, progress));
@@ -377,7 +344,7 @@ function validatePreparedNativeFiles(nativeFiles) {
     }
 }
 
-async function startWhisperServer(executablePath, modelPath) {
+async function startWhisperServer(executablePath, modelPath, signal) {
     const port = await getAvailablePort();
     whisperBaseUrl = `http://127.0.0.1:${port}`;
     whisperProcess = startNativeServer({
@@ -386,10 +353,10 @@ async function startWhisperServer(executablePath, modelPath) {
         name: 'Whisper',
     });
 
-    await waitForServer(`${whisperBaseUrl}/`, whisperProcess, 120000);
+    await waitForServer(`${whisperBaseUrl}/`, whisperProcess, 120000, signal);
 }
 
-async function startLlamaServer(executablePath, modelPath, projectorPath) {
+async function startLlamaServer(executablePath, modelPath, projectorPath, signal) {
     if (!modelPath || !fs.existsSync(modelPath)) {
         throw new Error(`Language model path is invalid: ${modelPath}`);
     }
@@ -424,7 +391,7 @@ async function startLlamaServer(executablePath, modelPath, projectorPath) {
         name: 'Llama',
     });
 
-    await waitForServer(`${llamaBaseUrl}/health`, llamaProcess, 30 * 60 * 1000);
+    await waitForServer(`${llamaBaseUrl}/health`, llamaProcess, 30 * 60 * 1000, signal);
 }
 
 async function initializeLocalSession(model, whisperModel, profile, customPrompt, language = 'en-US') {
@@ -434,9 +401,9 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
     try {
         closeLocalSession();
         currentLanguage = String(language || 'en').split('-')[0] || 'en';
+        if (/\.en$/.test(whisperModel) && currentLanguage !== 'en') throw new Error('The selected local Whisper model is English-only. Select English or use Gemini/Groq for this language.');
         initializationController = new AbortController();
-        llamaCacheSnapshot = getDirectoryEntries(path.join(getModelsDirectory(), 'llama'));
-        currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
+            currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
         llamaModel = model;
 
         const controller = initializationController;
@@ -446,12 +413,12 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
 
         sendToRenderer('update-status', 'Starting Whisper...');
         sendDownloadProgress('Starting Whisper');
-        await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath);
+        await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath, controller.signal);
         controller.signal.throwIfAborted();
 
         sendToRenderer('update-status', 'Loading local language model...');
         sendDownloadProgress('Loading language model');
-        await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath);
+        await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
         controller.signal.throwIfAborted();
 
         isSpeaking = false;
@@ -478,9 +445,8 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
             console.warn('[LocalAI] Initialization error:');
         }
         closeLocalSession();
-        if (wasCancelled) {
-            removeNewLlamaCacheEntries();
-        }
+        // Verified downloads remain cached. Only this attempt's temporary files
+        // are removed by the downloader; cancelling must not delete unrelated files.
         sendToRenderer('local-ai-download-progress', { active: false });
         sendToRenderer('session-initializing', false);
         sendToRenderer('update-status', wasCancelled ? 'Local AI download cancelled' : 'Local AI error: ' + error.message);
@@ -528,7 +494,6 @@ async function cancelLocalInitialization() {
     stopNativeServer(llamaProcess);
     stopNativeServer(whisperProcess);
     await new Promise(resolve => setTimeout(resolve, 300));
-    removeNewLlamaCacheEntries();
     sendToRenderer('local-ai-download-progress', { active: false });
     sendToRenderer('session-initializing', false);
     return true;

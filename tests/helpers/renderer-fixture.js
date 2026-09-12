@@ -36,7 +36,7 @@ function rendererFixture(options = {}) {
             this.state = 'suspended';
             this.sampleRate = settings.sampleRate || 24000;
             this.destination = {};
-            this.audioWorklet = { addModule: async url => { calls.push(['audio-worklet', url]); } };
+            this.audioWorklet = { addModule: async url => { calls.push(['audio-worklet', url]); await options.addModule?.(url); } };
             contexts.push(this);
         }
         resume() { this.state = 'running'; return Promise.resolve(); }
@@ -47,7 +47,7 @@ function rendererFixture(options = {}) {
         constructor(_context, name, options) {
             this.name = name;
             this.options = options;
-            this.port = { onmessage: null, close() {} };
+            this.port = { onmessage: null, postMessage: data => calls.push(['worklet-ack', data]), close() {} };
             workletNodes.push(this);
         }
         connect() {}
@@ -102,7 +102,7 @@ function rendererFixture(options = {}) {
             getUserMedia: constraints => { calls.push(['microphone', constraints]); return options.mic ? options.mic(constraints) : Promise.resolve(microphone); },
         } },
     };
-    vm.runInNewContext(fs.readFileSync('src/utils/renderer.js', 'utf8'), scope);
+    vm.runInNewContext(fs.readFileSync('src/utils/renderer.js', 'utf8') + '\nthis.testCapture = { waitForFreshVideoFrame };', scope);
     return { api: window.contextHalo, calls, contexts, workletNodes, variables, events, prefs, media, microphone, window, scope };
 }
 module.exports = { rendererFixture, stream };

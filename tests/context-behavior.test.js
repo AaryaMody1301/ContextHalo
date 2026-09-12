@@ -49,7 +49,7 @@ test('capture selection includes monitors/windows but never the app; untrusted f
     f.setupContextCaptureMain(window,{handle:(key,fn)=>handlers.set(key,fn),removeHandler(){}});
     const list=await f.listCaptureSources(window);assert.equal(list.sources.some(s=>s.sourceId==='window:own:0'),false);assert.equal(list.sources.some(s=>s.sourceId==='window:editor:0'),true);
     assert.equal((await handlers.get('context-capture:set-source')({sender:{id:1},senderFrame:{}},{kind:'primary-display'})).success,false);
-    const selected=await new Promise(resolve=>capture({},resolve));assert.equal(selected.video.id,'screen:2:0');assert.equal(selected.audio,'loopback');
+    const selected=await new Promise(resolve=>capture({ frame, audioRequested: true },resolve));assert.equal(selected.video.id,'screen:2:0');assert.equal(selected.audio,'loopback');
 });
 
 
@@ -94,7 +94,7 @@ test('missing explicitly selected monitor or window denies capture rather than s
     f.setupContextCaptureMain(mainWindow, { handle() {}, removeHandler() {} });
     for (const selection of [{ kind: 'window', sourceId: 'window:closed:0' }, { kind: 'screen', displayId: '2' }]) {
         preferences.captureSource = selection;
-        const result = await new Promise(resolve => capture({}, resolve));
+        const result = await new Promise(resolve => capture({ frame: mainWindow.webContents.mainFrame, audioRequested: true }, resolve));
         assert.deepEqual(result, {});
         assert.deepEqual(preferences.captureSource, selection);
     }

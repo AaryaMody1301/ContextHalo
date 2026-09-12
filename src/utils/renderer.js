@@ -30,6 +30,8 @@ let captureRecoveryToken = 0;
 let lastCaptureOptions = { screenshotIntervalSeconds: 5, imageQuality: 'medium' };
 let lastAudioQueueWarningAt = 0;
 const captureStreams = new Set();
+const captureContexts = new Set();
+const videoFrameMetadata = new WeakMap();
 const captureListeners = new Map();
 const audioDispatchStates = new Map([
     ['send-audio-content', { queue: [], generation: 0, drainingGeneration: null }],
@@ -94,12 +96,13 @@ async function drainAudioDispatch(channel, generation) {
     }
 }
 
-function enqueueAudioDispatch(channel, pcmBuffer, sampleRate, epoch) {
+function enqueueAudioDispatch(channel, pcmBuffer, sampleRate, epoch, capturedAtMs = Date.now()) {
     const state = audioDispatchStates.get(channel);
     if (!state || epoch !== captureEpoch || !pcmBuffer?.byteLength) return;
     const payload = {
         data: arrayBufferToBase64(pcmBuffer),
         mimeType: `audio/pcm;rate=${sampleRate}`,
+        capturedAtMs, uiEpoch: contextHaloApp._uiSessionEpoch,
     };
     if (state.queue.length >= MAX_AUDIO_DISPATCH_CHUNKS) {
         state.queue.shift();
@@ -110,20 +113,47 @@ function enqueueAudioDispatch(channel, pcmBuffer, sampleRate, epoch) {
         }
     }
     const generation = state.generation;
-    state.queue.push({ payload, epoch, generation, queuedAt: Date.now() });
+    state.queue.push({ payload, epoch, generation, queuedAt: capturedAtMs });
     void drainAudioDispatch(channel, generation);
 }
 
 function waitForFreshVideoFrame(video, signal, timeoutMs = 2200) {
-    if (typeof video.requestVideoFrameCallback !== 'function') {
-        return waitForCapture(new Promise(resolve => setTimeout(resolve, 80)), signal, timeoutMs);
-    }
+    // A delay alone is not evidence of a new frame. Compare presentation counters
+    // rather than image hashes: a perfectly static coding screen is still valid.
+    const previous = videoFrameMetadata.get(video);
     let callbackId = null;
+    let fallbackTimer = null;
+    let finished = false;
     const frame = new Promise((resolve, reject) => {
-        try { callbackId = video.requestVideoFrameCallback((_now, metadata) => resolve(metadata || {})); }
-        catch (error) { reject(error); }
+        const accept = metadata => {
+            if (finished) return;
+            const index = Number(metadata.presentedFrames);
+            const time = Number(metadata.mediaTime);
+            if (!previous || (Number.isFinite(index) && index > previous.presentedFrames)
+                || (Number.isFinite(time) && time > previous.mediaTime)) {
+                videoFrameMetadata.set(video, { presentedFrames: index, mediaTime: time });
+                resolve(metadata);
+            } else request();
+        };
+        const baseline = Number(video.currentTime);
+        const request = () => {
+            if (finished) return;
+            try {
+                if (typeof video.requestVideoFrameCallback === 'function') {
+                    callbackId = video.requestVideoFrameCallback((_now, metadata) => accept(metadata || {}));
+                } else {
+                    fallbackTimer = setTimeout(() => {
+                        if (Number(video.currentTime) > baseline) accept({ mediaTime: Number(video.currentTime) });
+                        else request();
+                    }, 40);
+                }
+            } catch (error) { reject(error); }
+        };
+        request();
     });
     return waitForCapture(frame, signal, timeoutMs).finally(() => {
+        finished = true;
+        clearTimeout(fallbackTimer);
         if (callbackId !== null && typeof video.cancelVideoFrameCallback === 'function') {
             try { video.cancelVideoFrameCallback(callbackId); } catch {}
         }
@@ -243,27 +273,15 @@ const storage = {
         return persistStorage('storage:update-config', key, value);
     },
 
-    // Credentials
-    async getCredentials() {
+    // Saved secrets never cross into the renderer. Only replacement values go to main.
+    async getCredentialStatus() {
         await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-credentials');
-        return result.success ? result.data : {};
-    },
-    async setCredentials(credentials) {
-        return persistStorage('storage:set-credentials', credentials);
-    },
-    async getApiKey() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-api-key');
-        return result.success ? result.data : '';
+        const result = await ipcRenderer.invoke('storage:credential-status');
+        if (!result?.success) throw new Error('Credential status could not be loaded.');
+        return result.data;
     },
     async setApiKey(apiKey) {
         return persistStorage('storage:set-api-key', apiKey);
-    },
-    async getGroqApiKey() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-groq-api-key');
-        return result.success ? result.data : '';
     },
     async setGroqApiKey(groqApiKey) {
         return persistStorage('storage:set-groq-api-key', groqApiKey);
@@ -371,12 +389,11 @@ function arrayBufferToBase64(buffer) {
 async function initializeGemini(profile = 'interview', language = 'en-US', options = {}) {
     const prefs = await storage.getPreferences();
     const provider = prefs.providerMode === 'groq' ? 'groq' : 'byok';
-    const apiKey = provider === 'groq' ? '' : await storage.getApiKey();
 
     if (options.uiEpoch !== undefined && options.uiEpoch !== contextHaloApp._uiSessionEpoch) return false;
     const result = await ipcRenderer.invoke(
         'initialize-gemini',
-        apiKey || '',
+        null, // Legacy argument position; the trusted main process resolves the key.
         prefs.customPrompt || '',
         profile,
         language,
@@ -419,25 +436,6 @@ async function cancelLocalInitialization() {
     return ipcRenderer.invoke('cancel-local-initialization');
 }
 
-async function initializeCloud(profile = 'interview') {
-    const creds = await storage.getCredentials();
-    const token = creds.cloudToken;
-    if (!token || !token.trim()) {
-        contextHalo.setStatus('error');
-        return false;
-    }
-
-    const prefs = await storage.getPreferences();
-    const success = await ipcRenderer.invoke('initialize-cloud', token, profile, prefs.customPrompt || '');
-    if (success) {
-        contextHalo.setStatus('Live');
-        return true;
-    } else {
-        contextHalo.setStatus('error');
-        return false;
-    }
-}
-
 function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium', options = {}) {
     if (options.recovery && options.recoveryToken !== captureRecoveryToken) return Promise.resolve(false);
     if (!options.recovery) captureRecoveryToken += 1;
@@ -473,7 +471,7 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
             nativeSystem = true;
         }
         mediaStream = await ownCaptureStream(navigator.mediaDevices.getDisplayMedia({
-            video: { frameRate: 1, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            video: { frameRate: 2, width: { ideal: 3840 }, height: { ideal: 2160 } },
             audio: !isMacOS && needsSystem,
         }), epoch, signal);
         if (!mediaStream.getVideoTracks().some(track => track.readyState === 'live')) throw new Error('No live screen was selected.');
@@ -482,7 +480,7 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
             if (!isLinux) throw new Error('System audio loopback is unavailable. Check the selected display and audio device, or choose microphone-only mode.');
             warning = 'System audio is unavailable on this display.';
         }
-        if (!isMacOS && systemAvailable) await setupSystemAudioProcessing();
+        if (!isMacOS && systemAvailable) await setupSystemAudioProcessing(epoch, signal);
         if (needsMic) {
             try {
                 micMediaStream = await ownCaptureStream(navigator.mediaDevices.getUserMedia({
@@ -490,7 +488,7 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
                     video: false,
                 }), epoch, signal);
                 if (!micMediaStream.getAudioTracks().some(track => track.readyState === 'live')) throw new Error('No live microphone track.');
-                await setupLinuxMicProcessing(micMediaStream);
+                await setupLinuxMicProcessing(micMediaStream, epoch, signal);
             } catch (error) {
                 if (signal.aborted || epoch !== captureEpoch) throw captureAbortError();
                 if (audioMode === 'mic_only') throw new Error('Microphone capture is unavailable. Check microphone permissions and the selected input device.');
@@ -515,56 +513,70 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
     }
 }
 
-async function createCaptureAudioProcessor(stream, channel) {
+async function createCaptureAudioProcessor(stream, channel, epoch, signal) {
     const context = new AudioContext({ sampleRate: preferredCaptureSampleRate() });
+    captureContexts.add(context);
+    const check = () => { if (signal.aborted || epoch !== captureEpoch) throw captureAbortError(); };
     try {
+        check();
         if (!context.audioWorklet || typeof AudioWorkletNode !== 'function') {
             throw new Error('AudioWorklet is unavailable in this runtime.');
         }
-        await context.audioWorklet.addModule(AUDIO_WORKLET_MODULE);
+        await waitForCapture(context.audioWorklet.addModule(AUDIO_WORKLET_MODULE), signal, 5000);
+        check();
         const source = context.createMediaStreamSource(stream);
         const processor = new AudioWorkletNode(context, 'context-halo-audio-capture', {
+            channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
             numberOfInputs: 1,
             numberOfOutputs: 1,
             outputChannelCount: [1],
             processorOptions: { samplesPerChunk: Math.round(context.sampleRate * AUDIO_CHUNK_DURATION) },
         });
-        const epoch = captureEpoch;
         processor.port.onmessage = event => {
             if (epoch !== captureEpoch) return;
-            const pcm = event?.data?.pcm;
+            const data = event?.data;
+            if (Number.isSafeInteger(data?.sequence)) processor.port.postMessage({ ack: data.sequence });
+            const pcm = data?.pcm;
             if (!pcm || typeof pcm.byteLength !== 'number' || pcm.byteLength === 0) return;
-            enqueueAudioDispatch(channel, pcm, context.sampleRate, epoch);
+            const ageMs = Number.isFinite(data?.audioTime) && Number.isFinite(context.currentTime)
+                ? Math.max(0, (context.currentTime - data.audioTime) * 1000) : 0;
+            if (ageMs > MAX_AUDIO_DISPATCH_AGE_MS) return;
+            enqueueAudioDispatch(channel, pcm, context.sampleRate, epoch, Date.now() - ageMs);
         };
+        processor.onprocessorerror = () => {
+            if (epoch === captureEpoch) scheduleCaptureRecovery('audio', epoch);
+        };
+        check();
         source.connect(processor);
         processor.connect(context.destination);
         return { context, processor };
     } catch (error) {
-        try { await context.close(); } catch {}
+        captureContexts.delete(context);
+        try { if (context.state !== 'closed') await context.close(); } catch {}
         throw error;
     }
 }
 
-async function setupLinuxMicProcessing(micStream) {
+async function setupLinuxMicProcessing(micStream, epoch, signal) {
     if (micAudioProcessor) {
         if (micAudioProcessor.port) micAudioProcessor.port.onmessage = null;
         try { micAudioProcessor.disconnect(); } catch {}
         micAudioProcessor = null;
     }
     if (micAudioContext) await micAudioContext.close().catch(() => {});
-    const created = await createCaptureAudioProcessor(micStream, 'send-mic-audio-content');
+    const created = await createCaptureAudioProcessor(micStream, 'send-mic-audio-content', epoch, signal);
     micAudioContext = created.context;
     micAudioProcessor = created.processor;
 }
 
-async function setupSystemAudioProcessing() {
+async function setupSystemAudioProcessing(epoch, signal) {
     if (audioProcessor) {
         if (audioProcessor.port) audioProcessor.port.onmessage = null;
         try { audioProcessor.disconnect(); } catch {}
         audioProcessor = null;
     }
     if (audioContext) await audioContext.close().catch(() => {});
-    const created = await createCaptureAudioProcessor(mediaStream, 'send-audio-content');
+    const created = await createCaptureAudioProcessor(mediaStream, 'send-audio-content', epoch, signal);
     audioContext = created.context;
     audioProcessor = created.processor;
 }
@@ -614,7 +626,7 @@ async function captureManualScreenshot(imageQuality = null, options = {}) {
         const sh = region ? Math.max(1, Math.min(video.videoHeight - sy, Math.round(video.videoHeight * region.height))) : video.videoHeight;
         canvas = document.createElement('canvas');
         const maxWidth = region ? REGION_CAPTURE_MAX_WIDTH : FULL_CAPTURE_MAX_WIDTH;
-        const scale = Math.min(1, maxWidth / sw);
+        const scale = Math.min(1, maxWidth / sw, 4096 / sh, Math.sqrt(8_000_000 / (sw * sh)));
         canvas.width = Math.max(1, Math.round(sw * scale));
         canvas.height = Math.max(1, Math.round(sh * scale));
         const context = canvas.getContext('2d');
@@ -665,10 +677,11 @@ function stopCapture(warning = '', options = {}) {
         try { processor.disconnect(); } catch {}
     }
     audioProcessor = micAudioProcessor = null;
-    for (const context of [audioContext, micAudioContext]) {
+    for (const context of captureContexts) {
         if (!context || context.state === 'closed') continue;
         try { Promise.resolve(context.close()).catch(() => {}); } catch {}
     }
+    captureContexts.clear();
     audioContext = micAudioContext = null;
     resetAudioDispatchQueues();
     for (const stream of captureStreams) {
@@ -676,7 +689,7 @@ function stopCapture(warning = '', options = {}) {
     }
     captureStreams.clear();
     mediaStream = micMediaStream = null;
-    if (hadAudio) void ipcRenderer.invoke('audio-stream-end').catch(() => {});
+    if (hadAudio) void ipcRenderer.invoke('audio-stream-end', { uiEpoch: contextHaloApp._uiSessionEpoch }).catch(() => {});
     if (isMacOS) void ipcRenderer.invoke('stop-macos-audio').catch(() => {});
     if (hiddenVideo) {
         hiddenVideo.pause();
@@ -1082,7 +1095,6 @@ const contextHalo = {
 
     // Core functionality
     initializeGemini,
-    initializeCloud,
     initializeLocal,
     cancelLocalInitialization,
     startCapture,

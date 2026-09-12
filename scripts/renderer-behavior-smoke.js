@@ -4,12 +4,38 @@ async function rendererBehaviorSmoke() {
     const checks = [];
     const verify = (condition, label) => { if (!condition) throw new Error(label); checks.push(label); };
     const settle = async element => { await element.updateComplete; await new Promise(resolve => setTimeout(resolve, 25)); };
-    const waitUntil = async condition => {
-        for (let n=0;n<100;n++) { if (condition()) return; await new Promise(resolve=>setTimeout(resolve,20)); }
+    const waitUntil = async (condition, timeoutMs = 2000) => {
+        for (let n=0;n<Math.ceil(timeoutMs/20);n++) { if (condition()) return; await new Promise(resolve=>setTimeout(resolve,20)); }
         const view=document.querySelector('context-halo-app')?.shadowRoot?.querySelector('assistant-view');
         const sizes=[...(view?.shadowRoot?.children || [])].filter(e=>e.tagName!=='STYLE').map(e=>[e.className,e.clientHeight]);
         throw new Error('Renderer condition did not settle after '+checks.join(', ')+'; viewport='+innerWidth+'x'+innerHeight+'; layout='+JSON.stringify(sizes));
     };
+    // Exercise the real bundled worklet and MessagePort in sandboxed Electron,
+    // using an oscillator rather than claiming physical microphone acceptance.
+    const audio = new AudioContext({ sampleRate: 16000 });
+    let oscillator;
+    let processor;
+    try {
+        await audio.audioWorklet.addModule('./utils/audioCaptureWorklet.js');
+        processor = new AudioWorkletNode(audio, 'context-halo-audio-capture', {
+            processorOptions: { samplesPerChunk: 1600 },
+            channelCount: 1, channelCountMode: 'explicit',
+        });
+        let messages = 0;
+        let bytes = 0;
+        processor.port.onmessage = event => {
+            messages++; bytes = event.data.pcm.byteLength;
+            processor.port.postMessage({ ack: event.data.sequence });
+        };
+        oscillator = audio.createOscillator();
+        oscillator.connect(processor); processor.connect(audio.destination);
+        oscillator.start(); await audio.resume();
+        await waitUntil(() => messages >= 2, 8000);
+        verify(bytes === 3200, 'Real AudioWorklet emits acknowledged 100 ms / 16 kHz PCM chunks');
+    } finally {
+        try { oscillator?.stop(); oscillator?.disconnect(); processor?.disconnect(); } catch {}
+        processor?.port.close(); await audio.close();
+    }
     const app = document.querySelector('context-halo-app');
     const api = window.contextHalo;
     await waitUntil(()=>app._storageLoaded);

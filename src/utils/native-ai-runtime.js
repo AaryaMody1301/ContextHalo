@@ -1,3 +1,4 @@
+const { listModelFiles, selectProjector } = require('./hubMetadata');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
@@ -102,6 +103,8 @@ async function fileMatchesChecksum(filePath, expectedSha256) {
 
 async function downloadFile(url, destinationPath, onProgress, signal) {
     const temporaryPath = `${destinationPath}.download-${process.pid}-${Date.now()}`;
+    const timeout = AbortSignal.timeout(30 * 60 * 1000);
+    signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const response = await fetch(url, { redirect: 'follow', signal });
 
     if (!response.ok || !response.body) {
@@ -120,7 +123,7 @@ async function downloadFile(url, destinationPath, onProgress, signal) {
                 callback(null, chunk);
             },
         });
-        await pipeline(input, progressStream, fs.createWriteStream(temporaryPath, { flags: 'wx' }));
+        await pipeline(input, progressStream, fs.createWriteStream(temporaryPath, { flags: 'wx' }), { signal });
 
         return temporaryPath;
     } catch (error) {
@@ -140,19 +143,21 @@ async function installVerifiedFile({ url, destinationPath, sha256, executable, o
     }
 
     const temporaryPath = await downloadFile(url, destinationPath, onProgress, signal);
-    const downloadedSha256 = await calculateSha256(temporaryPath);
-
-    if (downloadedSha256 !== sha256) {
-        fs.rmSync(temporaryPath, { force: true });
-        throw new Error(`Checksum verification failed for ${path.basename(destinationPath)}`);
-    }
-
-    fs.rmSync(destinationPath, { force: true });
-    fs.renameSync(temporaryPath, destinationPath);
-
-    if (executable && process.platform !== 'win32') {
-        fs.chmodSync(destinationPath, 0o755);
-    }
+    try {
+        const downloadedSha256 = await calculateSha256(temporaryPath);
+    
+        if (downloadedSha256 !== sha256) {
+            fs.rmSync(temporaryPath, { force: true });
+            throw new Error(`Checksum verification failed for ${path.basename(destinationPath)}`);
+        }
+    
+        signal?.throwIfAborted();
+        fs.renameSync(temporaryPath, destinationPath);
+    
+        if (executable && process.platform !== 'win32') {
+            fs.chmodSync(destinationPath, 0o755);
+        }
+    } finally { fs.rmSync(temporaryPath, { force: true }); }
 
     return destinationPath;
 }
@@ -227,17 +232,10 @@ function parseHuggingFaceModelReference(modelReference) {
 
 async function resolveHuggingFaceGguf(modelReference, signal) {
     const { repository, quant } = parseHuggingFaceModelReference(modelReference);
-    const repositoryUrl = encodePathParts(repository);
-    const response = await fetch(`https://huggingface.co/api/models/${repositoryUrl}/tree/main?recursive=true&expand=true`, { signal });
-
-    if (!response.ok) {
-        throw new Error(`Could not inspect Hugging Face model: HTTP ${response.status}`);
-    }
-
-    const files = await response.json();
+    const files = await listModelFiles(repository, signal);
     const normalizedQuant = quant.toUpperCase();
     const matches = files.filter(file => {
-        return file.type === 'file' && file.path?.toLowerCase().endsWith('.gguf') && file.path.toUpperCase().includes(normalizedQuant);
+        return file.type === 'file' && file.path?.toLowerCase().endsWith('.gguf') && file.path.toUpperCase().includes(normalizedQuant) && !file.path.toLowerCase().startsWith('mmproj-');
     });
 
     if (matches.length !== 1) {
@@ -249,7 +247,7 @@ async function resolveHuggingFaceGguf(modelReference, signal) {
         throw new Error(`Hugging Face did not provide checksum metadata for ${file.path}`);
     }
 
-    const projector = files.find(candidate => candidate.type === 'file' && candidate.path === 'mmproj-BF16.gguf');
+    const projector = selectProjector(files);
     if (!projector?.lfs?.oid || !projector.size) {
         throw new Error(`Hugging Face model ${repository} does not provide mmproj-BF16.gguf`);
     }
@@ -273,7 +271,8 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
             throw new Error(`Language model does not exist: ${modelReference}`);
         }
 
-        const projectorPath = path.join(path.dirname(modelReference), 'mmproj-BF16.gguf');
+        const projectorName = ['mmproj-BF16.gguf', 'mmproj-F16.gguf', 'mmproj-F32.gguf'].find(name => fs.existsSync(path.join(path.dirname(modelReference), name)));
+        const projectorPath = path.join(path.dirname(modelReference), projectorName || 'mmproj-BF16.gguf');
         if (!fs.existsSync(projectorPath)) {
             throw new Error(`Multimodal projector does not exist: ${projectorPath}`);
         }
@@ -337,31 +336,26 @@ function startNativeServer({ executablePath, arguments: serverArguments, name, e
         windowsHide: true,
     });
 
+    childProcess.on('error', error => { childProcess.launchError = error; });
     attachProcessLogging(childProcess, name);
     return childProcess;
 }
 
-async function waitForServer(url, childProcess, timeoutMs) {
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeoutMs) {
-        if (childProcess.exitCode !== null) {
-            throw new Error(`Native server exited with code ${childProcess.exitCode}`);
-        }
-
+async function waitForServer(url, childProcess, timeoutMs, signal) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        signal?.throwIfAborted();
+        if (childProcess.launchError) throw new Error(`Native server could not start (${childProcess.launchError.code || 'spawn failed'})`);
+        if (childProcess.exitCode !== null || childProcess.killed) throw new Error('Native server stopped before becoming ready');
+        const timeout = AbortSignal.timeout(Math.max(1, Math.min(5000, deadline - Date.now())));
         try {
-            const response = await fetch(url);
-            if (response.ok) {
-                return;
-            }
-        } catch {
-            // The server is still starting.
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 250));
+            const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+            await response.body?.cancel();
+            if (response.ok) return;
+        } catch (error) { if (signal?.aborted) throw signal.reason; }
+        await require('node:timers/promises').setTimeout(250, undefined, { signal });
     }
-
-    throw new Error(`Native server did not become ready: ${url}`);
+    throw new Error('Native server did not become ready before the startup deadline');
 }
 
 function stopNativeServer(childProcess) {

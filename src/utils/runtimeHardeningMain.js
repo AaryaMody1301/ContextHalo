@@ -380,6 +380,7 @@ function setupRuntimeWindowHardening(mainWindow) {
 }
 
 module.exports = {
+    resetRuntimeAudio: resetGroqVad,
     prepareRuntimeProvider,
     installIpcHandlerHardening,
     setupRuntimeWindowHardening,

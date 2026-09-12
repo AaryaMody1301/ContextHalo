@@ -30,7 +30,7 @@ test('storage v6 migration upgrades provider models without deleting user data',
             onboarded: true,
             layout: 'compact',
             geminiLiveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
-            geminiHttpModel: 'gemini-2.5-flash',
+            geminiHttpModel: 'gemini-2.0-flash',
             groqModel: 'qwen/qwen3.6-27b',
             groqImageModel: 'qwen/qwen3.6-27b',
         })
@@ -77,7 +77,7 @@ test('storage v6 migration upgrades provider models without deleting user data',
     assert.equal(storage.getPreferences().providerMode, 'byok');
 });
 
-test('storage v6 migrates the previous Gemini 3.7 screen default to 3.8', { concurrency: false }, t => {
+test('storage preserves a supported explicitly configured Gemini 3.7 model', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-v6-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -110,7 +110,7 @@ test('storage v6 migrates the previous Gemini 3.7 screen default to 3.8', { conc
     storage.initializeStorage();
     const config = storage.getConfig();
     assert.equal(config.configVersion, 6);
-    assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
+    assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
 });
 
 

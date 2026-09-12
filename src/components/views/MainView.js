@@ -682,15 +682,13 @@ export class MainView extends LitElement {
         shortcut: { type: String },
         // Internal state
         _mode: { state: true },
-        _token: { state: true },
+        _savedKeys: { state: true },
         _geminiKey: { state: true },
         _groqKey: { state: true },
-        _openaiKey: { state: true },
         _geminiLiveModel: { state: true },
         _groqModel: { state: true },
         _groqImageModel: { state: true },
         _disableGroqThinking: { state: true },
-        _tokenError: { state: true },
         _keyError: { state: true },
         // Local AI state
         _localLlmModel: { state: true },
@@ -724,15 +722,13 @@ export class MainView extends LitElement {
         this.onCancelDownload = () => {};
 
         this._mode = 'byok';
-        this._token = '';
+        this._savedKeys = { gemini: false, groq: false };
         this._geminiKey = '';
         this._groqKey = '';
-        this._openaiKey = '';
         this._geminiLiveModel = 'gemini-3.1-flash-live-preview';
-        this._groqModel = 'qwen/qwen3.6-27b';
+        this._groqModel = GROQ_DEFAULTS.chat;
         this._groqImageModel = 'qwen/qwen3.6-27b';
         this._disableGroqThinking = true;
-        this._tokenError = false;
         this._keyError = false;
         this._showLocalHelp = false;
         this._localLlmModel = 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
@@ -751,10 +747,10 @@ export class MainView extends LitElement {
 
     async _loadFromStorage() {
         try {
-            const [config, prefs, creds] = await Promise.all([
+            const [config, prefs, credentialStatus] = await Promise.all([
                 contextHalo.storage.getConfig(),
                 contextHalo.storage.getPreferences(),
-                contextHalo.storage.getCredentials().catch(() => ({})),
+                contextHalo.storage.getCredentialStatus(),
             ]);
 
             this._audioMode = prefs.audioMode || 'speaker_only';
@@ -766,24 +762,20 @@ export class MainView extends LitElement {
                 await contextHalo.storage.updatePreference('providerMode', this._mode);
             }
 
-            // Load keys
-            this._token = creds.cloudToken || '';
-            this._geminiKey = (await contextHalo.storage.getApiKey().catch(() => '')) || '';
-            this._groqKey = (await contextHalo.storage.getGroqApiKey().catch(() => '')) || '';
-            this._openaiKey = creds.openaiKey || '';
+            this._savedKeys = { gemini: credentialStatus.gemini === true, groq: credentialStatus.groq === true };
             this._geminiLiveModel = config.geminiLiveModel || GEMINI_DEFAULTS.live;
             this._geminiHttpModel = config.geminiHttpModel || GEMINI_DEFAULTS.screen;
             this._groqTranscriptionModel = config.groqTranscriptionModel || GROQ_DEFAULTS.transcription;
-            this._groqModel = config.groqModel || 'qwen/qwen3.6-27b';
-            this._groqImageModel = config.groqImageModel || 'qwen/qwen3.6-27b';
+            this._groqModel = config.groqModel || GROQ_DEFAULTS.chat;
+            this._groqImageModel = config.groqImageModel || GROQ_DEFAULTS.vision;
             this._disableGroqThinking = config.disableGroqThinking === true;
 
             // Load local AI settings
             this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
             this._useCustomLocalLlmModel = !LOCAL_LLM_PRESETS.some(preset => preset.value === this._localLlmModel);
             this._whisperModel = prefs.whisperModel || 'tiny.en';
-            if (this._geminiKey.trim()) void this._refreshProviderModels('gemini');
-            if (this._groqKey.trim()) void this._refreshProviderModels('groq');
+            if (this._savedKeys?.gemini) void this._refreshProviderModels('gemini');
+            if (this._savedKeys?.groq) void this._refreshProviderModels('groq');
 
             this._setupOpen = !this._hasConfiguredProvider();
             this.requestUpdate();
@@ -876,6 +868,9 @@ export class MainView extends LitElement {
     _saveGroqKey(value) { return this._saveProviderKey('groq', value); }
 
     _saveProviderKey(provider, value) {
+        if (this.sessionActive || this.isInitializing) return Promise.resolve();
+        this._keyDraftDirty = false;
+        value = String(value || '').trim();
         const gemini = provider === 'gemini';
         this[gemini ? '_geminiKey' : '_groqKey'] = value;
         this._keyError = false;
@@ -888,9 +883,11 @@ export class MainView extends LitElement {
             if (result?.success === false) throw new Error('Credential storage rejected the update.');
         }).then(() => {
             if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
+            this._savedKeys = { ...this._savedKeys, [provider]: Boolean(value) };
+            this[gemini ? '_geminiKey' : '_groqKey'] = '';
             this._keyError = false;
             this.startError = '';
-            if (value.trim().length >= 20) this._catalogTimers[provider] = setTimeout(() => this._refreshProviderModels(provider, true), 1200);
+            if (value.length >= 20) this._catalogTimers[provider] = setTimeout(() => this._refreshProviderModels(provider, true), 1200);
         }).catch(() => {
             if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
             this._keyError = true;
@@ -1008,6 +1005,8 @@ export class MainView extends LitElement {
     async _handleStart() {
         if (this.sessionActive) return this.onStart();
         if (this._configurationLoading || this.isInitializing || this.downloadProgress.active || this.retryBlocked) return;
+        const draft = this._mode === 'groq' ? this._groqKey : this._geminiKey;
+        if (this._mode !== 'local' && this._keyDraftDirty && !this._keyError && draft.trim()) await this._saveProviderKey(this._mode === 'groq' ? 'groq' : 'gemini', draft);
         await Promise.all([this._keySavePromise, this._configurationWrites]);
         if (this._saveError || this._keyError || this.isInitializing) { this._setupOpen = true; return; }
         if (!this._hasConfiguredProvider()) {
@@ -1024,8 +1023,8 @@ export class MainView extends LitElement {
 
     _hasConfiguredProvider() {
         if (this._mode === 'local') return Boolean(this._localLlmModel.trim() && this._whisperModel.trim());
-        return this._mode === 'groq' ? Boolean(this._groqKey.trim() && this._groqModel.trim() && this._groqImageModel.trim() && this._groqTranscriptionModel.trim())
-            : Boolean(this._geminiKey.trim() && this._geminiLiveModel.trim() && this._geminiHttpModel.trim());
+        return this._mode === 'groq' ? Boolean((this._savedKeys?.groq || this._groqKey.trim()) && this._groqModel.trim() && this._groqImageModel.trim() && this._groqTranscriptionModel.trim())
+            : Boolean((this._savedKeys?.gemini || this._geminiKey.trim()) && this._geminiLiveModel.trim() && this._geminiHttpModel.trim());
     }
 
     _readinessSummary() {
@@ -1055,8 +1054,7 @@ export class MainView extends LitElement {
         this._keyError = this._mode !== 'local';
         this.requestUpdate();
         setTimeout(() => {
-            this._tokenError = false;
-            this._keyError = false;
+                this._keyError = false;
             this.requestUpdate();
         }, 2000);
     }
@@ -1135,7 +1133,7 @@ export class MainView extends LitElement {
     }
 
     // ── Cloud mode ──
-    // Cloud UI intentionally disabled. Backend cloud wiring is still present in
+    // Supported providers share one setup editor.
     // the codebase, but the renderer no longer exposes this setup path.
 
     // ── BYOK mode ──
@@ -1178,10 +1176,16 @@ export class MainView extends LitElement {
                     <div class="form-group">
                         <label class="form-label" for="provider-api-key">${label} API Key</label>
                         <input id="provider-api-key" type="password" autocomplete="off" spellcheck="false"
-                            placeholder="Required" .value=${gemini ? this._geminiKey : this._groqKey}
-                            @input=${event => this._saveProviderKey(provider, event.target.value)}
+                            placeholder=${this._savedKeys[provider] ? 'Key saved securely; enter a replacement' : 'Required'} .value=${gemini ? this._geminiKey : this._groqKey}
+                            ?disabled=${this.sessionActive || this.isInitializing}
+                            @input=${event => { this._keyDraftDirty = true; this._keyError = false; this[gemini ? '_geminiKey' : '_groqKey'] = event.target.value; }}
+                            @change=${event => { if (event.target.value.trim()) void this._saveProviderKey(provider, event.target.value); }}
                             aria-invalid=${this._keyError ? 'true' : 'false'} class=${this._keyError ? 'error' : ''} />
                         <div class="key-actions">
+                            <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !(gemini ? this._geminiKey : this._groqKey).trim()}
+                                @click=${() => this._saveProviderKey(provider, gemini ? this._geminiKey : this._groqKey)}>Save key</button>
+                            <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !this._savedKeys[provider]}
+                                @click=${() => this._saveProviderKey(provider, '')}>Remove saved key</button>
                             <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : 'https://console.groq.com/keys')}>Open ${label} key settings</button>
                             <button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh available models'}</button>
                         </div>

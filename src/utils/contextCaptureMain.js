@@ -109,7 +109,7 @@ async function listCaptureSources(mainWindow) {
 
 async function resolveVideoSource(mainWindow) {
     const selection = getStoredSelection();
-    const sources = await getDesktopSources();
+    const sources = (await getDesktopSources()).filter(source => source.id !== mainWindow.getMediaSourceId?.());
 
     if (selection.kind === 'window') {
         const windowSource = sources.find(source => sourceType(source) === 'window' && source.id === selection.sourceId);
@@ -127,18 +127,20 @@ async function resolveVideoSource(mainWindow) {
     const display = selection.kind === 'primary-display'
         ? screen.getPrimaryDisplay()
         : screen.getDisplayMatching(mainWindow.getBounds());
-    const source = sources.find(candidate => String(candidate.display_id) === String(display.id))
-        || sources.find(candidate => sourceType(candidate) === 'screen');
+    const source = sources.find(candidate => sourceType(candidate) === 'screen' && String(candidate.display_id) === String(display.id));
+    if (!source) throw new Error('The requested display cannot be captured. Choose a source again.');
 
     return { source, selection };
 }
 
 function installDisplayCaptureHandler(mainWindow) {
     session.defaultSession.setDisplayMediaRequestHandler(
-        async (_request, callback) => {
+        async (request, callback) => {
+            if (!request?.frame || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
             try {
                 const { source } = await resolveVideoSource(mainWindow);
-                callback(source ? { video: source, audio: 'loopback' } : {});
+                if (mainWindow.isDestroyed() || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
+                callback(source ? { video: source, ...(request.audioRequested ? { audio: 'loopback' } : {}) } : {});
             } catch (error) {
                 console.warn('Context capture source selection unavailable; capture denied.');
                 callback({});
@@ -303,8 +305,10 @@ function setupContextCaptureMain(mainWindow, ipcMain) {
     installHandler('context-capture:list-sources', async () => ({ success: true, data: await listCaptureSources(mainWindow) }));
     installHandler('context-capture:get-state', () => ({ success: true, data: getStoredSelection() }));
     installHandler('context-capture:set-source', selection => {
+        const previous = getStoredSelection();
         const data = saveSelection(selection);
         refreshActiveDisplay?.();
+        if (JSON.stringify(previous) !== JSON.stringify(data)) mainWindow.webContents.send('capture-source-invalidated', { reason: 'selection-changed' });
         return { success: true, data };
     });
     installHandler('context-capture:read-clipboard', async () => {

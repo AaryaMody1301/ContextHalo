@@ -40,7 +40,7 @@ test('Analyze Screen remains usable while Gemini Live reconnect is pending', asy
     assert.equal(fixture.connections.length, 2);
 });
 
-test('simulated sixty-minute Live session survives six rotations with interleaved screen analysis', async t => {
+test('six Live connection rotations preserve context with interleaved screen analysis', async t => {
     const fixture = geminiFixture({ generate: async (_params, count) => ({ text: `Screen answer ${count}` }) });
     t.after(() => fixture.close());
 
@@ -65,7 +65,7 @@ test('simulated sixty-minute Live session survives six rotations with interleave
         assert.equal(screen.text, `Screen answer ${rotation}`);
     }
 
-    assert.equal(fixture.connections.length, 7, 'six roughly ten-minute rotations model a sixty-minute interview');
+    assert.equal(fixture.connections.length, 7, 'six controlled rotations require seven connections');
     assert.equal(fixture.realtime.some(item => String(item?.text || '').includes('Session reconnected.')), false,
         'server-resumed rotations must not duplicate local history');
 });

@@ -28,6 +28,8 @@ function createGeminiLiveRuntime(options = {}) {
     let reconnecting = false;
     let stopped = false;
     let generation = 0;
+    let pendingFailure = null;
+    let terminal = false;
 
     function clearScheduledReconnect() {
         if (timer !== null) clearTimer(timer);
@@ -72,6 +74,8 @@ function createGeminiLiveRuntime(options = {}) {
             if (stopped || reconnecting) return;
 
             reconnecting = true;
+            state = { ...state, connectedAt: 0 };
+            pendingFailure = null;
             generation += 1;
             const config = liveConnectReliabilityConfig(state);
             const usedResumption = connectUsesResumption(config);
@@ -84,15 +88,21 @@ function createGeminiLiveRuntime(options = {}) {
                     state: { ...state },
                 });
             } catch (error) {
+                if (stopped) { reconnecting = false; return; }
                 const failure = normalizeFailure(error);
                 const recorded = recordLiveFailure(state, failure, now(), random);
                 state = recorded.state;
                 reconnecting = false;
                 if (recorded.recoverable) scheduleReconnect('reconnect-failed', recorded.retryDelayMs);
-                else publishState('failed', failure);
+                else { terminal = true; publishState('failed', failure); }
                 return;
             }
             reconnecting = false;
+            if (!stopped && pendingFailure) {
+                const pending = pendingFailure;
+                pendingFailure = null;
+                onFailure(pending.failure, pending.source);
+            }
         }, delay);
         return true;
     }
@@ -100,6 +110,7 @@ function createGeminiLiveRuntime(options = {}) {
     function onOpen() {
         if (stopped) return;
         clearScheduledReconnect();
+        terminal = false;
         state = markLiveConnected(state, now());
         publishState('ready', null);
     }
@@ -113,20 +124,33 @@ function createGeminiLiveRuntime(options = {}) {
     }
 
     function onFailure(rawFailure, source = 'error') {
-        if (stopped) return { recoverable: false, stopped: true };
-
-        // A WebSocket failure frequently raises both onerror and onclose. Once a
-        // reconnect is already scheduled/running, ignore the duplicate lifecycle
-        // callback instead of incrementing the consecutive-failure streak twice.
-        if (timer !== null || reconnecting) {
-            return { recoverable: true, deduplicated: true, retryDelayMs: scheduledAt === null ? null : Math.max(0, scheduledAt - now()) };
-        }
-
+        if (stopped || terminal) return { recoverable: false, stopped: true };
         const failure = normalizeFailure(rawFailure);
         const recorded = recordLiveFailure(state, failure, now(), random);
+        // Fatal failures supersede even a planned GoAway. A later generic socket
+        // close must never turn invalid credentials into an infinite retry loop.
+        if (!recorded.recoverable) {
+            clearScheduledReconnect();
+            terminal = true;
+            pendingFailure = null;
+            state = recorded.state;
+            publishState('failed', failure);
+            return recorded;
+        }
+        if (reconnecting) {
+            // Setup failures are returned by the reconnect promise. A failure
+            // AFTER setup but before that promise settles must not be lost.
+            if (state.connectedAt) pendingFailure = { failure, source };
+            return { recoverable: true, deduplicated: true };
+        }
+        if (timer !== null && scheduledReason !== 'go-away') {
+            return { recoverable: true, deduplicated: true, retryDelayMs: Math.max(0, scheduledAt - now()) };
+        }
+        // If the socket dies before GoAway.timeLeft, recover now, not at the old
+        // rotation deadline. The callback owner invalidates old socket events.
+        clearScheduledReconnect();
         state = recorded.state;
-        if (recorded.recoverable) scheduleReconnect(source, recorded.retryDelayMs);
-        else publishState('failed', failure);
+        scheduleReconnect(source, recorded.retryDelayMs);
         return recorded;
     }
 
@@ -164,6 +188,7 @@ function createGeminiLiveRuntime(options = {}) {
     return {
         callbacks,
         getConnectConfig,
+        clearResumption() { state = { ...state, resumptionHandle: null }; },
         getState,
         onOpen,
         onMessage,
