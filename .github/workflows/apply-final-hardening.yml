@@ -1,0 +1,40 @@
+name: Apply final hardening
+on:
+  push:
+    branches: [fix/final-api-runtime-hardening]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, '[apply-final]')
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/final-api-runtime-hardening
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Apply only hash-verified source changes
+        run: node .hardening-apply.cjs
+      - name: Regenerate lockfile for the verified SDK release
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate syntax
+        run: npm run check
+      - name: Run all regression and installed-SDK tests
+        run: npm test
+      - name: Commit source and remove temporary patch payloads
+        shell: pwsh
+        run: |
+          Remove-Item .hardening-part-*.json, .hardening-apply.cjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- src tests scripts docs AGENTS.md README.md package.json package-lock.json preload.js '.hardening-*'
+          git diff --cached --stat
+          git commit -m 'fix: harden interview runtime against API and capture failures'
+          if ($LASTEXITCODE -ne 0) { throw 'Source commit failed' }
+          git push origin HEAD:fix/final-api-runtime-hardening
+          if ($LASTEXITCODE -ne 0) { throw 'Branch advanced; refusing a non-fast-forward push' }
