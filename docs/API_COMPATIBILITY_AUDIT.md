@@ -30,7 +30,7 @@ Defaults are not a claim that a user's account has access, quota, billing eligib
 
 Groq text uses the production `openai/gpt-oss-120b`, and transcription uses production `whisper-large-v3-turbo`. Groq currently has no production multimodal model in the same low-latency fit: both Qwen 3.6 and 3.8 vision models are Preview. ContextHalo keeps Qwen 3.6 as the default screen model because it is faster and cheaper for frequent screen assistance, while dynamic discovery exposes Qwen 3.8 for users who prefer its newer reasoning/coding quality. The UI and catalog explicitly mark both as Preview.
 
-The vendored Lit/Markdown/highlighting UI stack is intentionally not major-upgraded during this reliability pass. The rendered provider/Markdown path remains sanitized and the real Electron smoke covers navigation, labels, focus, scaling, response routing, persistence, knowledge, practice and review. A major UI-library migration would add unrelated release risk without fixing an identified Windows runtime defect.
+The vendored Markdown/highlighting UI path remains sanitized and the real Electron smoke covers navigation, labels, focus, scaling, response routing, persistence, knowledge, practice and review. The unused full Lit bundle and legacy raster logo are removed from the release tree. The remaining Lit 2.7.4 core is used only through static tagged templates; ContextHalo does not use CompiledTemplates, the surface fixed by Lit 2.7.5. Moving the renderer to Lit 3.3.3 is compatible with modern Electron but is intentionally a separate UI-runtime migration rather than an API/reliability hotfix.
 
 ## Important corrections from the earlier audit
 
@@ -41,6 +41,7 @@ The original six-rotation test was not a sixty-minute soak. It remains a rotatio
 Saved keys no longer round-trip through renderer reads. Only new replacement key input enters the Home form; successful saving clears the input. The retired Cloud provider's runtime/IPC routes and stored token are removed without deleting Gemini/Groq keys or history.
 
 Unused legacy UI/preload files and the one-shot hardening workflow are removed before release. The permanent Windows workflow is the only release path and uses immutable action SHAs.
+The validation-source artifact now includes `.github/` with hidden files enabled, so its own release-readiness tests can be replayed from the artifact instead of depending on files omitted from the evidence bundle. Temporary `.github/repair-data` payloads are not allowed to ship.
 
 ## Validation and unresolved environment gates
 
