@@ -6,9 +6,17 @@ const read = path => fs.readFileSync(path, 'utf8');
 
 test('final branch contains no one-shot migration workflow or duplicate UI/preload files', () => {
     assert.equal(fs.existsSync('.github/workflows/apply-final-hardening.yml'), false);
+    assert.equal(fs.existsSync('.github/workflows/apply-final-touchups.yml'), false);
     assert.equal(fs.existsSync('src/components/app/AppHeader.js'), false);
     assert.equal(fs.existsSync('src/preload.js'), false);
     assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
+});
+
+test('credential editor has one explicit save owner and no stale Cloud copy', () => {
+    const view = read('src/components/views/MainView.js');
+    assert.doesNotMatch(view, /@change=\$\{event => \{[^\n]*_saveProviderKey/);
+    assert.match(view, />Save key<\/button>/);
+    assert.doesNotMatch(view, /Cloud UI intentionally disabled|backend cloud wiring/i);
 });
 
 test('Windows release workflow pins the current audited action releases by commit', () => {
@@ -38,4 +46,11 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.match(storage, /groqImageModel: 'qwen\/qwen3\.6-27b'/);
     assert.match(storage, /groqTranscriptionModel: 'whisper-large-v3-turbo'/);
     assert.doesNotMatch(storage, /RETIRED_GEMINI_HTTP_MODELS[\s\S]{0,200}'gemini-2\.5-flash'/);
+});
+
+test('local model errors describe the supported projector fallback rather than BF16 only', () => {
+    for (const path of ['src/utils/native-ai-runtime.js', 'src/utils/windowsLocalAiRuntime.js']) {
+        const source = read(path);
+        assert.doesNotMatch(source, /does not provide mmproj-BF16\.gguf/);
+    }
 });
