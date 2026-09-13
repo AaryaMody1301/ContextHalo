@@ -1054,7 +1054,7 @@ export class MainView extends LitElement {
         this._keyError = this._mode !== 'local';
         this.requestUpdate();
         setTimeout(() => {
-                this._keyError = false;
+            this._keyError = false;
             this.requestUpdate();
         }, 2000);
     }
@@ -1132,9 +1132,8 @@ export class MainView extends LitElement {
         </div>`;
     }
 
-    // ── Cloud mode ──
-    // Supported providers share one setup editor.
-    // the codebase, but the renderer no longer exposes this setup path.
+    // ── Provider setup ──
+    // Gemini and Groq share one editor; the retired Cloud provider has been removed.
 
     // ── BYOK mode ──
 
@@ -1179,7 +1178,6 @@ export class MainView extends LitElement {
                             placeholder=${this._savedKeys[provider] ? 'Key saved securely; enter a replacement' : 'Required'} .value=${gemini ? this._geminiKey : this._groqKey}
                             ?disabled=${this.sessionActive || this.isInitializing}
                             @input=${event => { this._keyDraftDirty = true; this._keyError = false; this[gemini ? '_geminiKey' : '_groqKey'] = event.target.value; }}
-                            @change=${event => { if (event.target.value.trim()) void this._saveProviderKey(provider, event.target.value); }}
                             aria-invalid=${this._keyError ? 'true' : 'false'} class=${this._keyError ? 'error' : ''} />
                         <div class="key-actions">
                             <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !(gemini ? this._geminiKey : this._groqKey).trim()}

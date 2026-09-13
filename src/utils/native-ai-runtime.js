@@ -249,7 +249,7 @@ async function resolveHuggingFaceGguf(modelReference, signal) {
 
     const projector = selectProjector(files);
     if (!projector?.lfs?.oid || !projector.size) {
-        throw new Error(`Hugging Face model ${repository} does not provide mmproj-BF16.gguf`);
+        throw new Error(`Hugging Face model ${repository} does not provide a supported multimodal projector`);
     }
 
     return {

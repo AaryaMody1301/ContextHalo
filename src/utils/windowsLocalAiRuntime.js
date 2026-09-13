@@ -126,7 +126,7 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
 
     const modelFile = matches[0];
     const projectorFile = selectProjector(files);
-    if (!projectorFile) throw new Error(`Hugging Face model ${repository} does not provide mmproj-BF16.gguf`);
+    if (!projectorFile) throw new Error(`Hugging Face model ${repository} does not provide a supported multimodal projector`);
 
     const [modelSha256, projectorSha256] = await Promise.all([
         getHuggingFaceFileSha256(repository, modelFile.path, signal),
@@ -167,7 +167,7 @@ function installWindowsLocalAiRuntime() {
             return await originalEnsureLlamaModel(...args);
         } catch (error) {
             const message = String(error?.message || error);
-            const metadataFailure = message.includes('checksum metadata') || message.includes('does not provide mmproj-BF16.gguf');
+            const metadataFailure = message.includes('checksum metadata') || message.includes('does not provide a supported multimodal projector');
             if (!metadataFailure) throw error;
             console.warn('Falling back to Hugging Face Xet metadata for Local AI model verification');
             return ensureXetLlamaModel(runtime, ...args);
