@@ -118,7 +118,10 @@ function buildGroqCatalog(rawModels) {
         transcription,
         recommended: {
             chat: pick(chat, ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']),
-            vision: pick(vision, ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']),
+            // Both current Qwen vision choices are Preview. Prefer 3.6 for
+            // frequent interactive screenshots: Groq documents ~500 t/s and
+            // lower token pricing than 3.8, while 3.8 remains selectable.
+            vision: pick(vision, ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']),
             transcription: pick(transcription, ['whisper-large-v3-turbo', 'whisper-large-v3']),
         },
     };
