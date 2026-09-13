@@ -14,6 +14,9 @@ test('final branch contains no one-shot migration workflow or duplicate UI/prelo
     ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
     assert.equal(fs.existsSync('src/components/app/AppHeader.js'), false);
     assert.equal(fs.existsSync('src/preload.js'), false);
+    assert.equal(fs.existsSync('.github/repair-data'), false, 'one-shot repair payloads must not ship');
+    assert.equal(fs.existsSync('src/assets/lit-all-2.7.4.min.js'), false, 'unused full Lit bundle must not ship');
+    assert.equal(fs.existsSync('src/assets/logo.png'), false, 'unused legacy raster logo must not ship');
     assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
 });
 
@@ -37,6 +40,16 @@ test('Windows release workflow pins the current audited action releases by commi
     assert.doesNotMatch(workflow, /actions\/upload-artifact@v4/);
     assert.doesNotMatch(workflow, /actions\/download-artifact@v5/);
     assert.doesNotMatch(workflow, /softprops\/action-gh-release@v2/);
+});
+
+test('validation source artifact can replay the repository release-readiness checks', () => {
+    const workflow = read('.github/workflows/build-windows.yml');
+    const start = workflow.indexOf('- name: Upload validation source snapshot');
+    const end = workflow.indexOf('- name: Setup Node.js', start);
+    assert.ok(start >= 0 && end > start, 'validation snapshot step must exist before dependency installation');
+    const snapshot = workflow.slice(start, end);
+    assert.match(snapshot, /^\s+\.github\/\s*$/m, 'snapshot must include workflow/config sources used by tests');
+    assert.match(snapshot, /include-hidden-files:\s*true/, 'hidden .github files must actually be uploaded');
 });
 
 test('provider package and defaults match the audited 2026 contracts', () => {
