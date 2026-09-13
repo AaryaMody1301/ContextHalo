@@ -3,7 +3,6 @@ const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { getSystemPrompt } = require('./prompts');
 const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
-const { connectCloud, sendCloudAudio, sendCloudText, sendCloudImage, closeCloud, isCloudActive, setOnTurnComplete } = require('./cloud');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 const { listProviderModels } = require('./providerModelRegistry');
 const { randomUUID, createHash } = require('node:crypto');
@@ -34,7 +33,7 @@ function getLocalAi() {
     return _localai;
 }
 
-// Provider mode: 'byok', 'groq', 'cloud', or 'local'
+// Provider mode: 'byok', 'groq', or 'local'
 let currentProviderMode = 'byok';
 
 // Groq conversation history for context
@@ -1096,9 +1095,7 @@ async function startMacOSAudioCapture(geminiSessionRef) {
 
             const monoChunk = CHANNELS === 2 ? convertStereoToMono(chunk) : chunk;
 
-            if (currentProviderMode === 'cloud') {
-                sendCloudAudio(monoChunk);
-            } else if (currentProviderMode === 'local') {
+            if (currentProviderMode === 'local') {
                 getLocalAi().processLocalAudio(monoChunk);
             } else if (currentProviderMode === 'groq') {
                 const base64Data = monoChunk.toString('base64');
@@ -1248,7 +1245,7 @@ async function sendTypedGeminiText(text) {
         model,
         contents: [...history, { role: 'user', parts: [{ text }] }],
         config: { systemInstruction: instruction, maxOutputTokens: 4096, ...(tools.length ? { tools } : {}),
-            httpOptions: { timeout: Math.min(27000, remaining), retryOptions: { attempts: 1 } }, abortSignal: getRequestSignal() },
+            httpOptions: { timeout: Math.min(50000, remaining), retryOptions: { attempts: 1 } }, abortSignal: getRequestSignal() },
     })), { operation: 'text', model, apiKey, signal: getRequestSignal() });
     assertCurrentRequest();
     const answer = response.text?.trim();
@@ -1314,7 +1311,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 isUserClosing = false;
                 isInitializingSession = false;
                 resetSessionRequests();
-                const mode = channel === 'initialize-local' ? 'local' : channel === 'initialize-cloud' ? 'cloud' : args[4] === 'groq' ? 'groq' : 'byok';
+                const mode = channel === 'initialize-local' ? 'local' : args[3] === 'groq' ? 'groq' : 'byok';
                 require('./windowsRuntimeMain').prepareWindowsProvider(mode);
                 require('./runtimeHardeningMain').prepareRuntimeProvider(mode);
             }
@@ -1343,26 +1340,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return operation;
     });
 
-    register('initialize-cloud', async (event, token, profile, userContext) => {
-        try {
-            currentProviderMode = 'cloud';
-            initializeNewSession(profile);
-            setOnTurnComplete((transcription, response) => {
-                saveConversationTurn(transcription, response);
-            });
-            sendToRenderer('session-initializing', true);
-            await connectCloud(token, profile, userContext);
-            sendToRenderer('session-initializing', false);
-            return true;
-        } catch (err) {
-            console.warn('[Cloud] Init error:');
-            currentProviderMode = 'byok';
-            sendToRenderer('session-initializing', false);
-            return false;
-        }
-    });
 
-    register('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
+    register('initialize-gemini', async (event, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
         if (!options || typeof options !== 'object' || (options.searchEnabled !== undefined && typeof options.searchEnabled !== 'boolean')
             || (options.uiEpoch !== undefined && !Number.isSafeInteger(options.uiEpoch))) return { success: false, error: 'Invalid session options' };
         providerUiEpoch = options.uiEpoch;
@@ -1389,6 +1368,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true, provider: 'groq', search: { ...searchState } };
         }
 
+        const apiKey = getApiKey();
         if (!apiKey || !apiKey.trim()) {
             const error = 'No Gemini API key configured.';
             sendToRenderer('update-status', error);
@@ -1428,16 +1408,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
         }
-        if (currentProviderMode === 'cloud') {
-            try {
-                const pcmBuffer = Buffer.from(data, 'base64');
-                sendCloudAudio(pcmBuffer);
-                return { success: true };
-            } catch (error) {
-                console.warn('Error sending cloud audio:');
-                return { success: false, error: error.message };
-            }
-        }
         if (currentProviderMode === 'local') {
             try {
                 const pcmBuffer = Buffer.from(data, 'base64');
@@ -1468,16 +1438,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         const { data, mimeType } = payload || {};
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
-        }
-        if (currentProviderMode === 'cloud') {
-            try {
-                const pcmBuffer = Buffer.from(data, 'base64');
-                sendCloudAudio(pcmBuffer);
-                return { success: true };
-            } catch (error) {
-                console.warn('Error sending cloud mic audio:');
-                return { success: false, error: error.message };
-            }
         }
         if (currentProviderMode === 'local') {
             try {
@@ -1531,10 +1491,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             let result;
             try {
                 if (Buffer.from(data, 'base64').length < 1000) result = { success: false, error: 'Image buffer too small' };
-                else if (currentProviderMode === 'cloud') {
-                    const sent = sendCloudImage(data);
-                    result = sent ? { success: true, model: 'cloud' } : { success: false, error: 'Cloud connection not active' };
-                } else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
+                else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
                 else result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
             } catch (error) { result = userRequestFailure(error, 'screen'); }
             result = reportUserRequestResult(result, 'screen');
@@ -1603,12 +1560,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         try {
             stopMacOSAudioCapture();
 
-            if (currentProviderMode === 'cloud') {
-                closeCloud();
-                currentProviderMode = 'byok';
-                closeTransportLog();
-                return { success: true };
-            }
 
             if (currentProviderMode === 'local') {
                 getLocalAi().closeLocalSession();

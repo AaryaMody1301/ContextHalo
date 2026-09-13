@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-test('storage v6 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
+test('storage v7 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -53,7 +53,7 @@ test('storage v6 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 6);
+    assert.equal(config.configVersion, 7);
     assert.equal(config.geminiLiveModel, 'gemini-3.1-flash-live-preview');
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
@@ -71,13 +71,14 @@ test('storage v6 migration upgrades provider models without deleting user data',
     assert.equal(storage.getAvailableModel(), 'gemini-3.8-flash');
     assert.equal(storage.getCredentials().apiKey, 'gemini-secret');
     assert.equal(storage.getCredentials().groqApiKey, 'groq-secret');
+    assert.equal(Object.hasOwn(storage.getCredentials(), 'cloudToken'), false);
     assert.equal(fs.existsSync(path.join(historyDir, '123.json')), true);
 
     storage.updatePreference('providerMode', 'cloud');
     assert.equal(storage.getPreferences().providerMode, 'byok');
 });
 
-test('storage v6 migrates the previous Gemini 3.7 screen default to 3.8', { concurrency: false }, t => {
+test('storage v7 migrates the previous Gemini 3.7 screen default while preserving an active Groq vision choice', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-v6-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -109,8 +110,9 @@ test('storage v6 migrates the previous Gemini 3.7 screen default to 3.8', { conc
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 6);
+    assert.equal(config.configVersion, 7);
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
+    assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');
 });
 
 

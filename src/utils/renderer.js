@@ -243,27 +243,14 @@ const storage = {
         return persistStorage('storage:update-config', key, value);
     },
 
-    // Credentials
-    async getCredentials() {
+    // Credentials. Secret values are write-only from the sandboxed renderer.
+    async getCredentialStatus() {
         await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-credentials');
-        return result.success ? result.data : {};
-    },
-    async setCredentials(credentials) {
-        return persistStorage('storage:set-credentials', credentials);
-    },
-    async getApiKey() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-api-key');
-        return result.success ? result.data : '';
+        const result = await ipcRenderer.invoke('storage:get-credential-status');
+        return result?.success ? result.data : { gemini: false, groq: false };
     },
     async setApiKey(apiKey) {
         return persistStorage('storage:set-api-key', apiKey);
-    },
-    async getGroqApiKey() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-groq-api-key');
-        return result.success ? result.data : '';
     },
     async setGroqApiKey(groqApiKey) {
         return persistStorage('storage:set-groq-api-key', groqApiKey);
@@ -371,12 +358,9 @@ function arrayBufferToBase64(buffer) {
 async function initializeGemini(profile = 'interview', language = 'en-US', options = {}) {
     const prefs = await storage.getPreferences();
     const provider = prefs.providerMode === 'groq' ? 'groq' : 'byok';
-    const apiKey = provider === 'groq' ? '' : await storage.getApiKey();
-
     if (options.uiEpoch !== undefined && options.uiEpoch !== contextHaloApp._uiSessionEpoch) return false;
     const result = await ipcRenderer.invoke(
         'initialize-gemini',
-        apiKey || '',
         prefs.customPrompt || '',
         profile,
         language,
@@ -417,25 +401,6 @@ async function initializeLocal(profile = 'interview', language = 'en-US', option
 
 async function cancelLocalInitialization() {
     return ipcRenderer.invoke('cancel-local-initialization');
-}
-
-async function initializeCloud(profile = 'interview') {
-    const creds = await storage.getCredentials();
-    const token = creds.cloudToken;
-    if (!token || !token.trim()) {
-        contextHalo.setStatus('error');
-        return false;
-    }
-
-    const prefs = await storage.getPreferences();
-    const success = await ipcRenderer.invoke('initialize-cloud', token, profile, prefs.customPrompt || '');
-    if (success) {
-        contextHalo.setStatus('Live');
-        return true;
-    } else {
-        contextHalo.setStatus('error');
-        return false;
-    }
 }
 
 function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium', options = {}) {
@@ -1082,7 +1047,6 @@ const contextHalo = {
 
     // Core functionality
     initializeGemini,
-    initializeCloud,
     initializeLocal,
     cancelLocalInitialization,
     startCapture,

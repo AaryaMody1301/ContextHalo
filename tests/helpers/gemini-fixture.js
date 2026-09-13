@@ -69,7 +69,6 @@ function geminiFixture(options = {}) {
             if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
             if (name === '@google/genai') return { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
-            if (name === './cloud') return { closeCloud() {}, isCloudActive: () => false };
             if (name === './localai') return local;
             if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.1-flash-live-preview' }] })) };
             if (name === './transportLogger') return { startTransportLog() {}, logTransportEvent: (...args) => diagnostics.push(args), closeTransportLog() {} };
@@ -105,7 +104,7 @@ function geminiFixture(options = {}) {
         api, handlers, event, events, generated, connections, clients, realtime, preparations, diagnostics, preferences,
         get callbacks() { return connections.at(-1)?.callbacks; },
         call: (name, ...args) => handlers.get(name)(event, ...args),
-        start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, 'test-key-not-a-real-credential', '', 'meeting', 'en-US', provider, settings),
+        start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, '', 'meeting', 'en-US', provider, settings),
         close: () => handlers.get('close-session')(event),
     };
 }

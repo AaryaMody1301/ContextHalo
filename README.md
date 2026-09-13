@@ -1,6 +1,6 @@
 # ContextHalo
 
-ContextHalo is an open-source, context-aware AI desktop assistant for Windows. It combines screen context, Windows system audio, microphone input, typed prompts, and local or cloud AI models to provide real-time assistance for meetings, presentations, development workflows, research, and general productivity.
+ContextHalo is an open-source, context-aware AI desktop assistant for Windows. It combines screen context, Windows system audio, microphone input, typed prompts, and local or hosted AI models to provide real-time assistance for meetings, presentations, development workflows, research, and general productivity.
 
 > **Supported platform:** Windows 10/11 x64.
 
@@ -64,7 +64,7 @@ Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for 
 
 ### Local AI
 
-Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No cloud API key is required.
+Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No hosted-provider API key is required.
 
 ## Security and privacy
 

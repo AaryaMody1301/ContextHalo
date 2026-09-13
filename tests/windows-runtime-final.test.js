@@ -20,9 +20,9 @@ function read(relativePath) {
     return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 }
 
-test('Windows provider transport classifies cloud and local runtime calls', () => {
+test('Windows provider transport classifies hosted and local runtime calls', () => {
     const textBody = JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [] });
-    const imageBody = JSON.stringify({ model: 'qwen/qwen3.6-27b', messages: [{ content: [{ type: 'image_url' }] }] });
+    const imageBody = JSON.stringify({ model: 'qwen/qwen3.8-27b', messages: [{ content: [{ type: 'image_url' }] }] });
 
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: textBody }), 'groq-text');
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: imageBody }), 'groq-image');
@@ -130,7 +130,6 @@ test('Windows security and packaging configuration are enabled together', () => 
     const windowsRuntime = read('src/utils/contextCaptureMain.js');
     const storageSource = read('src/storage.js');
     const preloadSource = read('preload.js');
-    const cloudSource = read('src/utils/cloud.js');
     const packageJson = JSON.parse(read('package.json'));
     const indexSource = read('src/index.js');
 
@@ -145,7 +144,12 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.match(storageSource, /safeStorage\.encryptString/);
     assert.match(storageSource, /windows-safe-storage-v1/);
     assert.equal(preloadSource.includes('process.env'), false);
-    assert.equal(cloudSource.includes("console.log('[Cloud] Connecting to', url)"), false);
+    assert.equal(preloadSource.includes('storage:get-api-key'), false);
+    assert.equal(preloadSource.includes('storage:get-groq-api-key'), false);
+    assert.equal(preloadSource.includes('storage:get-credentials'), false);
+    assert.match(preloadSource, /storage:get-credential-status/);
+    assert.equal(indexSource.includes('storage:get-api-key'), false);
+    assert.equal(indexSource.includes('storage:get-groq-api-key'), false);
     assert.equal(packageJson.build.win.icon, 'src/assets/logo.ico');
     assert.deepEqual(packageJson.build.electronFuses, {
         runAsNode: false,

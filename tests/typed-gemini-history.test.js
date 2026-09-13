@@ -8,11 +8,12 @@ const lifecycle = require('../src/utils/sessionRequests');
 const { geminiFixture: fixture } = require('./helpers/gemini-fixture');
 test('typed Gemini uses selected HTTP model and session context without muting live audio', async () => {
     const f=fixture();
-    const start=await f.handlers.get('initialize-gemini')(f.event,'test-key','','meeting','en-US','byok');
+    const start=await f.handlers.get('initialize-gemini')(f.event,'','meeting','en-US','byok');
     assert.equal(start.success,true);
     const result=await f.handlers.get('send-text-message')(f.event,'What did we discuss?');
     assert.equal(result.success,true);
     assert.equal(f.generated[0].model,'selected-http-model');
+    assert.equal(f.generated[0].config.httpOptions.timeout, 50000);
     assert.match(f.generated[0].config.systemInstruction,/data pipelines/);
     assert.equal(f.realtime.length,0);
     assert.ok(f.events.some(([channel,payload])=>channel==='save-conversation-turn' && payload.turn.transcription==='What did we discuss?'));
@@ -21,7 +22,7 @@ test('typed Gemini uses selected HTTP model and session context without muting l
 });
 test('Live saves final transcription only at turn completion and does not concatenate duplicate text modalities', async () => {
     const f=fixture();
-    await f.handlers.get('initialize-gemini')(f.event,'test-key','','meeting','en-US','byok');
+    await f.handlers.get('initialize-gemini')(f.event,'','meeting','en-US','byok');
     f.callbacks.onmessage({serverContent:{inputTranscription:{text:'Question'},modelTurn:{parts:[{text:'Answer'}]},outputTranscription:{text:'Answer'},generationComplete:true}});
     assert.equal(f.events.filter(([channel])=>channel==='save-conversation-turn').length,0);
     f.callbacks.onmessage({serverContent:{outputTranscription:{text:' done'},turnComplete:true}});

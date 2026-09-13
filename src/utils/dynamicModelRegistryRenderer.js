@@ -7,7 +7,7 @@ const GEMINI_DEFAULTS = {
 
 const GROQ_DEFAULTS = {
     chat: 'openai/gpt-oss-120b',
-    vision: 'qwen/qwen3.6-27b',
+    vision: 'qwen/qwen3.8-27b',
     transcription: 'whisper-large-v3-turbo',
 };
 

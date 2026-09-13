@@ -16,7 +16,13 @@
 
 ## What automated checks prove
 
-Node tests cover pure transformations, real application methods with controlled provider/IPC dependencies, cancellation and persistence. The Windows Electron smoke uses the actual sandboxed preload and actual storage/knowledge/practice/review IPC. Cloud replies in composer checks are simulated. A passing EXE build alone is not evidence of a successful live provider call.
+Node tests cover pure transformations, real application methods with controlled provider/IPC dependencies, cancellation and persistence. The Windows Electron smoke uses the actual sandboxed preload and actual storage/knowledge/practice/review IPC. Provider replies in composer checks are simulated. A passing EXE build alone is not evidence of a successful live provider call.
+
+## Current provider API baseline
+
+As of September 2026, the supported hosted paths are Gemini API and Groq API only. Gemini Live uses `gemini-3.1-flash-live-preview` with session resumption and context-window compression; typed and screen requests use the stable `gemini-3.8-flash`. Groq defaults to production `openai/gpt-oss-120b` for text, `whisper-large-v3-turbo` for transcription, and current multimodal `qwen/qwen3.8-27b` for screenshots. Provider model discovery remains advisory so account-specific catalogs can override recommendations without silently changing saved manual IDs.
+
+Provider credentials remain encrypted in main-process storage on packaged Windows builds. The sandboxed renderer can write a replacement key and query only whether a key is present; decrypted key material is never returned over renderer IPC.
 
 ## Required device/account acceptance before declaring full runtime completion
 

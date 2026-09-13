@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { randomUUID } = require('node:crypto');
 
-const CONFIG_VERSION = 6;
+const CONFIG_VERSION = 7;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
@@ -12,11 +12,11 @@ const DEFAULT_CONFIG = {
     geminiLiveModel: 'gemini-3.1-flash-live-preview',
     geminiHttpModel: 'gemini-3.8-flash',
     groqModel: 'openai/gpt-oss-120b',
-    groqImageModel: 'qwen/qwen3.6-27b',
+    groqImageModel: 'qwen/qwen3.8-27b',
     groqTranscriptionModel: 'whisper-large-v3-turbo',
     disableGroqThinking: true,
 };
-const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '', cloudToken: '' };
+const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '' };
 const DEFAULT_PREFERENCES = {
     customPrompt: '',
     providerMode: 'byok',
@@ -133,7 +133,7 @@ function decryptCredential(value, safeStorage) {
 
 function decodeStoredCredentials(raw) {
     if (!isEncryptedCredentialFile(raw)) {
-        return { ...DEFAULT_CREDENTIALS, ...(raw && typeof raw === 'object' ? raw : {}) };
+        return { apiKey: String(raw?.apiKey || ''), groqApiKey: String(raw?.groqApiKey || '') };
     }
 
     const safeStorage = getWindowsSafeStorage();
@@ -146,7 +146,6 @@ function decodeStoredCredentials(raw) {
         return {
             apiKey: decryptCredential(raw.encrypted.apiKey, safeStorage),
             groqApiKey: decryptCredential(raw.encrypted.groqApiKey, safeStorage),
-            cloudToken: decryptCredential(raw.encrypted.cloudToken, safeStorage),
         };
     } catch (error) {
         console.error('Could not decrypt Windows credentials:', error.message);
@@ -155,7 +154,7 @@ function decodeStoredCredentials(raw) {
 }
 
 function writeCredentialsFile(credentials) {
-    const normalized = { ...DEFAULT_CREDENTIALS, ...(credentials || {}) };
+    const normalized = { apiKey: String(credentials?.apiKey || ''), groqApiKey: String(credentials?.groqApiKey || '') };
     const safeStorage = getWindowsSafeStorage();
 
     if (safeStorage) {
@@ -164,7 +163,6 @@ function writeCredentialsFile(credentials) {
             encrypted: {
                 apiKey: encryptCredential(normalized.apiKey, safeStorage),
                 groqApiKey: encryptCredential(normalized.groqApiKey, safeStorage),
-                cloudToken: encryptCredential(normalized.cloudToken, safeStorage),
             },
         });
     }
@@ -264,6 +262,10 @@ function getApiKey() { return getCredentials().apiKey || ''; }
 function setApiKey(apiKey) { return setCredentials({ apiKey }); }
 function getGroqApiKey() { return getCredentials().groqApiKey || ''; }
 function setGroqApiKey(groqApiKey) { return setCredentials({ groqApiKey }); }
+function getCredentialStatus() {
+    const { apiKey, groqApiKey } = getCredentials();
+    return { gemini: Boolean(apiKey.trim()), groq: Boolean(groqApiKey.trim()) };
+}
 function getPreferences() { return migratePreferences(readJsonFile(getPreferencesPath(), {})); }
 function setPreferences(preferences) { return writeJsonFile(getPreferencesPath(), migratePreferences({ ...getPreferences(), ...preferences })); }
 function updatePreference(key, value) { return setPreferences({ [key]: value }); }
@@ -438,6 +440,7 @@ module.exports = {
     setApiKey,
     getGroqApiKey,
     setGroqApiKey,
+    getCredentialStatus,
     getPreferences,
     setPreferences,
     updatePreference,

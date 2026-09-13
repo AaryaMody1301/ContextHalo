@@ -112,17 +112,11 @@ function setupStorageIpcHandlers() {
         saved(storage.updateConfig(key, value)); return { success: true };
     });
 
-    handle('storage:get-credentials', () => ({ success: true, data: storage.getCredentials() }));
-    handle('storage:set-credentials', credentials => {
-        if (!validateObject(credentials)) throw new Error('Invalid credentials');
-        saved(storage.setCredentials(credentials)); return { success: true };
-    });
-    handle('storage:get-api-key', () => ({ success: true, data: storage.getApiKey() }));
+    handle('storage:get-credential-status', () => ({ success: true, data: storage.getCredentialStatus() }));
     handle('storage:set-api-key', apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
         saved(storage.setApiKey(apiKey)); return { success: true };
     });
-    handle('storage:get-groq-api-key', () => ({ success: true, data: storage.getGroqApiKey() }));
     handle('storage:set-groq-api-key', groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
         saved(storage.setGroqApiKey(groqApiKey)); return { success: true };

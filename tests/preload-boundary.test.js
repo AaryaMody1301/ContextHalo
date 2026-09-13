@@ -31,4 +31,8 @@ test('preload strips privileged events and removes only its registered callbacks
     api.removeAllListeners('new-response');
     assert.deepEqual(ipc.listeners('new-response'),[internal]);
     assert.throws(() => api.on('secret-channel',listener), /not allowed/);
+    assert.doesNotThrow(() => api.invoke('storage:get-credential-status'));
+    for (const channel of ['storage:get-api-key', 'storage:get-groq-api-key', 'storage:get-credentials', 'initialize-cloud']) {
+        assert.throws(() => api.invoke(channel), /not allowed/);
+    }
 });

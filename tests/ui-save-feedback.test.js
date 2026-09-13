@@ -108,7 +108,7 @@ function home() {
     const { Target } = componentClass('src/components/views/MainView.js', 'MainView');
     let started = 0;
     const view = Object.assign(Object.create(Target.prototype), {
-        _mode: 'byok', _geminiKey: '', _geminiLiveModel: 'manual-live', _geminiHttpModel: 'manual-http',
+        _mode: 'byok', _geminiKey: '', _geminiKeyPresent: false, _geminiLiveModel: 'manual-live', _geminiHttpModel: 'manual-http',
         _keySavePromise: Promise.resolve(), _configurationWrites: Promise.resolve(), downloadProgress: {}, _configurationLoading: false,
         onStart: () => started++, updateComplete: Promise.resolve(), shadowRoot: { querySelector: () => null },
     });
@@ -118,13 +118,13 @@ function home() {
 test('Home missing credentials guides setup; saved settings never claim verified account access', async () => {
     const f = home(); await f.view._handleStart(); assert.equal(f.started(), 0); assert.equal(f.view._setupOpen, true);
     assert.match(f.view.startError, /API key/);
-    f.view._geminiKey = 'fixture'; f.view._keyError = false; await f.view._handleStart(); assert.equal(f.started(), 1);
+    f.view._geminiKeyPresent = true; f.view._keyError = false; await f.view._handleStart(); assert.equal(f.started(), 1);
     assert.match(f.view._readinessSummary(), /checked when connecting/);
     assert.equal(f.view._geminiLiveModel, 'manual-live');
 });
 
 test('Home loading, unsaved changes and initialization gate Start; active session returns without changing providers', async () => {
-    const f = home(); f.view._geminiKey = 'fixture';
+    const f = home(); f.view._geminiKeyPresent = true;
     f.view._configurationLoading = true; await f.view._handleStart(); assert.equal(f.started(), 0);
     f.view._configurationLoading = false; f.view._saveError = 'disk'; await f.view._handleStart(); assert.equal(f.started(), 0);
     f.view._saveError = ''; f.view.isInitializing = true; await f.view._handleStart(); assert.equal(f.started(), 0);

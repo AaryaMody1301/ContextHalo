@@ -41,7 +41,7 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
-        "@google/genai": "^2.21.0",
+        "@google/genai": "^2.22.0",
         "ws": "^8.21.3"
     },
     "devDependencies": {
