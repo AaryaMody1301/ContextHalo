@@ -1,6 +1,5 @@
 // Main app components
 export { ContextHaloApp } from './app/ContextHaloApp.js';
-export { AppHeader } from './app/AppHeader.js';
 
 // View components
 export { MainView } from './views/MainView.js';
