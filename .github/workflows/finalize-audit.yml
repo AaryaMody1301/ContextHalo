@@ -19,23 +19,33 @@ jobs:
           fetch-depth: 0
 
       - name: Reconstruct and apply audited patch
+        id: stage
         shell: bash
         run: |
+          if [ ! -f .audit-patch/part-1 ]; then
+            echo 'Audit staging already finalized.'
+            echo 'did_apply=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           cat .audit-patch/part-* > /tmp/contexthalo-final.patch.gz.b64
           base64 -d /tmp/contexthalo-final.patch.gz.b64 | gzip -d > /tmp/contexthalo-final.patch
           echo '2fbde931886dfdedfee2b8c5491dd0edb10f3dd2ca23c7c25339aa278e3d8fe4  /tmp/contexthalo-final.patch' | sha256sum -c -
           git apply --check --ignore-space-change --whitespace=nowarn /tmp/contexthalo-final.patch
           git apply --ignore-space-change --whitespace=nowarn /tmp/contexthalo-final.patch
           git diff --name-only -z --diff-filter=ACMRT | xargs -0 -r sed -i 's/\r$//'
-          rm -rf .audit-patch .github/workflows/finalize-audit.yml
+          git checkout -- .github/workflows/build-windows.yml
+          rm -rf .audit-patch
+          echo 'did_apply=true' >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
+        if: steps.stage.outputs.did_apply == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
 
       - name: Validate final source
+        if: steps.stage.outputs.did_apply == 'true'
         shell: bash
         run: |
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
@@ -46,6 +56,7 @@ jobs:
           git diff --check
 
       - name: Commit finalized audit
+        if: steps.stage.outputs.did_apply == 'true'
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
