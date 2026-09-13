@@ -1,0 +1,50 @@
+name: Restore atomic cache promotion
+
+on:
+  push:
+    branches: [fix/final-release-readiness]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, '[restore-atomic-cache-promotion]')
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/final-release-readiness
+
+      - name: Restore direct verified rename
+        shell: pwsh
+        run: |
+          foreach ($path in @('src/utils/native-ai-runtime.js', 'src/utils/windowsLocalAiRuntime.js')) {
+            $text = Get-Content -Raw $path
+            $old = "        signal?.throwIfAborted();`r`n        fs.rmSync(destinationPath, { force: true });`r`n        fs.renameSync(temporaryPath, destinationPath);"
+            $new = "        signal?.throwIfAborted();`r`n        fs.renameSync(temporaryPath, destinationPath);"
+            if (!$text.Contains($old)) { throw "Expected replacement sequence missing in $path" }
+            $text = $text.Replace($old, $new)
+            Set-Content -NoNewline -Encoding utf8 $path $text
+          }
+
+      - name: Verify touched JavaScript parses
+        shell: pwsh
+        run: |
+          node --check src/utils/native-ai-runtime.js
+          node --check src/utils/windowsLocalAiRuntime.js
+
+      - name: Commit and remove this one-shot workflow
+        shell: pwsh
+        run: |
+          Remove-Item .github/workflows/revert-redundant-cache-delete.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- src/utils/native-ai-runtime.js src/utils/windowsLocalAiRuntime.js .github/workflows/revert-redundant-cache-delete.yml
+          git diff --cached --check
+          git commit -m 'fix: keep verified native file promotion atomic'
+          if ($LASTEXITCODE -ne 0) { throw 'Atomic promotion commit failed' }
+          git push origin HEAD:fix/final-release-readiness
+          if ($LASTEXITCODE -ne 0) { throw 'Branch advanced; refusing non-fast-forward push' }
