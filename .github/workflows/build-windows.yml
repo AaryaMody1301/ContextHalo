@@ -30,6 +30,7 @@ jobs:
         with:
           name: ContextHalo-Validation-Source
           path: |
+            .github/
             src/
             tests/
             scripts/
@@ -42,6 +43,7 @@ jobs:
             LICENSE
             CREDITS.md
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
       - name: Setup Node.js
