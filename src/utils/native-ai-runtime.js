@@ -152,6 +152,7 @@ async function installVerifiedFile({ url, destinationPath, sha256, executable, o
         }
     
         signal?.throwIfAborted();
+        fs.rmSync(destinationPath, { force: true });
         fs.renameSync(temporaryPath, destinationPath);
     
         if (executable && process.platform !== 'win32') {
