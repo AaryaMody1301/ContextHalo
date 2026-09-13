@@ -26,6 +26,7 @@ jobs:
           echo '2fbde931886dfdedfee2b8c5491dd0edb10f3dd2ca23c7c25339aa278e3d8fe4  /tmp/contexthalo-final.patch' | sha256sum -c -
           git apply --check --ignore-space-change --whitespace=nowarn /tmp/contexthalo-final.patch
           git apply --ignore-space-change --whitespace=nowarn /tmp/contexthalo-final.patch
+          git diff --name-only -z --diff-filter=ACMRT | xargs -0 -r sed -i 's/\r$//'
           rm -rf .audit-patch .github/workflows/finalize-audit.yml
 
       - name: Setup Node.js
