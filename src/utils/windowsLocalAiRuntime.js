@@ -102,7 +102,6 @@ async function downloadVerifiedFile(url, destinationPath, sha256, onProgress, si
         }
 
         signal?.throwIfAborted();
-        fs.rmSync(destinationPath, { force: true });
         fs.renameSync(temporaryPath, destinationPath);
         return destinationPath;
     } catch (error) {
