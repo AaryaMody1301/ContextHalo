@@ -676,7 +676,6 @@ export class ContextHaloApp extends LitElement {
         super.connectedCallback();
         this._disposeRealtime = initRealtimeContext();
         this._captureSourceChanged = () => { if (this.sessionActive) void this.restartCapture(); };
-        window.addEventListener('capture-source-changed', this._captureSourceChanged);
         void Promise.all([loadContextState(), refreshPreferences()]).catch(() => { this.startError = 'Session context could not be loaded.'; });
         this.toggleAttribute('windows', window.process?.platform === 'win32');
         window.addEventListener('capture-state-changed', this._captureStateListener);
@@ -697,7 +696,7 @@ export class ContextHaloApp extends LitElement {
                 this._isClickThrough = isEnabled;
             });
             listen('capture-source-invalidated', (_, detail) => {
-                if (this.sessionActive && detail?.reason === 'active-display-changed') void this.restartCapture();
+                if (this.sessionActive && ['active-display-changed', 'selection-changed'].includes(detail?.reason)) void this.restartCapture();
             });
             listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
             listen('whisper-downloading', (_, downloading) => {
@@ -711,7 +710,6 @@ export class ContextHaloApp extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-        window.removeEventListener('capture-source-changed', this._captureSourceChanged);
         this._stopTimer();
         clearTimeout(this._recoveryTimer);
         window.removeEventListener('capture-state-changed', this._captureStateListener);

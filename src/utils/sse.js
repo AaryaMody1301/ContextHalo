@@ -6,17 +6,24 @@ async function* readSseJson(body, signal) {
     const decoder = new TextDecoder();
     let pending = '';
     let data = [];
+    let dataSize = 0;
+    let ended = false;
     const parse = () => {
         const value = data.join('\n');
-        data = [];
-        if (!value || value === '[DONE]') return null;
+        data = []; dataSize = 0;
+        if (value === '[DONE]') { ended = true; return null; }
+        if (!value) return null;
         const event = JSON.parse(value);
         if (event.error) throw new Error(event.error.message || 'Provider stream failed');
         return event;
     };
     const line = value => {
         if (value === '') return parse();
-        if (value.startsWith('data:')) data.push(value.slice(5).replace(/^ /, ''));
+        if (value.startsWith('data:')) {
+            dataSize += value.length;
+            if (dataSize > 2 * 1024 * 1024) throw new Error('Provider SSE event is too large');
+            data.push(value.slice(5).replace(/^ /, ''));
+        }
         return null;
     };
     const cancel = () => { void reader.cancel(signal.reason).catch(() => {}); };
@@ -32,6 +39,7 @@ async function* readSseJson(body, signal) {
                 const event = line(pending.slice(0, index).replace(/\r$/, ''));
                 pending = pending.slice(index + 1);
                 if (event) yield event;
+                if (ended) return;
             }
             if (done) {
                 if (pending) { const event = line(pending.replace(/\r$/, '')); if (event) yield event; }

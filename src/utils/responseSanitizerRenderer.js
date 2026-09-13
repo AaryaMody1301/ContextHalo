@@ -18,7 +18,7 @@ function safeExternalHref(value) {
     if (!href) return '';
     try {
         const parsed = new URL(href);
-        return ['https:', 'http:'].includes(parsed.protocol) ? parsed.toString() : '';
+        return ['https:', 'http:'].includes(parsed.protocol) && !parsed.username && !parsed.password ? parsed.toString() : '';
     } catch {
         return '';
     }

@@ -56,7 +56,8 @@ function normalizedStatusText(failure) {
 
 function isRecoverableLiveFailure(failure) {
     const category = String(failure?.category || '').toLowerCase();
-    if (['transient', 'aborted-conflict'].includes(category)) return true;
+    if (['authentication', 'permission', 'invalid-configuration', 'state-conflict', 'unsupported-tool', 'quota-exhausted', 'rate-or-quota', 'cancelled'].includes(category)) return false;
+    if (['transient', 'aborted-conflict', 'throttled'].includes(category)) return true;
 
     const httpStatus = Number(failure?.httpStatus ?? failure?.statusCode ?? failure?.status);
     const socketCode = Number(failure?.socketCode ?? failure?.code);
@@ -64,7 +65,7 @@ function isRecoverableLiveFailure(failure) {
 
     if (httpStatus === 409) return /\baborted\b/.test(text) && !/already[_ -]?exists/.test(text);
     if ([408, 500, 502, 503, 504].includes(httpStatus)) return true;
-    if ([1006, 1011, 1012, 1013].includes(socketCode)) return true;
+    if ([1000, 1001, 1006, 1011, 1012, 1013].includes(socketCode)) return true;
     return false;
 }
 
@@ -85,7 +86,8 @@ function recordLiveFailure(state, failure, now = Date.now(), random = Math.rando
             plannedRotationAt: null,
         },
         recoverable,
-        retryDelayMs: recoverable ? reconnectDelayMs(failureStreak, random) : null,
+        retryDelayMs: recoverable ? Math.max(reconnectDelayMs(failureStreak, random),
+            Number(failure?.retryAfterMs) || 0, failureStreak >= 8 ? 60000 : 0) : null,
         useResumption: recoverable && Boolean(state?.resumptionHandle),
     };
 }

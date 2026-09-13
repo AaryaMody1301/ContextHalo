@@ -49,5 +49,5 @@ test('manual reconnect falls back to local history when no safe resumption handl
     assert.equal(result.success, true);
     assert.equal(fixture.connections.length, 2);
     assert.deepEqual(fixture.connections[1].config.sessionResumption, {});
-    assert.equal(fixture.realtime.some(item => String(item?.text || '').includes('Session reconnected.')), true);
+    assert.equal(fixture.clientContent.some(item => item.turnComplete === false && JSON.stringify(item.turns).includes('Session reconnected.')), true);
 });

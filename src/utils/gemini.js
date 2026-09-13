@@ -1,9 +1,10 @@
+const resumedLiveSessions = new WeakSet();
+const { abortable, deadlineSignal } = require('./requestDeadline');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { getSystemPrompt } = require('./prompts');
 const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
-const { connectCloud, sendCloudAudio, sendCloudText, sendCloudImage, closeCloud, isCloudActive, setOnTurnComplete } = require('./cloud');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 const { listProviderModels } = require('./providerModelRegistry');
 const { randomUUID, createHash } = require('node:crypto');
@@ -34,7 +35,7 @@ function getLocalAi() {
     return _localai;
 }
 
-// Provider mode: 'byok', 'groq', 'cloud', or 'local'
+// Provider mode: 'byok', 'groq', or 'local'
 let currentProviderMode = 'byok';
 
 // Groq conversation history for context
@@ -256,9 +257,11 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         category = quota ? 'quota-exhausted' : throttled || retryAfterMs !== null ? 'throttled' : 'rate-or-quota';
     } else if (httpStatus === 404 || /model_not_found|model.+not found/.test(text)) category = 'model-unavailable';
     else if (httpStatus === 409 && /\baborted\b/.test(text) && !/already[_ -]?exists/.test(text)) category = 'aborted-conflict';
+    else if (httpStatus === 409) category = 'state-conflict';
+    else if (httpStatus === 400 && /resum|session.?handle/.test(text) && /expired|invalid|not found|not resumable/.test(text)) category = 'resume-unavailable';
     else if ((httpStatus === 400 || socketCode === 1007 || socketCode === 1008) && /tool|google.?search|grounding/.test(text)) category = 'unsupported-tool';
     else if (httpStatus === 400 || socketCode === 1007 || socketCode === 1008) category = 'invalid-configuration';
-    else if ([408, 500, 502, 503, 504].includes(httpStatus) || [1006, 1011, 1012, 1013].includes(socketCode)
+    else if ([408, 500, 502, 503, 504].includes(httpStatus) || [1000, 1001, 1006, 1011, 1012, 1013].includes(socketCode)
         || /network|fetch failed|econnreset|socket|unavailable|timed?\s*out|timeout/.test(text)) category = 'transient';
     else if (/empty|no text/.test(text)) category = 'empty-response';
     const messages = {
@@ -269,6 +272,8 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         'rate-or-quota': 'Gemini returned 429 without enough detail to distinguish throttling from exhausted quota. Check project usage before retrying.',
         'model-unavailable': 'The configured Gemini model is unavailable to this project. Select a supported model in Home; your saved model has not been changed.',
         'aborted-conflict': 'Gemini interrupted the Live connection because of a transient session conflict. ContextHalo will reconnect without ending the interview.',
+        'state-conflict': 'Gemini reported a non-retryable state conflict. Review this operation before retrying.',
+        'resume-unavailable': 'The previous Gemini session can no longer be resumed. A fresh connection is required.',
         'unsupported-tool': 'Gemini rejected the configured tool/model combination. Review model capabilities, or explicitly continue this session without Search.',
         'invalid-configuration': 'Gemini rejected the session configuration. Review the selected model and API project settings.',
         transient: 'Gemini could not complete the request because of a network, timeout or server failure. Retry when connectivity recovers.',
@@ -303,28 +308,35 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
     for (const [storedKey, failure] of geminiCooldowns) if (!(failure.retryAt > now())) geminiCooldowns.delete(storedKey);
     // Bound metadata-only account/model cooldowns; the API key is never retained here.
     while (geminiCooldowns.size > 64) geminiCooldowns.delete(geminiCooldowns.keys().next().value);
-    for (let attempt = 0; attempt < 2; attempt++) {
-        signal?.throwIfAborted();
-        try {
-            const result = await work(Math.max(1, budgetMs - (now() - started)), attempt);
-            signal?.throwIfAborted();
-            return result;
-        } catch (error) {
-            if (signal?.aborted) throw signal.reason;
-            const failure = classifyGeminiFailure(error, operation, model, now());
-            const backoff = failure.retryAfterMs ?? Math.round(600 * 2 ** attempt + random() * 300);
-            // A final short-term failure also gates rapid user actions/reconnects.
-            if (failure.retryable && failure.retryAt === null) failure.retryAt = now() + backoff;
-            if (failure.retryAt > now()) geminiCooldowns.set(key, failure);
-            logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
-                status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,
-                attempt: attempt + 1, durationMs: now() - started });
-            if (!failure.retryable || attempt === 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
-            sendToRenderer('update-status', `Gemini is retrying once after ${Math.ceil(backoff / 1000)} seconds. Search settings are unchanged.`);
-            await wait(backoff, undefined, { signal });
-            geminiCooldowns.delete(key);
+    const deadline = deadlineSignal(signal, budgetMs);
+    const operationSignal = deadline.signal;
+    try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+            operationSignal.throwIfAborted();
+            if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
+            try {
+                const result = await abortable(() => work(Math.max(1, budgetMs - (now() - started)), attempt, operationSignal), operationSignal);
+                operationSignal.throwIfAborted();
+            if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
+                return result;
+            } catch (error) {
+                if (signal?.aborted) throw signal.reason;
+                if (operationSignal.aborted) throw failureError(classifyGeminiFailure(operationSignal.reason, operation, model));
+                const failure = classifyGeminiFailure(error, operation, model, now());
+                const backoff = failure.retryAfterMs ?? Math.round(600 * 2 ** attempt + random() * 300);
+                // A final short-term failure also gates rapid user actions/reconnects.
+                if (failure.retryable && failure.retryAt === null) failure.retryAt = now() + backoff;
+                if (failure.retryAt > now()) geminiCooldowns.set(key, failure);
+                logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
+                    status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,
+                    attempt: attempt + 1, durationMs: now() - started });
+                if (!failure.retryable || attempt === 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
+                sendToRenderer('update-status', `Gemini is retrying once after ${Math.ceil(backoff / 1000)} seconds. Search settings are unchanged.`);
+                await abortable(() => wait(backoff, undefined, { signal: operationSignal }), operationSignal);
+                geminiCooldowns.delete(key);
+            }
         }
-    }
+    } finally { deadline.close(); }
 }
 
 function groundingFromResponse(response) {
@@ -376,7 +388,7 @@ function stripThinkingTags(text) {
 }
 
 function getGroqReasoningOptions(model, disableThinking) {
-    if (model.includes('qwen3')) {
+    if (/^qwen\/qwen3\.(?:6|8)-27b$/.test(model)) {
         const options = {
             reasoning_format: 'hidden',
         };
@@ -388,9 +400,9 @@ function getGroqReasoningOptions(model, disableThinking) {
         return options;
     }
 
-    if (model.startsWith('openai/gpt-oss-')) {
+    if (/^openai\/gpt-oss-(?:20b|120b)$/.test(model)) {
         return {
-            include_reasoning: false,
+            include_reasoning: false, reasoning_effort: 'low',
         };
     }
 
@@ -838,6 +850,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         sessionParams = { apiKey, customPrompt, profile, language, provider: 'byok' };
     }
     let liveSessionReady = false;
+    let setupMessages = [];
     let liveResponseId = randomUUID();
     let modelTextBuffer = '';
     let audioTextBuffer = '';
@@ -873,11 +886,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             signal.throwIfAborted();
             if (preflight) throw preflight;
         }
-        const client = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
-        const callbacks = geminiLiveRuntime.callbacks({
-            current,
+        const client = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
+        const runtimeCallbacks = geminiLiveRuntime.callbacks({
+            current: () => current() && liveSessionReady,
             onopen() {
-                liveSessionReady = true;
                 if (current()) sendToRenderer('update-status', 'Gemini connected; preparing the session...');
             },
             onmessage(message) {
@@ -947,15 +959,40 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 }
             },
         });
+        const callbacks = { ...runtimeCallbacks, onmessage(message) {
+            if (!current()) return;
+            // SDK 2.22 drains setup messages synchronously BEFORE connect()
+            // resolves. Preserve these until the application adopts the session.
+            if (!liveSessionReady) { if (setupMessages.length < 64) setupMessages.push(message); return; }
+            runtimeCallbacks.onmessage(message);
+        } };
         const tools = await getEnabledTools();
-        const session = await runGeminiRequest(remaining => connectGeminiLiveWithGuard(client, {
-            model: liveModel, callbacks,
-            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                ...geminiLiveRuntime.getConnectConfig(), systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
-        }, Math.min(15000, remaining), signal), { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
+        let session;
+        for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
+            const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
+            try {
+                session = await runGeminiRequest((remaining, _attempt, operationSignal) => {
+                    setupMessages = [];
+                    return connectGeminiLiveWithGuard(client, {
+                    model: liveModel, callbacks,
+                    config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                        ...reliabilityConfig, systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                }, Math.min(15000, remaining), operationSignal); }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
+                if (reliabilityConfig.sessionResumption?.handle) resumedLiveSessions.add(session);
+                break;
+            } catch (error) {
+                const failure = classifyGeminiFailure(error, 'live', liveModel);
+                if (!isReconnect || freshFallback || !reliabilityConfig.sessionResumption?.handle || failure.category !== 'resume-unavailable') throw error;
+                geminiLiveRuntime.clearResumption();
+                sendToRenderer('update-status', 'Gemini resumption expired; restoring local session context on a fresh connection.');
+            }
+        }
         if (!current()) { session.close(); return null; }
         liveSessionReady = true;
+        geminiLiveRuntime.onOpen();
         if (!isReconnect) initializeNewSession(profile, customPrompt);
+        for (const message of setupMessages) runtimeCallbacks.onmessage(message);
+        setupMessages = [];
         lastGeminiFailure = null;
         lastGeminiInitializationError = '';
         searchState = { ...searchState, status: searchState.effective ? 'enabled' : searchState.status };
@@ -979,7 +1016,6 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 async function attemptReconnect(details = {}) {
     const params = sessionParams;
     if (!params?.apiKey || isUserClosing) return false;
-    const usedResumption = details.usedResumption ?? Boolean(geminiLiveRuntime?.getConnectConfig?.().sessionResumption?.handle);
     geminiLiveRuntime?.cancelScheduledReconnect?.();
     liveGeneration++;
     liveController.abort();
@@ -1004,9 +1040,9 @@ async function attemptReconnect(details = {}) {
     const session = await initializeGeminiSession(params.apiKey, params.customPrompt, params.profile, params.language, true);
     if (!session || generation !== liveGeneration || isUserClosing) return false;
     global.geminiSessionRef.current = session;
-    const contextMessage = usedResumption ? null : buildContextMessage();
+    const contextMessage = resumedLiveSessions.has(session) ? null : buildContextMessage();
     if (contextMessage) {
-        try { await session.sendRealtimeInput(augmentLiveTextPayload({ text: contextMessage })); }
+        try { session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: augmentLiveTextPayload({ text: contextMessage }).text }] }], turnComplete: false }); }
         catch { sendToRenderer('update-status', 'Connected, but restoring Live context failed. Typed answers still retain session history.'); }
     }
     return true;
@@ -1096,9 +1132,7 @@ async function startMacOSAudioCapture(geminiSessionRef) {
 
             const monoChunk = CHANNELS === 2 ? convertStereoToMono(chunk) : chunk;
 
-            if (currentProviderMode === 'cloud') {
-                sendCloudAudio(monoChunk);
-            } else if (currentProviderMode === 'local') {
+            if (currentProviderMode === 'local') {
                 getLocalAi().processLocalAudio(monoChunk);
             } else if (currentProviderMode === 'groq') {
                 const base64Data = monoChunk.toString('base64');
@@ -1194,7 +1228,7 @@ async function sendAudioToGemini(base64Data, geminiSessionRef, mimeType = 'audio
     try {
         process.stdout.write('.');
         const audio = normalizeGeminiAudioPayload(base64Data, mimeType);
-        await geminiSessionRef.current.sendRealtimeInput({ audio });
+        geminiSessionRef.current.sendRealtimeInput({ audio });
     } catch (error) {
         console.warn('Error sending audio to Gemini:');
     }
@@ -1205,14 +1239,14 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     const apiKey = getApiKey();
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
     try {
-        const ai = new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } });
+        const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
         const tools = await getEnabledTools();
-        const response = await runGeminiRequest(() => ai.models.generateContent(augmentGenerateParams({
+        const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent(augmentGenerateParams({
             model,
             contents: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }],
             config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.effective)),
-                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}), abortSignal: getRequestSignal(),
-                httpOptions: { retryOptions: { attempts: 1 } } },
+                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}), abortSignal: operationSignal,
+                httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
         })), { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
         assertCurrentRequest();
         const text = response.text?.trim();
@@ -1239,17 +1273,18 @@ async function sendTypedGeminiText(text) {
         { role: 'model', parts: [{ text: String(turn.ai_response || '').slice(-4000) }] },
     ]);
     const screenContext = screenAnalysisHistory.slice(-1).map(item => item.response).join('');
-    const instruction = appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.')
+    const instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.'), getPreferences().responseMode)
         + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
         + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-8000) : '');
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } });
+    const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
     const tools = await getEnabledTools();
-    const response = await runGeminiRequest(remaining => ai.models.generateContent(augmentGenerateParams({
+    const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent(augmentGenerateParams({
         model,
         contents: [...history, { role: 'user', parts: [{ text }] }],
-        config: { systemInstruction: instruction, maxOutputTokens: 4096, ...(tools.length ? { tools } : {}),
-            httpOptions: { timeout: Math.min(27000, remaining), retryOptions: { attempts: 1 } }, abortSignal: getRequestSignal() },
-    })), { operation: 'text', model, apiKey, signal: getRequestSignal() });
+        config: { systemInstruction: instruction, maxOutputTokens: 4096,
+            ...(getPreferences().responseMode === 'instant' ? screenThinkingConfig(model) : {}), ...(tools.length ? { tools } : {}),
+            httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } }, abortSignal: operationSignal },
+    })), { operation: 'text', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
     assertCurrentRequest();
     const answer = response.text?.trim();
     if (!answer) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
@@ -1314,8 +1349,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 isUserClosing = false;
                 isInitializingSession = false;
                 resetSessionRequests();
-                const mode = channel === 'initialize-local' ? 'local' : channel === 'initialize-cloud' ? 'cloud' : args[4] === 'groq' ? 'groq' : 'byok';
-                require('./windowsRuntimeMain').prepareWindowsProvider(mode);
+                const mode = channel === 'initialize-local' ? 'local' : args[4] === 'groq' ? 'groq' : 'byok';
+                require('./windowsRuntimeMain').prepareWindowsProvider(mode, args[5]?.uiEpoch);
                 require('./runtimeHardeningMain').prepareRuntimeProvider(mode);
             }
             const generation = liveGeneration;
@@ -1337,34 +1372,23 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: error?.message || 'Request failed' };
             }
         };
+        if (['send-audio-content', 'send-mic-audio-content', 'audio-stream-end'].includes(channel)) {
+            const audioEpoch = args[0]?.uiEpoch;
+            if (!mainSessionActive || (providerUiEpoch !== undefined && audioEpoch !== providerUiEpoch)) {
+                return { success: true, ignored: true };
+            }
+        }
         if (!initializing) return execute();
         const operation = execute().finally(() => { if (initializePromise === operation) initializePromise = null; });
         initializePromise = operation;
         return operation;
     });
 
-    register('initialize-cloud', async (event, token, profile, userContext) => {
-        try {
-            currentProviderMode = 'cloud';
-            initializeNewSession(profile);
-            setOnTurnComplete((transcription, response) => {
-                saveConversationTurn(transcription, response);
-            });
-            sendToRenderer('session-initializing', true);
-            await connectCloud(token, profile, userContext);
-            sendToRenderer('session-initializing', false);
-            return true;
-        } catch (err) {
-            console.warn('[Cloud] Init error:');
-            currentProviderMode = 'byok';
-            sendToRenderer('session-initializing', false);
-            return false;
-        }
-    });
-
-    register('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
+    register('initialize-gemini', async (event, _legacyKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
         if (!options || typeof options !== 'object' || (options.searchEnabled !== undefined && typeof options.searchEnabled !== 'boolean')
             || (options.uiEpoch !== undefined && !Number.isSafeInteger(options.uiEpoch))) return { success: false, error: 'Invalid session options' };
+        if (typeof customPrompt !== 'string' || customPrompt.length > 32000 || typeof profile !== 'string'
+            || typeof language !== 'string' || language.length > 32) return { success: false, error: 'Invalid session configuration' };
         providerUiEpoch = options.uiEpoch;
         configureSearch(provider === 'groq' ? 'groq' : 'byok', options.searchEnabled);
         const selectedProvider = provider === 'groq' ? 'groq' : 'byok';
@@ -1389,6 +1413,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true, provider: 'groq', search: { ...searchState } };
         }
 
+        const apiKey = getApiKey(); // Never trust or round-trip a renderer-supplied key.
         if (!apiKey || !apiKey.trim()) {
             const error = 'No Gemini API key configured.';
             sendToRenderer('update-status', error);
@@ -1428,20 +1453,10 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
         }
-        if (currentProviderMode === 'cloud') {
-            try {
-                const pcmBuffer = Buffer.from(data, 'base64');
-                sendCloudAudio(pcmBuffer);
-                return { success: true };
-            } catch (error) {
-                console.warn('Error sending cloud audio:');
-                return { success: false, error: error.message };
-            }
-        }
         if (currentProviderMode === 'local') {
             try {
                 const pcmBuffer = Buffer.from(data, 'base64');
-                getLocalAi().processLocalAudio(pcmBuffer);
+                getLocalAi().processLocalAudio(resamplePcm16Mono(pcmBuffer, parsePcmSampleRate(mimeType), 24000));
                 return { success: true };
             } catch (error) {
                 console.warn('Error sending local audio:');
@@ -1455,11 +1470,11 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         try {
             process.stdout.write('.');
             const audio = normalizeGeminiAudioPayload(data, mimeType);
-            await geminiSessionRef.current.sendRealtimeInput({ audio });
+            geminiSessionRef.current.sendRealtimeInput({ audio });
             return { success: true };
         } catch (error) {
-            console.warn('Error sending system audio:');
-            return { success: false, error: error.message };
+            geminiLiveRuntime?.onFailure({ code: 1006 }, 'audio-send');
+            return { success: false, error: 'Gemini audio transport interrupted; reconnecting.' };
         }
     });
 
@@ -1469,20 +1484,10 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
         }
-        if (currentProviderMode === 'cloud') {
-            try {
-                const pcmBuffer = Buffer.from(data, 'base64');
-                sendCloudAudio(pcmBuffer);
-                return { success: true };
-            } catch (error) {
-                console.warn('Error sending cloud mic audio:');
-                return { success: false, error: error.message };
-            }
-        }
         if (currentProviderMode === 'local') {
             try {
                 const pcmBuffer = Buffer.from(data, 'base64');
-                getLocalAi().processLocalAudio(pcmBuffer);
+                getLocalAi().processLocalAudio(resamplePcm16Mono(pcmBuffer, parsePcmSampleRate(mimeType), 24000));
                 return { success: true };
             } catch (error) {
                 console.warn('Error sending local mic audio:');
@@ -1495,18 +1500,18 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         try {
             process.stdout.write(',');
             const audio = normalizeGeminiAudioPayload(data, mimeType);
-            await geminiSessionRef.current.sendRealtimeInput({ audio });
+            geminiSessionRef.current.sendRealtimeInput({ audio });
             return { success: true };
         } catch (error) {
-            console.warn('Error sending mic audio:');
-            return { success: false, error: error.message };
+            geminiLiveRuntime?.onFailure({ code: 1006 }, 'audio-send');
+            return { success: false, error: 'Gemini audio transport interrupted; reconnecting.' };
         }
     });
 
     register('audio-stream-end', async () => {
         if (currentProviderMode !== 'byok' || !geminiSessionRef.current) return { success: true, ignored: true };
         try {
-            await geminiSessionRef.current.sendRealtimeInput({ audioStreamEnd: true });
+            geminiSessionRef.current.sendRealtimeInput({ audioStreamEnd: true });
             return { success: true };
         } catch (error) {
             console.warn('Error ending Gemini audio stream:');
@@ -1531,10 +1536,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             let result;
             try {
                 if (Buffer.from(data, 'base64').length < 1000) result = { success: false, error: 'Image buffer too small' };
-                else if (currentProviderMode === 'cloud') {
-                    const sent = sendCloudImage(data);
-                    result = sent ? { success: true, model: 'cloud' } : { success: false, error: 'Cloud connection not active' };
-                } else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
+                else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
                 else result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
             } catch (error) { result = userRequestFailure(error, 'screen'); }
             result = reportUserRequestResult(result, 'screen');
@@ -1556,7 +1558,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                     : currentProviderMode === 'groq' ? await sendToGroq(cleanText) : await sendTypedGeminiText(cleanText);
             } catch (error) { result = userRequestFailure(error, 'text'); }
             return reportUserRequestResult(result, 'text');
-        }, { ...request, timeoutMs: currentProviderMode === 'local' ? 180000 : 65000 });
+        }, { ...request, timeoutMs: currentProviderMode === 'local' ? 180000 : currentProviderMode === 'byok' ? SCREEN_SESSION_TIMEOUT_MS : 65000 });
     });
 
     register('start-macos-audio', async event => {
@@ -1602,13 +1604,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         require('./contextCaptureMain').cancelRegionSelection();
         try {
             stopMacOSAudioCapture();
-
-            if (currentProviderMode === 'cloud') {
-                closeCloud();
-                currentProviderMode = 'byok';
-                closeTransportLog();
-                return { success: true };
-            }
 
             if (currentProviderMode === 'local') {
                 getLocalAi().closeLocalSession();
@@ -1672,8 +1667,10 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         const model = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
         const cooldown = geminiCooldowns.get(cooldownKey(sessionParams.apiKey, model));
         if (cooldown?.retryAt > Date.now()) return { success: false, error: cooldown.message, failure: cooldown };
+        if (geminiLiveRuntime?.getState().reconnecting) return { success: false, error: 'Automatic recovery is in progress. Wait before retrying.' };
         geminiLiveRuntime?.cancelScheduledReconnect?.();
         if (options.withoutSearch) {
+            geminiLiveRuntime?.clearResumption();
             searchState = { ...searchState, effective: false, status: 'user-disabled' };
             currentSystemPrompt = getSystemPrompt(currentProfile, currentCustomPrompt, false);
             sendToRenderer('search-state', { ...searchState });

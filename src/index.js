@@ -112,17 +112,13 @@ function setupStorageIpcHandlers() {
         saved(storage.updateConfig(key, value)); return { success: true };
     });
 
-    handle('storage:get-credentials', () => ({ success: true, data: storage.getCredentials() }));
-    handle('storage:set-credentials', credentials => {
-        if (!validateObject(credentials)) throw new Error('Invalid credentials');
-        saved(storage.setCredentials(credentials)); return { success: true };
-    });
-    handle('storage:get-api-key', () => ({ success: true, data: storage.getApiKey() }));
+    handle('storage:credential-status', () => ({ success: true, data: {
+        gemini: Boolean(storage.getApiKey()), groq: Boolean(storage.getGroqApiKey()),
+    } }));
     handle('storage:set-api-key', apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
         saved(storage.setApiKey(apiKey)); return { success: true };
     });
-    handle('storage:get-groq-api-key', () => ({ success: true, data: storage.getGroqApiKey() }));
     handle('storage:set-groq-api-key', groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
         saved(storage.setGroqApiKey(groqApiKey)); return { success: true };
@@ -190,7 +186,7 @@ function setupGeneralIpcHandlers() {
         if (!isTrustedEvent(event) || !validateString(rawUrl, 4096)) return { success: false, error: 'Invalid URL' };
         let parsed;
         try { parsed = new URL(rawUrl); } catch { return { success: false, error: 'Invalid URL' }; }
-        if (!['https:', 'http:'].includes(parsed.protocol)) return { success: false, error: 'Unsupported URL protocol' };
+        if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) return { success: false, error: 'Unsupported URL protocol' };
         await shell.openExternal(parsed.toString());
         return { success: true };
     });

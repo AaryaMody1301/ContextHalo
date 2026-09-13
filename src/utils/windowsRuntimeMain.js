@@ -11,6 +11,8 @@ const windowsHandlers = new Map();
 
 let originalIpcHandle = null;
 let providerMode = 'byok';
+let sessionEpoch;
+let acceptingAudio = false;
 let systemAudioQueue = [];
 let microphoneAudioQueue = [];
 let mixedAudioDispatchQueue = [];
@@ -77,7 +79,7 @@ async function drainMixedAudioDispatch(generation) {
 function dispatchMixedPayload(event, payload) {
     if (mixedAudioDispatchQueue.length >= MAX_MIXED_DISPATCH_CHUNKS) mixedAudioDispatchQueue.shift();
     const generation = mixerGeneration;
-    mixedAudioDispatchQueue.push({ event, payload, generation, queuedAt: Date.now() });
+    mixedAudioDispatchQueue.push({ event, payload, generation, queuedAt: Number.isFinite(payload.capturedAtMs) ? payload.capturedAtMs : Date.now() });
     void drainMixedAudioDispatch(generation);
 }
 
@@ -109,11 +111,25 @@ function enqueueMixedWindowsAudio(channel, event, payload) {
     const data = payload?.data || '';
     if (!data) return { success: true, ignored: true };
 
-    const entry = { event, payload };
+    const queuedAt = Number.isFinite(payload.capturedAtMs) ? payload.capturedAtMs : Date.now();
+    if (Date.now() - queuedAt > MAX_MIXED_DISPATCH_AGE_MS) return { success: true, dropped: true };
+    const entry = { event, payload, queuedAt };
     if (channel === 'send-audio-content') systemAudioQueue.push(entry);
     else microphoneAudioQueue.push(entry);
 
     while (systemAudioQueue.length && microphoneAudioQueue.length) {
+        const skew = systemAudioQueue[0].queuedAt - microphoneAudioQueue[0].queuedAt;
+        if (Math.abs(skew) > 200) {
+            const unpaired = (skew < 0 ? systemAudioQueue : microphoneAudioQueue).shift();
+            dispatchMixedPayload(unpaired.event, unpaired.payload);
+            continue;
+        }
+        if (systemAudioQueue[0].payload.mimeType !== microphoneAudioQueue[0].payload.mimeType) {
+            // Never interpret a differently sampled track as time-aligned PCM.
+            const unpaired = systemAudioQueue.shift(); microphoneAudioQueue.shift();
+            dispatchMixedPayload(unpaired.event, unpaired.payload);
+            continue;
+        }
         const systemEntry = systemAudioQueue.shift();
         const microphoneEntry = microphoneAudioQueue.shift();
         const systemBuffer = Buffer.from(systemEntry.payload.data, 'base64');
@@ -122,6 +138,8 @@ function enqueueMixedWindowsAudio(channel, event, payload) {
         if (!mixed.length) continue;
 
         dispatchMixedPayload(systemEntry.event, {
+            ...systemEntry.payload,
+            capturedAtMs: Math.min(systemEntry.queuedAt, microphoneEntry.queuedAt),
             data: mixed.toString('base64'),
             mimeType: systemEntry.payload.mimeType || microphoneEntry.payload.mimeType || 'audio/pcm;rate=24000',
         });
@@ -131,7 +149,9 @@ function enqueueMixedWindowsAudio(channel, event, payload) {
     return { success: true, queued: true, mixed: true };
 }
 
-function prepareWindowsProvider(mode) {
+function prepareWindowsProvider(mode, uiEpoch) {
+    sessionEpoch = uiEpoch;
+    acceptingAudio = true;
     providerMode = mode;
     global.__windowsProviderMode = mode;
     resetProviderSession();
@@ -143,6 +163,7 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'close-session') {
         return async (event, ...args) => {
+            acceptingAudio = false;
             abortProviderSession('Session closed');
             resetAudioMixer();
             try {
@@ -151,6 +172,15 @@ function wrapWindowsIpcHandler(channel, handler) {
                 providerMode = 'byok';
                 global.__windowsProviderMode = providerMode;
             }
+        };
+    }
+
+    if (channel === 'audio-stream-end') {
+        return async (event, payload) => {
+            if (sessionEpoch !== undefined && payload?.uiEpoch !== sessionEpoch) return { success: true, ignored: true };
+            resetAudioMixer();
+            require('./runtimeHardeningMain').resetRuntimeAudio();
+            return handler(event, payload);
         };
     }
 
@@ -175,6 +205,7 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
         return async (event, payload, ...rest) => {
+            if (!acceptingAudio || (sessionEpoch !== undefined && payload?.uiEpoch !== sessionEpoch)) return { success: true, ignored: true };
             if (!payload || typeof payload.data !== 'string' || payload.data.length > 262144) return { success: false, error: 'Invalid audio payload' };
             const mode = storage.getPreferences().audioMode || 'speaker_only';
             if (process.platform === 'win32' && mode === 'both') {
@@ -191,7 +222,15 @@ function installWindowsIpcHardening() {
     if (process.platform !== 'win32' || originalIpcHandle) return () => {};
 
     originalIpcHandle = ipcMain.handle.bind(ipcMain);
-    ipcMain.handle = (channel, handler) => originalIpcHandle(channel, wrapWindowsIpcHandler(channel, handler));
+    ipcMain.handle = (channel, handler) => {
+        const wrapped = wrapWindowsIpcHandler(channel, handler);
+        return originalIpcHandle(channel, (event, ...args) => {
+            const window = BrowserWindow.getAllWindows().find(candidate => !candidate.isDestroyed()
+                && candidate.webContents.id === event?.sender?.id);
+            if (!window || event.senderFrame !== window.webContents.mainFrame) return { success: false, error: 'Untrusted renderer' };
+            return wrapped(event, ...args);
+        });
+    };
 
     return () => {
         if (!originalIpcHandle) return;

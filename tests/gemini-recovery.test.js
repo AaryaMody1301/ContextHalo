@@ -170,7 +170,7 @@ test('automatic transient reconnect retains history and invalidates old socket c
     old.onclose({ code: 1006, reason: 'network disconnect' }); await tick();
     assert.equal(f.connections.length, 2);
     assert.equal(f.events.filter(([channel]) => channel === 'save-session-context').length, 1);
-    assert.ok(f.realtime.some(item => item.text?.includes('Before reconnect')));
+    assert.ok(f.clientContent.some(item => item.turnComplete === false && JSON.stringify(item.turns).includes('Before reconnect')));
     const count = f.events.length;
     old.onmessage({ serverContent: { modelTurn: { parts: [{ text: 'stale' }] } } });
     assert.equal(f.events.length, count);

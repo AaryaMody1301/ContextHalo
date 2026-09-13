@@ -22,8 +22,8 @@ test('Live reliability config enables compression and ordinary session resumptio
     assert.equal(Object.hasOwn(buildLiveReliabilityConfig('token').sessionResumption, 'transparent'), false);
 });
 
-test('only a server-marked resumable update replaces the saved handle', () => {
-    assert.equal(retainSafeResumptionHandle('old', { resumable: false, newHandle: 'unsafe' }), 'old');
+test('safe handles are retained until the server explicitly marks resumption unsafe', () => {
+    assert.equal(retainSafeResumptionHandle('old', { resumable: false, newHandle: 'unsafe' }), null);
     assert.equal(retainSafeResumptionHandle('old', { resumable: true, newHandle: '' }), 'old');
     assert.equal(retainSafeResumptionHandle('old', { resumable: true, newHandle: ' new ' }), 'new');
     assert.equal(retainSafeResumptionHandle(null, { resumable: true, newHandle: 'first' }), 'first');

@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
     groqTranscriptionModel: 'whisper-large-v3-turbo',
     disableGroqThinking: true,
 };
-const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '', cloudToken: '' };
+const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '' };
 const DEFAULT_PREFERENCES = {
     customPrompt: '',
     providerMode: 'byok',
@@ -41,7 +41,6 @@ const RETIRED_GEMINI_LIVE_MODELS = new Set([
     'gemini-2.0-flash-live-001',
 ]);
 const RETIRED_GEMINI_HTTP_MODELS = new Set([
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-2.0-flash-001',
 ]);
@@ -133,7 +132,8 @@ function decryptCredential(value, safeStorage) {
 
 function decodeStoredCredentials(raw) {
     if (!isEncryptedCredentialFile(raw)) {
-        return { ...DEFAULT_CREDENTIALS, ...(raw && typeof raw === 'object' ? raw : {}) };
+        return { apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey : '',
+            groqApiKey: typeof raw?.groqApiKey === 'string' ? raw.groqApiKey : '' };
     }
 
     const safeStorage = getWindowsSafeStorage();
@@ -146,7 +146,6 @@ function decodeStoredCredentials(raw) {
         return {
             apiKey: decryptCredential(raw.encrypted.apiKey, safeStorage),
             groqApiKey: decryptCredential(raw.encrypted.groqApiKey, safeStorage),
-            cloudToken: decryptCredential(raw.encrypted.cloudToken, safeStorage),
         };
     } catch (error) {
         console.error('Could not decrypt Windows credentials:', error.message);
@@ -155,7 +154,8 @@ function decodeStoredCredentials(raw) {
 }
 
 function writeCredentialsFile(credentials) {
-    const normalized = { ...DEFAULT_CREDENTIALS, ...(credentials || {}) };
+    const normalized = { apiKey: String(credentials?.apiKey || '').trim(),
+        groqApiKey: String(credentials?.groqApiKey || '').trim() };
     const safeStorage = getWindowsSafeStorage();
 
     if (safeStorage) {
@@ -164,7 +164,6 @@ function writeCredentialsFile(credentials) {
             encrypted: {
                 apiKey: encryptCredential(normalized.apiKey, safeStorage),
                 groqApiKey: encryptCredential(normalized.groqApiKey, safeStorage),
-                cloudToken: encryptCredential(normalized.cloudToken, safeStorage),
             },
         });
     }
@@ -199,9 +198,6 @@ function migrateConfig(rawConfig = {}) {
         config.geminiLiveModel = DEFAULT_CONFIG.geminiLiveModel;
     }
     if (!config.geminiHttpModel || RETIRED_GEMINI_HTTP_MODELS.has(config.geminiHttpModel)) {
-        config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
-    }
-    if (previousVersion < 6 && source.geminiHttpModel === 'gemini-3.7-flash') {
         config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
     }
     if (previousVersion < 4 && source.groqModel === 'qwen/qwen3.6-27b') {

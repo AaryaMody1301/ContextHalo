@@ -9,7 +9,7 @@ Before device testing, the candidate commit must pass the standard Windows workf
 The regression suite must cover all of these behaviors:
 
 - Gemini Live context compression, ordinary session resumption, safe resumable-handle reuse, GoAway rotation, 409 ABORTED recovery, bounded reconnect backoff, and no duplicate history replay after server resumption.
-- Six controlled Live connection rotations with Analyze Screen requests between rotations, representing a roughly 60-minute interview lifecycle.
+- A virtual clock advances through 60 minutes, 36,000 audio chunks, six controlled Live rotations and 12 screen requests. This validates application state transitions, not wall-clock memory stability or real service/device availability.
 - Analyze Screen while a Live reconnect is still pending.
 - Screen 503/504 retry without terminating the Live interview.
 - Fresh-frame waiting, blank-frame retry/rejection, selected-region validation, and higher-fidelity screenshot dimensions.

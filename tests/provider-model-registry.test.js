@@ -1,7 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const registry = require('../src/utils/providerModelRegistry');
 
@@ -58,9 +56,10 @@ test('Gemini Omni is never offered as an interview Live model', () => {
     assert.equal(catalog.recommended.live, 'example-live-preview');
 });
 
-test('Groq catalog keeps all active models while grouping task models conservatively', () => {
+test('Groq catalog keeps active task models and recommends the lower-latency vision default', () => {
     const catalog = buildGroqCatalog([
         { id: 'openai/gpt-oss-120b', active: true, owned_by: 'OpenAI' },
+        { id: 'qwen/qwen3.6-27b', active: true, owned_by: 'Qwen' },
         { id: 'qwen/qwen3.8-27b', active: true, owned_by: 'Qwen' },
         { id: 'whisper-large-v3-turbo', active: true, owned_by: 'OpenAI' },
         { id: 'canopylabs/orpheus-v1-english', active: true, owned_by: 'Canopy Labs' },
@@ -69,8 +68,9 @@ test('Groq catalog keeps all active models while grouping task models conservati
 
     assert.equal(catalog.all.some(model => model.id === 'retired-model'), false);
     assert.equal(catalog.chat.some(model => model.id === 'openai/gpt-oss-120b'), true);
-    assert.equal(catalog.vision.some(model => model.id === 'qwen/qwen3.8-27b'), true);
+    assert.deepEqual(catalog.vision.map(model => model.id).sort(), ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']);
+    assert.equal(catalog.vision.every(model => model.preview), true);
+    assert.equal(catalog.recommended.vision, 'qwen/qwen3.6-27b');
     assert.deepEqual(catalog.transcription.map(model => model.id), ['whisper-large-v3-turbo']);
     assert.equal(catalog.chat.some(model => model.id.includes('orpheus')), false);
 });
-
