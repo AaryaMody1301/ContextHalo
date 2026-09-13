@@ -1,0 +1,55 @@
+name: Finalize ContextHalo audit branch
+
+on:
+  push:
+    branches: [final-api-ui-audit-20260913]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Reconstruct and apply audited patch
+        shell: bash
+        run: |
+          cat .audit-patch/part-* > /tmp/contexthalo-final.patch.gz.b64
+          base64 -d /tmp/contexthalo-final.patch.gz.b64 | gzip -d > /tmp/contexthalo-final.patch
+          echo '2fbde931886dfdedfee2b8c5491dd0edb10f3dd2ca23c7c25339aa278e3d8fe4  /tmp/contexthalo-final.patch' | sha256sum -c -
+          git apply --check /tmp/contexthalo-final.patch
+          git apply /tmp/contexthalo-final.patch
+          rm -rf .audit-patch .github/workflows/finalize-audit.yml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Validate final source
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
+          npm ci --no-audit --no-fund
+          npm audit --omit=dev --audit-level=high
+          npm run check
+          npm test
+          git diff --check
+
+      - name: Commit finalized audit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: finalize API, security, and provider hardening'
+          git push origin HEAD:final-api-ui-audit-20260913
