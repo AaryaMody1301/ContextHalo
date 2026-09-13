@@ -5,8 +5,13 @@ const fs = require('node:fs');
 const read = path => fs.readFileSync(path, 'utf8');
 
 test('final branch contains no one-shot migration workflow or duplicate UI/preload files', () => {
-    assert.equal(fs.existsSync('.github/workflows/apply-final-hardening.yml'), false);
-    assert.equal(fs.existsSync('.github/workflows/apply-final-touchups.yml'), false);
+    for (const path of [
+        '.github/workflows/apply-final-hardening.yml',
+        '.github/workflows/apply-final-touchups.yml',
+        '.github/workflows/apply-corrupt-cache-repair.yml',
+        '.github/workflows/revert-redundant-cache-delete.yml',
+        '.github/workflows/remove-unused-ws.yml',
+    ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
     assert.equal(fs.existsSync('src/components/app/AppHeader.js'), false);
     assert.equal(fs.existsSync('src/preload.js'), false);
     assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
@@ -37,6 +42,7 @@ test('Windows release workflow pins the current audited action releases by commi
 test('provider package and defaults match the audited 2026 contracts', () => {
     const pkg = JSON.parse(read('package.json'));
     assert.equal(pkg.dependencies['@google/genai'], '2.22.0');
+    assert.equal(pkg.dependencies.ws, undefined, 'ws is supplied transitively by the Gemini SDK and is not an app dependency');
     assert.equal(pkg.devDependencies.electron, '^44.3.0');
 
     const storage = read('src/storage.js');
