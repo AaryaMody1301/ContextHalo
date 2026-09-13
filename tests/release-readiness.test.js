@@ -18,6 +18,12 @@ test('final branch contains no one-shot migration workflow or duplicate UI/prelo
     assert.equal(fs.existsSync('src/assets/lit-all-2.7.4.min.js'), false, 'unused full Lit bundle must not ship');
     assert.equal(fs.existsSync('src/assets/logo.png'), false, 'unused legacy raster logo must not ship');
     assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
+
+    // Keep the historical filename to avoid noisy import churn, but require the
+    // vendored payload itself to be the audited current Lit runtime.
+    const litCore = read('src/assets/lit-core-2.7.4.min.js');
+    assert.match(litCore, /litHtmlVersions[^\n]*3\.3\.3/);
+    assert.match(litCore, /litElementVersions[^\n]*4\.2\.2/);
 });
 
 test('credential editor has one explicit save owner and no stale Cloud copy', () => {
