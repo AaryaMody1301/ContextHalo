@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildGroqMessages } = require('../src/utils/groqRequestPolicy');
+const { buildGroqMessages, getGroqReasoningOptions } = require('../src/utils/groqRequestPolicy');
 
 test('Qwen text requests keep instructions in the latest user message', () => {
     const history = [
@@ -43,4 +43,19 @@ test('provider instructions remain bounded before being inserted', () => {
     const messages = buildGroqMessages('qwen/qwen3.6-27b', 'abcdef', [{ role: 'user', content: 'Question' }], 3);
     assert.match(messages[0].content, /Instructions for this request:\nabc\n\nRequest:\nQuestion$/);
     assert.doesNotMatch(messages[0].content, /abcdef/);
+});
+
+test('Qwen reasoning mode is explicit in both enabled and disabled states', () => {
+    assert.deepEqual(getGroqReasoningOptions('qwen/qwen3.6-27b', false), {
+        reasoning_format: 'hidden', reasoning_effort: 'default',
+    });
+    assert.deepEqual(getGroqReasoningOptions('qwen/qwen3.8-27b', true), {
+        reasoning_format: 'hidden', reasoning_effort: 'none',
+    });
+});
+
+test('GPT-OSS keeps its low-latency reasoning policy', () => {
+    assert.deepEqual(getGroqReasoningOptions('openai/gpt-oss-120b', false), {
+        include_reasoning: false, reasoning_effort: 'low',
+    });
 });
