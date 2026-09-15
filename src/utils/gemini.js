@@ -1,4 +1,3 @@
-const resumedLiveSessions = new WeakSet();
 const { abortable, deadlineSignal } = require('./requestDeadline');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
@@ -971,14 +970,29 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
             const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
             try {
-                session = await runGeminiRequest((remaining, _attempt, operationSignal) => {
+                const contextMessage = isReconnect && !reliabilityConfig.sessionResumption?.handle ? buildContextMessage() : null;
+                session = await runGeminiRequest(async (remaining, _attempt, operationSignal) => {
                     setupMessages = [];
-                    return connectGeminiLiveWithGuard(client, {
-                    model: liveModel, callbacks,
-                    config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                        ...reliabilityConfig, systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
-                }, Math.min(15000, remaining), operationSignal); }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
-                if (reliabilityConfig.sessionResumption?.handle) resumedLiveSessions.add(session);
+                    const connected = await connectGeminiLiveWithGuard(client, {
+                        model: liveModel, callbacks,
+                        config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                            ...reliabilityConfig,
+                            ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
+                            systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                    }, Math.min(15000, remaining), operationSignal);
+                    if (contextMessage) {
+                        try {
+                            connected.sendClientContent({
+                                turns: [{ role: 'user', parts: [{ text: augmentLiveTextPayload({ text: contextMessage }).text }] }],
+                                turnComplete: true,
+                            });
+                        } catch (error) {
+                            try { connected.close(); } catch {}
+                            throw error;
+                        }
+                    }
+                    return connected;
+                }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
                 break;
             } catch (error) {
                 const failure = classifyGeminiFailure(error, 'live', liveModel);
@@ -1040,11 +1054,6 @@ async function attemptReconnect(details = {}) {
     const session = await initializeGeminiSession(params.apiKey, params.customPrompt, params.profile, params.language, true);
     if (!session || generation !== liveGeneration || isUserClosing) return false;
     global.geminiSessionRef.current = session;
-    const contextMessage = resumedLiveSessions.has(session) ? null : buildContextMessage();
-    if (contextMessage) {
-        try { session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: augmentLiveTextPayload({ text: contextMessage }).text }] }], turnComplete: false }); }
-        catch { sendToRenderer('update-status', 'Connected, but restoring Live context failed. Typed answers still retain session history.'); }
-    }
     return true;
 }
 
