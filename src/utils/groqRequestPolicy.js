@@ -1,4 +1,5 @@
 const QWEN_REASONING_MODELS = /^qwen\/qwen3\.(?:6|8)-27b$/;
+const GPT_OSS_MODELS = /^openai\/gpt-oss-(?:20b|120b)$/;
 
 function normalizedInstruction(systemPrompt, maxChars) {
     const fallback = 'You are a helpful assistant.';
@@ -34,4 +35,22 @@ function buildGroqMessages(model, systemPrompt, messages = [], maxInstructionCha
     return [{ role: 'user', content: prependInstruction('', instruction) }, ...output];
 }
 
-module.exports = { buildGroqMessages, _test: { prependInstruction, normalizedInstruction } };
+function getGroqReasoningOptions(model, disableThinking) {
+    const normalizedModel = String(model || '');
+    if (QWEN_REASONING_MODELS.test(normalizedModel)) {
+        return {
+            reasoning_format: 'hidden',
+            reasoning_effort: disableThinking ? 'none' : 'default',
+        };
+    }
+    if (GPT_OSS_MODELS.test(normalizedModel)) {
+        return { include_reasoning: false, reasoning_effort: 'low' };
+    }
+    return {};
+}
+
+module.exports = {
+    buildGroqMessages,
+    getGroqReasoningOptions,
+    _test: { prependInstruction, normalizedInstruction },
+};
