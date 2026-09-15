@@ -1,4 +1,3 @@
-const resumedLiveSessions = new WeakSet();
 const { abortable, deadlineSignal } = require('./requestDeadline');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
@@ -12,6 +11,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction } = require('./realtimeContextMain');
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
+const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
@@ -387,28 +387,6 @@ function stripThinkingTags(text) {
     return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 }
 
-function getGroqReasoningOptions(model, disableThinking) {
-    if (/^qwen\/qwen3\.(?:6|8)-27b$/.test(model)) {
-        const options = {
-            reasoning_format: 'hidden',
-        };
-
-        if (disableThinking) {
-            options.reasoning_effort = 'none';
-        }
-
-        return options;
-    }
-
-    if (/^openai\/gpt-oss-(?:20b|120b)$/.test(model)) {
-        return {
-            include_reasoning: false, reasoning_effort: 'low',
-        };
-    }
-
-    return {};
-}
-
 function getGeminiErrorDetail(error) {
     const values = [
         error?.message,
@@ -656,7 +634,7 @@ async function sendToGroqNow(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                messages: [{ role: 'system', content: (currentSystemPrompt || 'You are a helpful assistant.').slice(0, GROQ_MAX_SYSTEM_PROMPT_CHARS) }, ...requestHistory],
+                messages: buildGroqMessages(modelToUse, currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -762,8 +740,7 @@ async function sendImageToGroq(base64Data, prompt) {
             },
             body: JSON.stringify({
                 model,
-                messages: [
-                    { role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' },
+                messages: buildGroqMessages(model, currentSystemPrompt, [
                     {
                         role: 'user',
                         content: [
@@ -776,7 +753,7 @@ async function sendImageToGroq(base64Data, prompt) {
                             },
                         ],
                     },
-                ],
+                ], GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -971,14 +948,29 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
             const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
             try {
-                session = await runGeminiRequest((remaining, _attempt, operationSignal) => {
+                const contextMessage = isReconnect && !reliabilityConfig.sessionResumption?.handle ? buildContextMessage() : null;
+                session = await runGeminiRequest(async (remaining, _attempt, operationSignal) => {
                     setupMessages = [];
-                    return connectGeminiLiveWithGuard(client, {
-                    model: liveModel, callbacks,
-                    config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                        ...reliabilityConfig, systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
-                }, Math.min(15000, remaining), operationSignal); }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
-                if (reliabilityConfig.sessionResumption?.handle) resumedLiveSessions.add(session);
+                    const connected = await connectGeminiLiveWithGuard(client, {
+                        model: liveModel, callbacks,
+                        config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                            ...reliabilityConfig,
+                            ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
+                            systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                    }, Math.min(15000, remaining), operationSignal);
+                    if (contextMessage) {
+                        try {
+                            connected.sendClientContent({
+                                turns: [{ role: 'user', parts: [{ text: augmentLiveTextPayload({ text: contextMessage }).text }] }],
+                                turnComplete: true,
+                            });
+                        } catch (error) {
+                            try { connected.close(); } catch {}
+                            throw error;
+                        }
+                    }
+                    return connected;
+                }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
                 break;
             } catch (error) {
                 const failure = classifyGeminiFailure(error, 'live', liveModel);
@@ -1040,11 +1032,6 @@ async function attemptReconnect(details = {}) {
     const session = await initializeGeminiSession(params.apiKey, params.customPrompt, params.profile, params.language, true);
     if (!session || generation !== liveGeneration || isUserClosing) return false;
     global.geminiSessionRef.current = session;
-    const contextMessage = resumedLiveSessions.has(session) ? null : buildContextMessage();
-    if (contextMessage) {
-        try { session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: augmentLiveTextPayload({ text: contextMessage }).text }] }], turnComplete: false }); }
-        catch { sendToRenderer('update-status', 'Connected, but restoring Live context failed. Typed answers still retain session history.'); }
-    }
     return true;
 }
 

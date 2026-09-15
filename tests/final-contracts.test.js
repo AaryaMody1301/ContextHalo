@@ -109,7 +109,8 @@ test('an explicitly rejected resumption handle gets one fresh connection with or
     assert.equal(f.connections.length, 3);
     assert.equal(f.connections[1].config.sessionResumption.handle, 'expired');
     assert.deepEqual(f.connections[2].config.sessionResumption, {});
-    assert.equal(restored[0].turnComplete, false); assert.match(JSON.stringify(restored), /SQL answer/);
+    assert.equal(f.connections[2].config.historyConfig?.initialHistoryInClientContent, true);
+    assert.equal(restored[0].turnComplete, true); assert.match(JSON.stringify(restored), /SQL answer/);
 });
 
 test('cancel during AudioWorklet loading closes the pending context and cannot restart capture', async () => {

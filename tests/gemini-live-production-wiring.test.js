@@ -34,7 +34,8 @@ test('manual reconnect uses a safe server resumption handle without replaying lo
     assert.equal(result.success, true);
     assert.equal(fixture.connections.length, 2);
     assert.deepEqual(fixture.connections[1].config.sessionResumption, { handle: 'safe-handle' });
-    assert.equal(fixture.realtime.some(item => String(item?.text || '').includes('Session reconnected.')), false);
+    assert.equal(fixture.connections[1].config.historyConfig, undefined);
+    assert.equal(fixture.clientContent.some(item => JSON.stringify(item.turns).includes('Session reconnected.')), false);
 });
 
 test('manual reconnect falls back to local history when no safe resumption handle exists', async () => {
@@ -49,5 +50,6 @@ test('manual reconnect falls back to local history when no safe resumption handl
     assert.equal(result.success, true);
     assert.equal(fixture.connections.length, 2);
     assert.deepEqual(fixture.connections[1].config.sessionResumption, {});
-    assert.equal(fixture.clientContent.some(item => item.turnComplete === false && JSON.stringify(item.turns).includes('Session reconnected.')), true);
+    assert.equal(fixture.connections[1].config.historyConfig?.initialHistoryInClientContent, true);
+    assert.equal(fixture.clientContent.some(item => item.turnComplete === true && JSON.stringify(item.turns).includes('Session reconnected.')), true);
 });
