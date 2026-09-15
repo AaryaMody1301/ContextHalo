@@ -11,6 +11,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction } = require('./realtimeContextMain');
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
+const { buildGroqMessages } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
@@ -655,7 +656,7 @@ async function sendToGroqNow(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                messages: [{ role: 'system', content: (currentSystemPrompt || 'You are a helpful assistant.').slice(0, GROQ_MAX_SYSTEM_PROMPT_CHARS) }, ...requestHistory],
+                messages: buildGroqMessages(modelToUse, currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -761,8 +762,7 @@ async function sendImageToGroq(base64Data, prompt) {
             },
             body: JSON.stringify({
                 model,
-                messages: [
-                    { role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' },
+                messages: buildGroqMessages(model, currentSystemPrompt, [
                     {
                         role: 'user',
                         content: [
@@ -775,7 +775,7 @@ async function sendImageToGroq(base64Data, prompt) {
                             },
                         ],
                     },
-                ],
+                ], GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
