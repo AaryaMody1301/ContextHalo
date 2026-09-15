@@ -15,7 +15,7 @@ ContextHalo remains a Windows 10/11 x64 Electron/Lit interview, meeting and desk
 | Gemini errors | Two bounded attempts, one retry owner; distinguish 409 ABORTED from ALREADY_EXISTS; cancellation/deadline actively abort work, even a noncooperative SDK | https://ai.google.dev/gemini-api/docs/api-errors |
 | Model retirement | Preserve selected 2.5 Flash/3.7 Flash rather than invent a shutdown; migrate known retired 2.0 defaults. Discovery is advisory and account-dependent | https://ai.google.dev/gemini-api/docs/deprecations |
 | Groq | `/openai/v1/models`, `/chat/completions`, `/audio/transcriptions`; GPT-OSS 120B text, Qwen 3.6 vision default and 3.8 discovery, Whisper Large V3 Turbo | https://console.groq.com/docs/models and https://console.groq.com/docs/vision |
-| Groq reasoning | Only documented model families get reasoning parameters. Qwen `none`/`hidden` remains separate from GPT-OSS `low`/`include_reasoning:false`; Qwen instructions stay in the user message per current guidance while GPT-OSS keeps its documented role hierarchy; Qwen vision is labeled Preview | https://console.groq.com/docs/reasoning |
+| Groq reasoning | Only documented model families get reasoning parameters. Qwen uses explicit `default` for thinking or `none` for instruct mode with `reasoning_format:hidden`; GPT-OSS keeps `low`/`include_reasoning:false`. Qwen instructions stay in the user message per current guidance while GPT-OSS keeps its documented role hierarchy; Qwen vision is labeled Preview | https://console.groq.com/docs/reasoning |
 | Native inference | llama.cpp OpenAI-compatible chat, whisper.cpp `/inference`, verified GGUF/model/projector downloads. English-only Whisper models reject non-English selection clearly | https://github.com/ggml-org/llama.cpp/tree/master/tools/server and https://github.com/ggml-org/whisper.cpp/tree/master/examples/server |
 | Hugging Face | Follow paginated Hub tree Link headers; BF16/F16/F32 projector selection; SHA-256/ETag verification, cancellable atomic download. Cancellation preserves verified cache | https://huggingface.co/docs/hub/api |
 | Electron | 44.3.0, sandbox/context isolation, trusted-frame display-media handler, Windows loopback; asynchronous clipboard results supported | https://www.electronjs.org/docs/latest/api/session and https://www.electronjs.org/docs/latest/tutorial/security |
@@ -35,6 +35,8 @@ The vendored Lit/Markdown/highlighting UI stack is intentionally not major-upgra
 ## Important corrections from the earlier audit
 
 The September 15 re-audit corrected Gemini 3.1 Live history restore. Fresh reconnects now opt into initial-history mode and complete the seed message; successful server resumption never receives a duplicate local replay.
+
+Groq Qwen 3.6/3.8 requests now follow the provider's reasoning guidance: instructions are folded into the current user turn instead of a system role, thinking is explicitly `default` when enabled and `none` when disabled, and hidden reasoning remains excluded from the visible answer. GPT-OSS retains its separate system-role and low-latency reasoning policy.
 
 The HTTP retry helper previously calculated a 70-second budget but did not enforce it around a hanging SDK. It now owns an abortable deadline. Typed requests no longer carry an independent 27-second per-attempt cap. The screen hierarchy remains 70s provider, 75s session, 77s Windows wrapper, 80s renderer watchdog.
 
