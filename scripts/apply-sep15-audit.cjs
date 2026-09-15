@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 
 function replaceOnce(filePath, before, after) {
-    const source = fs.readFileSync(filePath, 'utf8');
+    const source = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
     const first = source.indexOf(before);
     const second = first < 0 ? -1 : source.indexOf(before, first + before.length);
     if (first < 0 || second >= 0) {
