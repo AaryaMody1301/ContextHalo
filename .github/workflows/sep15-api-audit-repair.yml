@@ -28,6 +28,16 @@ jobs:
         run: |
           if (Test-Path scripts/apply-sep15-audit.cjs) {
             node scripts/apply-sep15-audit.cjs
+            $assertions = @(
+              @{ Path = 'tests/final-contracts.test.js'; From = 'assert.deepEqual(f.connections[2].config.historyConfig, { initialHistoryInClientContent: true });'; To = 'assert.equal(f.connections[2].config.historyConfig?.initialHistoryInClientContent, true);' },
+              @{ Path = 'tests/gemini-live-production-wiring.test.js'; From = 'assert.deepEqual(fixture.connections[1].config.historyConfig, { initialHistoryInClientContent: true });'; To = 'assert.equal(fixture.connections[1].config.historyConfig?.initialHistoryInClientContent, true);' },
+              @{ Path = 'tests/gemini-recovery.test.js'; From = 'assert.deepEqual(f.connections[1].config.historyConfig, { initialHistoryInClientContent: true });'; To = 'assert.equal(f.connections[1].config.historyConfig?.initialHistoryInClientContent, true);' }
+            )
+            foreach ($change in $assertions) {
+              $source = Get-Content -Raw $change.Path
+              if (!$source.Contains($change.From)) { throw "Expected assertion not found in $($change.Path)" }
+              Set-Content -NoNewline -Encoding utf8 $change.Path ($source.Replace($change.From, $change.To))
+            }
           } else {
             Write-Host 'Repair already applied.'
           }
