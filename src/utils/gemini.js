@@ -11,7 +11,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction } = require('./realtimeContextMain');
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
-const { buildGroqMessages } = require('./groqRequestPolicy');
+const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
@@ -385,28 +385,6 @@ function stripThinkingTags(text) {
     }
 
     return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
-}
-
-function getGroqReasoningOptions(model, disableThinking) {
-    if (/^qwen\/qwen3\.(?:6|8)-27b$/.test(model)) {
-        const options = {
-            reasoning_format: 'hidden',
-        };
-
-        if (disableThinking) {
-            options.reasoning_effort = 'none';
-        }
-
-        return options;
-    }
-
-    if (/^openai\/gpt-oss-(?:20b|120b)$/.test(model)) {
-        return {
-            include_reasoning: false, reasoning_effort: 'low',
-        };
-    }
-
-    return {};
 }
 
 function getGeminiErrorDetail(error) {
