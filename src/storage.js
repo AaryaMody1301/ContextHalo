@@ -9,7 +9,7 @@ const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
     onboarded: false,
     layout: 'normal',
-    geminiLiveModel: 'gemini-3.1-flash-live-preview',
+    geminiLiveModel: 'gemini-3.8-live',
     geminiHttpModel: 'gemini-3.8-flash',
     groqModel: 'openai/gpt-oss-120b',
     groqImageModel: 'qwen/qwen3.6-27b',

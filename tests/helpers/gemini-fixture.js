@@ -21,7 +21,7 @@ function geminiFixture(options = {}) {
     const frame = {};
     const webContents = { id: 1, mainFrame: frame, getURL: () => 'file:///app/src/index.html', send: (...args) => events.push(args) };
     const preferences = { googleSearchEnabled: options.search === true, responseMode: 'balanced', ...options.preferences };
-    const config = { geminiLiveModel: 'gemini-3.1-flash-live-preview', groqModel: 'test-chat', ...options.config };
+    const config = { geminiLiveModel: 'gemini-3.8-live', groqModel: 'test-chat', ...options.config };
     const storage = {
         getConfig: () => config, getPreferences: () => preferences,
         getAvailableModel: () => options.model || 'selected-http-model',

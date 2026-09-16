@@ -55,4 +55,4 @@ Compared with the audited source snapshot, runtime files (`src/**` and `preload.
 - https://googleapis.github.io/js-genai/release_docs/interfaces/types.HttpRetryOptions.html : SDK attempt limits.
 - https://www.electronjs.org/docs/latest/tutorial/custom-window-styles : transparent-window limitations and platform material behavior.
 
-Configured defaults remain Gemini `gemini-3.1-flash-live-preview` and `gemini-3.8-flash`; manual model selections are preserved. Catalog discovery remains advisory and does not silently switch the user's model or provider.
+At the time of this historical repair, the configured Live default was `gemini-3.1-flash-live-preview`. The current default is tracked in [API_COMPATIBILITY_AUDIT.md](API_COMPATIBILITY_AUDIT.md); manual supported model selections remain preserved and catalog discovery remains advisory rather than silently switching a user's model or provider.

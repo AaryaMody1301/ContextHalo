@@ -832,7 +832,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     let modelTextBuffer = '';
     let audioTextBuffer = '';
     let liveGrounding;
-    const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
+    const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
     if (!geminiLiveRuntime) {
         geminiLiveRuntime = createGeminiLiveRuntime({
             reconnect: async details => {
@@ -1019,7 +1019,7 @@ async function attemptReconnect(details = {}) {
     const generation = liveGeneration;
     messageBuffer = '';
     currentTranscription = '';
-    const model = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
+    const model = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
     const cooling = geminiCooldowns.get(cooldownKey(params.apiKey, model));
     if (cooling?.retryAt > Date.now()) {
         const delay = cooling.retryAt - Date.now();
@@ -1651,7 +1651,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!options || typeof options !== 'object' || typeof options.withoutSearch !== 'boolean') return { success: false, error: 'Invalid recovery options' };
         if (currentProviderMode !== 'byok' || !sessionParams?.apiKey || !mainSessionActive) return { success: false, error: 'No Gemini session to reconnect' };
         if (manualReconnectPromise) return manualReconnectPromise.then(success => ({ success, failure: lastGeminiFailure, search: { ...searchState } }));
-        const model = String(getConfig().geminiLiveModel || 'gemini-3.1-flash-live-preview').replace(/^models\//, '').trim();
+        const model = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
         const cooldown = geminiCooldowns.get(cooldownKey(sessionParams.apiKey, model));
         if (cooldown?.retryAt > Date.now()) return { success: false, error: cooldown.message, failure: cooldown };
         if (geminiLiveRuntime?.getState().reconnecting) return { success: false, error: 'Automatic recovery is in progress. Wait before retrying.' };

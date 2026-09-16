@@ -8,6 +8,11 @@ const { buildGeminiCatalog, buildGroqCatalog } = registry._test;
 test('Gemini catalog separates Live and generateContent models from API metadata', () => {
     const catalog = buildGeminiCatalog([
         {
+            name: 'models/gemini-3.8-live',
+            displayName: 'Gemini 3.8 Live',
+            supportedGenerationMethods: ['bidiGenerateContent'],
+        },
+        {
             name: 'models/gemini-3.1-flash-live-preview',
             displayName: 'Gemini 3.1 Flash Live Preview',
             supportedGenerationMethods: ['bidiGenerateContent'],
@@ -29,9 +34,9 @@ test('Gemini catalog separates Live and generateContent models from API metadata
         },
     ]);
 
-    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.1-flash-live-preview']);
+    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
     assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
-    assert.equal(catalog.recommended.live, 'gemini-3.1-flash-live-preview');
+    assert.equal(catalog.recommended.live, 'gemini-3.8-live');
     assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
 });
 

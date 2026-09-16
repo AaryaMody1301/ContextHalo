@@ -725,7 +725,7 @@ export class MainView extends LitElement {
         this._savedKeys = { gemini: false, groq: false };
         this._geminiKey = '';
         this._groqKey = '';
-        this._geminiLiveModel = 'gemini-3.1-flash-live-preview';
+        this._geminiLiveModel = GEMINI_DEFAULTS.live;
         this._groqModel = GROQ_DEFAULTS.chat;
         this._groqImageModel = 'qwen/qwen3.6-27b';
         this._disableGroqThinking = true;
