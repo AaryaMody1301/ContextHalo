@@ -73,7 +73,7 @@ function buildGeminiCatalog(rawModels) {
         generate,
         screen,
         recommended: {
-            live: pick(live, ['gemini-3.1-flash-live-preview']),
+            live: pick(live, ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']),
             screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
         },
     };

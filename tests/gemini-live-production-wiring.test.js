@@ -10,6 +10,8 @@ test('production Live connection enables compression and resumption updates', as
     assert.equal(fixture.connections.length, 1);
     assert.deepEqual(fixture.connections[0].config.contextWindowCompression, { slidingWindow: {} });
     assert.deepEqual(fixture.connections[0].config.sessionResumption, {});
+    assert.equal(fixture.connections[0].model, 'gemini-3.8-live');
+    assert.equal(fixture.connections[0].config.thinkingConfig, undefined);
 });
 
 test('409 ABORTED is retryable but ALREADY_EXISTS is not', () => {

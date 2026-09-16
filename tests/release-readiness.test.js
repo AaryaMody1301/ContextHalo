@@ -46,7 +46,7 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.equal(pkg.devDependencies.electron, '^44.3.0');
 
     const storage = read('src/storage.js');
-    assert.match(storage, /geminiLiveModel: 'gemini-3\.1-flash-live-preview'/);
+    assert.match(storage, /geminiLiveModel: 'gemini-3\.8-live'/);
     assert.match(storage, /geminiHttpModel: 'gemini-3\.8-flash'/);
     assert.match(storage, /groqModel: 'openai\/gpt-oss-120b'/);
     assert.match(storage, /groqImageModel: 'qwen\/qwen3\.6-27b'/);

@@ -1,4 +1,4 @@
-# API compatibility and release gates - 2026-09-15
+# API compatibility and release gates - 2026-09-16
 
 ## Product and scope
 
@@ -8,9 +8,9 @@ ContextHalo remains a Windows 10/11 x64 Electron/Lit interview, meeting and desk
 
 | Integration | Contract retained and checked | Official reference |
 | --- | --- | --- |
-| Gemini Developer Live | `gemini-3.1-flash-live-preview`, AUDIO output with transcription, compression, ordinary session resumption, GoAway; no Enterprise-only transparent replay | https://ai.google.dev/gemini-api/docs/live-api/session-management |
+| Gemini Developer Live | `gemini-3.8-live` is the stable default; AUDIO output with transcription, Search grounding, compression, ordinary session resumption and GoAway. The legacy 3.1 preview remains selectable when explicitly saved | https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live and https://ai.google.dev/gemini-api/docs/live-api/session-management |
 | Gemini SDK | 2.22.0; explicitly select Developer API (`vertexai: false`), do not inherit an Enterprise environment flag; buffer setup messages emitted before connect resolves | https://github.com/googleapis/js-genai/blob/v2.22.0/src/live.ts |
-| Live context restore | Gemini 3.1 seeds local history only on a fresh reconnect with `historyConfig.initialHistoryInClientContent: true` and `sendClientContent({turns, turnComplete:true})`; server-resumed sessions never duplicate local history | https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview |
+| Live context restore | Fresh reconnects seed local history only with `historyConfig.initialHistoryInClientContent: true` and `sendClientContent({turns, turnComplete:true})`; server-resumed sessions never duplicate local history. The 3.8 migration keeps the normal turn lifecycle while omitting unsupported thinking setup | https://ai.google.dev/gemini-api/docs/live-api/thinking and https://ai.google.dev/api/generate-content |
 | Gemini text/image | `generateContent` remains fully supported even though Interactions is recommended for new projects. Default HTTP model `gemini-3.8-flash`; low thinking for screenshots and Instant typed mode. No unsupported `minimal` for 3.8 | https://ai.google.dev/gemini-api/docs/interactions-overview and https://ai.google.dev/gemini-api/docs/generate-content/thinking |
 | Gemini errors | Two bounded attempts, one retry owner; distinguish 409 ABORTED from ALREADY_EXISTS; cancellation/deadline actively abort work, even a noncooperative SDK | https://ai.google.dev/gemini-api/docs/api-errors |
 | Model retirement | Preserve selected 2.5 Flash/3.7 Flash rather than invent a shutdown; migrate known retired 2.0 defaults. Discovery is advisory and account-dependent | https://ai.google.dev/gemini-api/docs/deprecations |
@@ -26,13 +26,15 @@ Defaults are not a claim that a user's account has access, quota, billing eligib
 
 ## Product-specific model choices
 
-`gemini-3.8-flash` remains the default typed/screen model because it is a current stable Flash release with no announced shutdown. `gemini-3.1-flash-live-preview` remains the Live model because it is the current documented Gemini Live model for low-latency bidirectional audio and has no announced shutdown date.
+`gemini-3.8-flash` remains the default typed/screen model because it is a current stable Flash release with no announced shutdown. `gemini-3.8-live` is now the default Live model because Google released it as Stable on September 15, 2026 and recommends it for most low-latency voice agents. Explicitly saved `gemini-3.1-flash-live-preview` selections are preserved because Google has not announced a shutdown date; model discovery lets users move deliberately rather than silently rewriting a supported saved selection.
 
 Groq text uses the production `openai/gpt-oss-120b`, and transcription uses production `whisper-large-v3-turbo`. Groq currently has no production multimodal model in the same low-latency fit: both Qwen 3.6 and 3.8 vision models are Preview. ContextHalo keeps Qwen 3.6 as the default screen model because it is faster and cheaper for frequent screen assistance, while dynamic discovery exposes Qwen 3.8 for users who prefer its newer reasoning/coding quality. The UI and catalog explicitly mark both as Preview.
 
 The vendored Lit/Markdown/highlighting UI stack is intentionally not major-upgraded during this reliability pass. The rendered provider/Markdown path remains sanitized and the real Electron smoke covers navigation, labels, focus, scaling, response routing, persistence, knowledge, practice and review. A major UI-library migration would add unrelated release risk without fixing an identified Windows runtime defect.
 
 ## Important corrections from the earlier audit
+
+The September 16 re-audit moved new/default Live sessions to stable `gemini-3.8-live` after Google's September 15 release. The setup already omitted `thinkingConfig`, so the 3.8 migration does not introduce an unsupported Live field. Compression, resumption, Search grounding, transcription and initial-history restore remain enabled. Existing explicit 3.1 selections are not silently overwritten.
 
 The September 15 re-audit corrected Gemini 3.1 Live history restore. Fresh reconnects now opt into initial-history mode and complete the seed message; successful server resumption never receives a duplicate local replay.
 

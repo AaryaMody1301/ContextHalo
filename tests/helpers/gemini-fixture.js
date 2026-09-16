@@ -21,7 +21,7 @@ function geminiFixture(options = {}) {
     const frame = {};
     const webContents = { id: 1, mainFrame: frame, getURL: () => 'file:///app/src/index.html', send: (...args) => events.push(args) };
     const preferences = { googleSearchEnabled: options.search === true, responseMode: 'balanced', ...options.preferences };
-    const config = { geminiLiveModel: 'gemini-3.1-flash-live-preview', groqModel: 'test-chat', ...options.config };
+    const config = { geminiLiveModel: 'gemini-3.8-live', groqModel: 'test-chat', ...options.config };
     const storage = {
         getConfig: () => config, getPreferences: () => preferences,
         getAvailableModel: () => options.model || 'selected-http-model',
@@ -71,7 +71,7 @@ function geminiFixture(options = {}) {
             if (name === '@google/genai') return { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
             if (name === './localai') return local;
-            if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.1-flash-live-preview' }] })) };
+            if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.8-live' }] })) };
             if (name === './transportLogger') return { startTransportLog() {}, logTransportEvent: (...args) => diagnostics.push(args), closeTransportLog() {} };
             if (name === './sessionPackMain') return { appendSessionPack: text => text + '\nSession pack: mock goal' };
             if (name === './realtimeContextMain') return {
