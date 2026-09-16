@@ -71,7 +71,7 @@ function geminiFixture(options = {}) {
             if (name === '@google/genai') return { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
             if (name === './localai') return local;
-            if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.1-flash-live-preview' }] })) };
+            if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.8-live' }] })) };
             if (name === './transportLogger') return { startTransportLog() {}, logTransportEvent: (...args) => diagnostics.push(args), closeTransportLog() {} };
             if (name === './sessionPackMain') return { appendSessionPack: text => text + '\nSession pack: mock goal' };
             if (name === './realtimeContextMain') return {
