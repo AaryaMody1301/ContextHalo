@@ -13,6 +13,7 @@ test('preload strips privileged events and removes only its registered callbacks
         process:{platform:'win32',arch:'x64'},
     });
     const api = exposed.electronAPI;
+    assert.equal(exposed.require, undefined, 'renderer must not receive a require compatibility shim');
     let calls = 0;
     const listener = (event, value) => { assert.equal(event, undefined); assert.equal(value, 'answer'); calls++; };
     api.on('new-response', listener);

@@ -20,7 +20,7 @@ test('preload permits required runtime events and exposes safe platform architec
     assert.match(preload, /arch: process\.arch/);
 });
 
-test('audio modes and Groq voice use VAD without interleaving microphone and system PCM', () => {
+test('Windows audio modes and Groq voice use VAD without unsupported native audio shims', () => {
     const main = read('src/utils/runtimeHardeningMain.js');
 
     assert.match(main, /GROQ_VAD/);
@@ -29,7 +29,7 @@ test('audio modes and Groq voice use VAD without interleaving microphone and sys
     assert.match(main, /runtimeProviderMode === 'groq'/);
     assert.match(main, /if \(mode === 'mic_only'\) return channel === 'send-mic-audio-content'/);
     assert.match(main, /return channel === 'send-audio-content'/);
-    assert.match(main, /startRuntimeMacGroqAudio/);
+    assert.doesNotMatch(main, /SystemAudioDump|start-macos-audio|stop-macos-audio/);
 });
 
 

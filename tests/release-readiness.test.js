@@ -14,9 +14,39 @@ test('final branch contains no one-shot migration workflow or duplicate UI/prelo
     ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
     assert.equal(fs.existsSync('src/components/app/AppHeader.js'), false);
     assert.equal(fs.existsSync('src/preload.js'), false);
-    assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
+    for (const path of ['src/components/index.js', 'src/audioUtils.js', 'src/assets/lit-all-2.7.4.min.js']) {
+        assert.equal(fs.existsSync(path), false, `${path} is dead code and must not ship`);
+    }
 });
 
+
+test('Windows-only renderer uses one filtered preload bridge', () => {
+    const preload = read('preload.js');
+    const renderer = read('src/utils/renderer.js');
+    const gemini = read('src/utils/gemini.js');
+    const hardening = read('src/utils/runtimeHardeningMain.js');
+    const nativeAi = read('src/utils/native-ai-runtime.js');
+    const rendererModules = [
+        'src/components/app/ContextHaloApp.js',
+        'src/components/views/AssistantView.js',
+        'src/components/views/CustomizeView.js',
+        'src/components/views/FeedbackView.js',
+        'src/utils/contextCaptureRenderer.js',
+        'src/utils/realtimeContextRenderer.js',
+        'src/utils/phase4Renderer.js',
+    ].map(read).join('\n');
+
+    assert.match(preload, /exposeInMainWorld\('electronAPI'/);
+    assert.doesNotMatch(preload, /exposeInMainWorld\('require'/);
+    assert.doesNotMatch(rendererModules, /window\.require/);
+    assert.doesNotMatch([preload, renderer, gemini, hardening].join('\n'), /start-macos-audio|stop-macos-audio|SystemAudioDump/);
+    assert.doesNotMatch(nativeAi, /darwin:|llama-server-macos|whisper-server-macos/);
+    assert.doesNotMatch(read('src/storage.js'), /advancedMode:\s*false/);
+    for (const channel of ['storage:set-config', 'storage:set-preferences', 'storage:get-today-limits']) {
+        assert.equal(preload.includes(channel), false, `${channel} has no renderer caller`);
+        assert.equal(renderer.includes(channel), false, `${channel} wrapper has no renderer caller`);
+    }
+});
 test('credential editor has one explicit save owner and no stale Cloud copy', () => {
     const view = read('src/components/views/MainView.js');
     assert.doesNotMatch(view, /@change=\$\{event => \{[^\n]*_saveProviderKey/);
