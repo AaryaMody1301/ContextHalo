@@ -1,6 +1,8 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 import { unifiedPageStyles } from './sharedPageStyles.js';
 
+const ipcRenderer = window.electronAPI;
+
 export class CustomizeView extends LitElement {
     static styles = [
         unifiedPageStyles,
@@ -310,20 +312,19 @@ export class CustomizeView extends LitElement {
     }
 
     getDefaultKeybinds() {
-        const isMac = contextHalo.isMacOS || navigator.platform.includes('Mac');
         return {
-            moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
-            moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
-            moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left',
-            moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
-            toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
-            toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
-            nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
-            previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
-            nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
-            scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
-            scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
-            emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
+            moveUp: 'Ctrl+Up',
+            moveDown: 'Ctrl+Down',
+            moveLeft: 'Ctrl+Left',
+            moveRight: 'Ctrl+Right',
+            toggleVisibility: 'Ctrl+\\',
+            toggleClickThrough: 'Ctrl+M',
+            nextStep: 'Ctrl+Enter',
+            previousResponse: 'Ctrl+[',
+            nextResponse: 'Ctrl+]',
+            scrollUp: 'Ctrl+Shift+Up',
+            scrollDown: 'Ctrl+Shift+Down',
+            emergencyErase: 'Ctrl+Shift+E',
         };
     }
 
@@ -584,10 +585,8 @@ export class CustomizeView extends LitElement {
                 this.clearStatusMessage = 'Closing application...';
                 this.requestUpdate();
                 setTimeout(async () => {
-                    if (window.require) {
-                        const { ipcRenderer } = window.require('electron');
-                        await ipcRenderer.invoke('quit-application');
-                    }
+                    await ipcRenderer.invoke('quit-application');
+
                 }, 1000);
             }, 2000);
         } catch (error) {

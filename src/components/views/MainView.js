@@ -817,7 +817,7 @@ export class MainView extends LitElement {
 
     _localAiSupported() {
         const { platform, arch } = window.process || {};
-        return (platform === 'win32' && arch === 'x64') || (platform === 'darwin' && ['x64', 'arm64'].includes(arch));
+        return platform === 'win32' && arch === 'x64';
     }
 
     async _saveMode(mode) {

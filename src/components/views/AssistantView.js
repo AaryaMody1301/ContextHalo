@@ -4,6 +4,8 @@ import '../GroundingSources.js';
 import { sanitizeAssistantHtml } from '../../utils/responseSanitizerRenderer.js';
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 
+const ipcRenderer = window.electronAPI;
+
 export class AssistantView extends LitElement {
     static styles = css`
         .secondary-body { display: grid; gap: 10px; }
@@ -503,19 +505,17 @@ export class AssistantView extends LitElement {
         this._selectionChanged = () => this.updateResponseContent();
         document.addEventListener('selectionchange', this._selectionChanged);
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
 
-            this.handlePreviousResponse = () => this.navigateToPreviousResponse();
-            this.handleNextResponse = () => this.navigateToNextResponse();
-            this.handleScrollUp = () => this.scrollResponseUp();
-            this.handleScrollDown = () => this.scrollResponseDown();
+        this.handlePreviousResponse = () => this.navigateToPreviousResponse();
+        this.handleNextResponse = () => this.navigateToNextResponse();
+        this.handleScrollUp = () => this.scrollResponseUp();
+        this.handleScrollDown = () => this.scrollResponseDown();
 
-            ipcRenderer.on('navigate-previous-response', this.handlePreviousResponse);
-            ipcRenderer.on('navigate-next-response', this.handleNextResponse);
-            ipcRenderer.on('scroll-response-up', this.handleScrollUp);
-            ipcRenderer.on('scroll-response-down', this.handleScrollDown);
-        }
+        ipcRenderer.on('navigate-previous-response', this.handlePreviousResponse);
+        ipcRenderer.on('navigate-next-response', this.handleNextResponse);
+        ipcRenderer.on('scroll-response-up', this.handleScrollUp);
+        ipcRenderer.on('scroll-response-down', this.handleScrollDown);
+
     }
 
     disconnectedCallback() {
@@ -527,13 +527,11 @@ export class AssistantView extends LitElement {
         this.shadowRoot.querySelector('.tools-dialog')?.close();
 
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            if (this.handlePreviousResponse) ipcRenderer.removeListener('navigate-previous-response', this.handlePreviousResponse);
-            if (this.handleNextResponse) ipcRenderer.removeListener('navigate-next-response', this.handleNextResponse);
-            if (this.handleScrollUp) ipcRenderer.removeListener('scroll-response-up', this.handleScrollUp);
-            if (this.handleScrollDown) ipcRenderer.removeListener('scroll-response-down', this.handleScrollDown);
-        }
+        if (this.handlePreviousResponse) ipcRenderer.removeListener('navigate-previous-response', this.handlePreviousResponse);
+        if (this.handleNextResponse) ipcRenderer.removeListener('navigate-next-response', this.handleNextResponse);
+        if (this.handleScrollUp) ipcRenderer.removeListener('scroll-response-up', this.handleScrollUp);
+        if (this.handleScrollDown) ipcRenderer.removeListener('scroll-response-down', this.handleScrollDown);
+
     }
 
     async handleSendText(options = {}) {
