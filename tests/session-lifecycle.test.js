@@ -15,6 +15,22 @@ for (const mode of ['byok','groq','local']) test(`${mode}: preparation, capture-
     assert.equal(f.app.isRecording,false); assert.equal(f.app.sessionActive,false); assert.equal(f.app.isInitializing,false);
     assert.equal(f.app.sessionDraft,'retained'); assert.equal(f.app._timerInterval,null);
 });
+test('cloud start uses credential presence without exposing raw key getters',async()=>{
+    for(const mode of ['byok','groq']){
+        const f=appFixture({mode});
+        assert.equal(f.api.storage.getApiKey,undefined); assert.equal(f.api.storage.getGroqApiKey,undefined);
+        assert.equal((await f.app.handleStart()).success,true); assert.ok(f.calls.includes('credential-status'));
+        await f.app.endSession();
+    }
+});
+for(const [mode,credentials,label] of [
+    ['byok',{gemini:false,groq:true},'Gemini'],
+    ['groq',{gemini:true,groq:false},'Groq'],
+]) test(`${mode}: missing saved credential blocks provider initialization`,async()=>{
+    const f=appFixture({mode,credentials}); const result=await f.app.handleStart();
+    assert.equal(result.success,false); assert.match(f.app.startError,new RegExp(`No ${label} API key configured`));
+    assert.equal(f.calls.includes('provider'),false);
+});
 test('failure then retry closes partial initialization without leaking the duplicate-start guard',async()=>{
     const f=appFixture({api:{startCapture:async()=>{throw new Error('Microphone denied');}}});
     assert.equal((await f.app.handleStart()).success,false);
