@@ -326,7 +326,7 @@ function installWindowsSmokeCheck(window) {
                     mainView.remove();
 
                     return {
-                        bridge: Boolean(window.electronAPI && window.require),
+                        bridge: Boolean(window.electronAPI && !window.require),
                         platform: window.process?.platform,
                         arch: window.process?.arch,
                         app: Boolean(document.querySelector('context-halo-app')),

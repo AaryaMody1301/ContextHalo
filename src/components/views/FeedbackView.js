@@ -1,6 +1,8 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 import { unifiedPageStyles } from './sharedPageStyles.js';
 
+const ipcRenderer = window.electronAPI;
+
 const PROJECT_ISSUES_URL = 'https://github.com/AaryaMody1301/ContextHalo/issues';
 
 export class FeedbackView extends LitElement {
@@ -37,8 +39,6 @@ export class FeedbackView extends LitElement {
     ];
 
     async _openIssues() {
-        if (!window.require) return;
-        const { ipcRenderer } = window.require('electron');
         await ipcRenderer.invoke('open-external', PROJECT_ISSUES_URL);
     }
 

@@ -1,4 +1,4 @@
-const { ipcRenderer } = window.require('electron');
+const ipcRenderer = window.electronAPI;
 let sessionPack = { title: '', goal: '', notes: '', clipboardText: '' };
 let captureState = { kind: 'active-display', sourceId: null, displayId: null, label: 'Display hosting ContextHalo' };
 let captureSources = [];
