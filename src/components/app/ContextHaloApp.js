@@ -1051,8 +1051,9 @@ export class ContextHaloApp extends LitElement {
             this.providerMode = prefs.providerMode || 'byok';
             if (!['byok', 'groq', 'local'].includes(this.providerMode)) throw new Error('Choose Gemini, Groq or Local AI in provider settings.');
             if (this.providerMode !== 'local') {
-                const key = await this._awaitStart(this.providerMode === 'groq' ? contextHalo.storage.getGroqApiKey() : contextHalo.storage.getApiKey(), epoch);
-                if (!key?.trim()) throw new Error(`No ${this.providerMode === 'groq' ? 'Groq' : 'Gemini'} API key configured. Open provider settings.`);
+                const credentials = await this._awaitStart(contextHalo.storage.getCredentialStatus(), epoch);
+                const hasKey = this.providerMode === 'groq' ? credentials?.groq === true : credentials?.gemini === true;
+                if (!hasKey) throw new Error(`No ${this.providerMode === 'groq' ? 'Groq' : 'Gemini'} API key configured. Open provider settings.`);
             }
             this.providerState = 'connecting';
             this._setLifecycle('connecting', this.providerMode === 'local' ? 'Preparing local AI and speech models...' : `Connecting to ${this.providerMode === 'groq' ? 'Groq' : 'Gemini Live'}...`);

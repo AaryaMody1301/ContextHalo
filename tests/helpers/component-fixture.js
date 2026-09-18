@@ -30,7 +30,7 @@ function appFixture(options = {}) {
     const calls=[];
     const api = {
         getVersion: async () => '0.8.0',
-        storage: { getConfig: async () => ({onboarded:true}), getPreferences: async () => ({ providerMode: options.mode || 'byok' }), getKeybinds: async () => ({}), getApiKey: async () => 'fixture-key', getGroqApiKey: async () => 'fixture-groq' },
+        storage: { getConfig: async () => ({onboarded:true}), getPreferences: async () => ({ providerMode: options.mode || 'byok' }), getKeybinds: async () => ({}), getCredentialStatus: async () => { calls.push('credential-status'); return options.credentials || { gemini: true, groq: true }; } },
         initializeGemini: async () => { calls.push('provider'); return true; },
         initializeLocal: async () => { calls.push('local'); return true; },
         startCapture: async () => { calls.push('capture'); return true; }, stopCapture: () => calls.push('stop'),
