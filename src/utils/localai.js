@@ -380,9 +380,6 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
         projectorPath,
     ];
 
-    if (process.platform === 'darwin') {
-        argumentsList.push('-ngl', '99');
-    }
 
     llamaBaseUrl = `http://127.0.0.1:${port}`;
     llamaProcess = startNativeServer({

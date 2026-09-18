@@ -34,7 +34,7 @@ installSessionPackMain();
 installKnowledgeRagMain();
 
 const { createWindow, getShortcutState, saveGlobalShortcuts } = require('./utils/window');
-const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer } = require('./utils/gemini');
+const { setupGeminiIpcHandlers, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
 const { listProviderModels } = require('./utils/providerModelRegistry');
 
@@ -84,14 +84,10 @@ app.whenReady().then(async () => {
     setupGeneralIpcHandlers();
 });
 
-app.on('window-all-closed', () => {
-    stopMacOSAudioCapture();
-    app.quit();
-});
+app.on('window-all-closed', () => app.quit());
 
 app.on('before-quit', () => {
     abortProviderSession('Application is closing');
-    stopMacOSAudioCapture();
     require('./utils/localai').closeLocalSession();
 });
 
@@ -103,10 +99,6 @@ function setupStorageIpcHandlers() {
     });
 
     handle('storage:get-config', () => ({ success: true, data: storage.getConfig() }));
-    handle('storage:set-config', config => {
-        if (!validateObject(config)) throw new Error('Invalid config');
-        saved(storage.setConfig(config)); return { success: true };
-    });
     handle('storage:update-config', (key, value) => {
         if (!validateString(key, 100)) throw new Error('Invalid config key');
         saved(storage.updateConfig(key, value)); return { success: true };
@@ -125,10 +117,6 @@ function setupStorageIpcHandlers() {
     });
 
     handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
-    handle('storage:set-preferences', preferences => {
-        if (!validateObject(preferences)) throw new Error('Invalid preferences');
-        saved(storage.setPreferences(preferences)); return { success: true };
-    });
     handle('storage:update-preference', (key, value) => {
         if (!validateString(key, 100)) throw new Error('Invalid preference key');
         saved(storage.updatePreference(key, value)); return { success: true };
@@ -154,7 +142,6 @@ function setupStorageIpcHandlers() {
         saved(storage.deleteSession(sessionId)); return { success: true };
     });
     handle('storage:delete-all-sessions', () => ({ success: storage.deleteAllSessions() }));
-    handle('storage:get-today-limits', () => ({ success: true, data: storage.getTodayLimits() }));
     handle('storage:clear-all', () => ({ success: storage.clearAllData() }));
 }
 

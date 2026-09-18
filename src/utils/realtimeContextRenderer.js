@@ -1,4 +1,4 @@
-const { ipcRenderer } = window.require('electron');
+const ipcRenderer = window.electronAPI;
 
 const RESPONSE_MODES = [
     { id: 'instant', label: 'Instant', description: 'Fast, 1-3 useful bullets' },

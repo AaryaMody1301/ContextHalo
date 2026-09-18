@@ -12,28 +12,6 @@ const LEGACY_RUNTIME_REPOSITORY = Buffer.from([99, 104, 101, 97, 116, 105, 110, 
 const RELEASE_BASE_URL = `https://github.com/sohzm/${LEGACY_RUNTIME_REPOSITORY}/releases/download/v0.7.0`;
 
 const BINARY_RELEASES = {
-    darwin: {
-        arm64: {
-            llama: {
-                filename: 'llama-server-macos-arm64',
-                sha256: 'edde3d15ee30a96abf09b99ce5ffe3ffd1c20dd484b380edd3c623c9b66ab6d5',
-            },
-            whisper: {
-                filename: 'whisper-server-macos-arm64',
-                sha256: '870093560fd80b4637dd900b880dc3566f17c809ae513ff653b265da13f41736',
-            },
-        },
-        x64: {
-            llama: {
-                filename: 'llama-server-macos-x86_64',
-                sha256: '728e4122b8ec9272d8b430cf0be44b6194ca3a21f531c1ae6f778e2174545a10',
-            },
-            whisper: {
-                filename: 'whisper-server-macos-x86_64',
-                sha256: '038099749adb67722133dba0daf41405dac57378b2e82d149b89e9fc39693ba9',
-            },
-        },
-    },
     win32: {
         x64: {
             llama: {

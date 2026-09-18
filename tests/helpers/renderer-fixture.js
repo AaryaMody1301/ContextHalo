@@ -54,6 +54,7 @@ function rendererFixture(options = {}) {
         disconnect() {}
     }
     const window = new EventTarget();
+    window.electronAPI = ipc;
     window.addEventListener('capture-state-changed', event => events.push(event.detail));
     const document = {
         readyState: 'loading', addEventListener() {}, querySelector: () => app,
@@ -96,7 +97,7 @@ function rendererFixture(options = {}) {
     };
     const scope = { structuredClone, window, document, AudioContext, AudioWorkletNode, AbortController, CustomEvent, Blob, URL, Uint8ClampedArray, console: { log() {}, warn() {}, error() {} },
         process: { platform: options.platform || 'win32' }, setTimeout, clearTimeout, setInterval, clearInterval,
-        btoa: value => Buffer.from(value, 'binary').toString('base64'), require: () => ({ ipcRenderer: ipc }),
+        btoa: value => Buffer.from(value, 'binary').toString('base64'),
         navigator: { mediaDevices: {
             getDisplayMedia: constraints => { calls.push(['display', constraints]); return options.display ? options.display(constraints) : Promise.resolve(media); },
             getUserMedia: constraints => { calls.push(['microphone', constraints]); return options.mic ? options.mic(constraints) : Promise.resolve(microphone); },

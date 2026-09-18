@@ -14,7 +14,45 @@ test('final branch contains no one-shot migration workflow or duplicate UI/prelo
     ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
     assert.equal(fs.existsSync('src/components/app/AppHeader.js'), false);
     assert.equal(fs.existsSync('src/preload.js'), false);
-    assert.doesNotMatch(read('src/components/index.js'), /AppHeader/);
+    assert.equal(fs.existsSync('src/components/index.js'), false);
+});
+
+test('Windows-only cleanup removes retired platform and compatibility paths', () => {
+    for (const path of [
+        'src/audioUtils.js',
+        'src/assets/lit-all-2.7.4.min.js',
+        'src/components/index.js',
+    ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
+
+    const preload = read('preload.js');
+    assert.doesNotMatch(preload, /start-macos-audio|stop-macos-audio|exposeInMainWorld\('require'|exposeInMainWorld\('process'/);
+
+    const rendererFiles = [
+        'src/utils/renderer.js',
+        'src/utils/realtimeContextRenderer.js',
+        'src/utils/contextCaptureRenderer.js',
+        'src/utils/phase4Renderer.js',
+        'src/components/app/ContextHaloApp.js',
+        'src/components/views/AssistantView.js',
+        'src/components/views/CustomizeView.js',
+        'src/components/views/FeedbackView.js',
+    ];
+    for (const path of rendererFiles) assert.doesNotMatch(read(path), /window\.require|window\.process|contextHalo\.isMacOS/);
+
+    assert.doesNotMatch(read('src/utils/gemini.js'), /SystemAudioDump|MacOSAudioCapture|start-macos-audio|stop-macos-audio/);
+    const runtimeHardening = read('src/utils/runtimeHardeningMain.js');
+    assert.doesNotMatch(runtimeHardening, /SystemAudioDump|runtimeMacAudio|start-macos-audio|stop-macos-audio/);
+    assert.doesNotMatch(runtimeHardening, /desktopCapturer|session\.defaultSession|useSystemPicker: true/);
+    assert.doesNotMatch(read('src/utils/native-ai-runtime.js'), /darwin:|llama-server-macos|whisper-server-macos/);
+    assert.doesNotMatch(read('src/storage.js'), /advancedMode/);
+
+    const index = read('src/index.js');
+    const renderer = read('src/utils/renderer.js');
+    for (const channel of ['storage:set-config', 'storage:set-preferences', 'storage:get-today-limits']) {
+        assert.doesNotMatch(preload, new RegExp(channel));
+        assert.doesNotMatch(index, new RegExp(channel));
+        assert.doesNotMatch(renderer, new RegExp(channel));
+    }
 });
 
 test('credential editor has one explicit save owner and no stale Cloud copy', () => {
