@@ -3,13 +3,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 const allowedChannels = {
     invoke: [
         'storage:get-config',
-        'storage:set-config',
         'storage:update-config',
         'storage:credential-status',
         'storage:set-api-key',
         'storage:set-groq-api-key',
         'storage:get-preferences',
-        'storage:set-preferences',
         'storage:update-preference',
         'storage:get-keybinds',
         'storage:set-keybinds',
@@ -18,7 +16,6 @@ const allowedChannels = {
         'storage:save-session',
         'storage:delete-session',
         'storage:delete-all-sessions',
-        'storage:get-today-limits',
         'storage:clear-all',
         'provider-models:list',
         'context-capture:list-sources',
@@ -53,8 +50,6 @@ const allowedChannels = {
         'cancel-screen-analysis',
         'retry-session-connection',
         'send-text-message',
-        'start-macos-audio',
-        'stop-macos-audio',
         'close-session',
         'get-current-session',
         'start-new-session',
@@ -150,15 +145,6 @@ const safeIpcRenderer = {
 };
 
 contextBridge.exposeInMainWorld('electronAPI', safeIpcRenderer);
-
-// Backward-compatible shim for renderer code while still exposing only the
-// channel-filtered facade instead of Electron's real ipcRenderer object.
-contextBridge.exposeInMainWorld('require', moduleName => {
-    if (moduleName === 'electron') {
-        return { ipcRenderer: safeIpcRenderer };
-    }
-    throw new Error(`Module access denied: ${moduleName}`);
-});
 
 contextBridge.exposeInMainWorld('process', {
     platform: process.platform,
