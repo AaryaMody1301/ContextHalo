@@ -1,4 +1,4 @@
-const { ipcRenderer } = window.require('electron');
+const ipcRenderer = window.electronAPI;
 
 const state = {
     tab: null,

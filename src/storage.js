@@ -24,7 +24,6 @@ const DEFAULT_PREFERENCES = {
     selectedLanguage: 'en-US',
     selectedScreenshotInterval: '5',
     selectedImageQuality: 'medium',
-    advancedMode: false,
     audioMode: 'speaker_only',
     fontSize: 20,
     backgroundTransparency: 0.8,

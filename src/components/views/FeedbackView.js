@@ -37,9 +37,7 @@ export class FeedbackView extends LitElement {
     ];
 
     async _openIssues() {
-        if (!window.require) return;
-        const { ipcRenderer } = window.require('electron');
-        await ipcRenderer.invoke('open-external', PROJECT_ISSUES_URL);
+        await window.electronAPI.invoke('open-external', PROJECT_ISSUES_URL);
     }
 
     render() {

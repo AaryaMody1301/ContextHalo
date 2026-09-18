@@ -661,7 +661,7 @@ export class ContextHaloApp extends LitElement {
             this.selectedImageQuality = prefs.selectedImageQuality || 'medium';
             this.layoutMode = config.layout || 'normal';
 
-            const shortcuts = contextHalo.storage.getShortcutState ? await contextHalo.storage.getShortcutState() : { data: await contextHalo.storage.getKeybinds() };
+            const shortcuts = await contextHalo.storage.getShortcutState();
             this.refreshShortcuts(shortcuts.data, shortcuts.conflicts);
             this._storageLoaded = true;
             this.requestUpdate();
@@ -677,35 +677,33 @@ export class ContextHaloApp extends LitElement {
         this._disposeRealtime = initRealtimeContext();
         this._captureSourceChanged = () => { if (this.sessionActive) void this.restartCapture(); };
         void Promise.all([loadContextState(), refreshPreferences()]).catch(() => { this.startError = 'Session context could not be loaded.'; });
-        this.toggleAttribute('windows', window.process?.platform === 'win32');
+        this.toggleAttribute('windows', true);
         window.addEventListener('capture-state-changed', this._captureStateListener);
 
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            const listen = (channel, handler) => { ipcRenderer.on(channel, handler); this._ipcSubscriptions.push([channel, handler]); };
-            listen('new-response', (_, response, metadata) => this.addNewResponse(response, metadata));
-            listen('update-response', (_, response, metadata) => this.updateCurrentResponse(response, metadata));
-            listen('update-status', (_, status) => this.setStatus(status));
-            // Provider setup events must not release the UI's duplicate-start
-            // guard while screen/audio permission and capture are still pending.
-            listen('provider-state', (_, state) => this.setProviderState(state));
-            listen('search-state', (_, state) => { this.searchState = state; });
-            listen('provider-request-error', (_, failure, metadata) => this.handleRequestError(failure, metadata));
-            listen('shortcut', (_, shortcut) => contextHalo.handleShortcut(shortcut));
-            listen('click-through-toggled', (_, isEnabled) => {
-                this._isClickThrough = isEnabled;
-            });
-            listen('capture-source-invalidated', (_, detail) => {
-                if (this.sessionActive && ['active-display-changed', 'selection-changed'].includes(detail?.reason)) void this.restartCapture();
-            });
-            listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
-            listen('whisper-downloading', (_, downloading) => {
-                this._whisperDownloading = downloading;
-            });
-            listen('local-ai-download-progress', (_, progress) => {
-                this._localAiDownloadProgress = progress;
-            });
-        }
+        const ipcRenderer = window.electronAPI;
+        const listen = (channel, handler) => { ipcRenderer.on(channel, handler); this._ipcSubscriptions.push([channel, handler]); };
+        listen('new-response', (_, response, metadata) => this.addNewResponse(response, metadata));
+        listen('update-response', (_, response, metadata) => this.updateCurrentResponse(response, metadata));
+        listen('update-status', (_, status) => this.setStatus(status));
+        // Provider setup events must not release the UI's duplicate-start
+        // guard while screen/audio permission and capture are still pending.
+        listen('provider-state', (_, state) => this.setProviderState(state));
+        listen('search-state', (_, state) => { this.searchState = state; });
+        listen('provider-request-error', (_, failure, metadata) => this.handleRequestError(failure, metadata));
+        listen('shortcut', (_, shortcut) => contextHalo.handleShortcut(shortcut));
+        listen('click-through-toggled', (_, isEnabled) => {
+            this._isClickThrough = isEnabled;
+        });
+        listen('capture-source-invalidated', (_, detail) => {
+            if (this.sessionActive && ['active-display-changed', 'selection-changed'].includes(detail?.reason)) void this.restartCapture();
+        });
+        listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
+        listen('whisper-downloading', (_, downloading) => {
+            this._whisperDownloading = downloading;
+        });
+        listen('local-ai-download-progress', (_, progress) => {
+            this._localAiDownloadProgress = progress;
+        });
     }
 
     disconnectedCallback() {
@@ -716,11 +714,9 @@ export class ContextHaloApp extends LitElement {
         this._startController?.abort();
         if (this.sessionActive || this.isInitializing) void this.endSession().finally(() => this._disposeRealtime?.());
         else this._disposeRealtime?.();
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            for (const [channel, handler] of this._ipcSubscriptions) ipcRenderer.removeListener(channel, handler);
-            this._ipcSubscriptions = [];
-        }
+        const ipcRenderer = window.electronAPI;
+        for (const [channel, handler] of this._ipcSubscriptions) ipcRenderer.removeListener(channel, handler);
+        this._ipcSubscriptions = [];
     }
 
     // ── Timer ──
@@ -995,24 +991,15 @@ export class ContextHaloApp extends LitElement {
     }
 
     async _handleMinimize() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('window-minimize');
-        }
+        await window.electronAPI.invoke('window-minimize');
     }
 
     async _handleMaximize() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('window-toggle-maximize');
-        }
+        await window.electronAPI.invoke('window-toggle-maximize');
     }
 
     async handleHideToggle() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('toggle-window-visibility');
-        }
+        await window.electronAPI.invoke('toggle-window-visibility');
     }
 
     // ── Session start ──
@@ -1135,17 +1122,11 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleAPIKeyHelp() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://ai.google.dev/gemini-api/docs/api-key');
-        }
+        await window.electronAPI.invoke('open-external', 'https://ai.google.dev/gemini-api/docs/api-key');
     }
 
     async handleGroqAPIKeyHelp() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://console.groq.com/keys');
-        }
+        await window.electronAPI.invoke('open-external', 'https://console.groq.com/keys');
     }
 
     // ── Settings handlers ──
@@ -1177,10 +1158,7 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleExternalLinkClick(url) {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', url);
-        }
+        await window.electronAPI.invoke('open-external', url);
     }
 
     async handleSendText(message) {
@@ -1235,10 +1213,7 @@ export class ContextHaloApp extends LitElement {
                     settingsView.connectedCallback();
                 }
             }
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                ipcRenderer.send('view-changed', this.currentView);
-            }
+            window.electronAPI.send('view-changed', this.currentView);
         }
     }
 

@@ -6,7 +6,7 @@ const {loadMain}=require('./helpers/native-boundary');
 
 function rendererModule(file,names,storage,invoke=async()=>({success:true,data:{}})) {
     const ipc=new EventEmitter(); ipc.invoke=invoke;
-    const window=Object.assign(new EventTarget(),{require:()=>({ipcRenderer:ipc})});
+    const window=Object.assign(new EventTarget(),{electronAPI:ipc});
     class CustomEvent extends Event { constructor(type,init){super(type);this.detail=init?.detail;} }
     const text=fs.readFileSync(file,'utf8').replace(/^export \{.*\};\r?\n?/gm,'').replace(/^export /gm,'');
     const api=new Function('window','contextHalo','CustomEvent',text+'\nreturn {'+names.join(',')+'};')(window,{storage},CustomEvent);

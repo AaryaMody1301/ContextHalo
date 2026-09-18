@@ -1,13 +1,9 @@
-const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('electron');
-const { spawn } = require('child_process');
-const path = require('path');
+const { BrowserWindow, ipcMain } = require('electron');
 const storage = require('../storage');
 const { runSessionRequest, assertCurrentRequest } = require('./sessionRequests');
 
 let runtimeProviderMode = 'byok';
 let originalIpcHandle = null;
-let runtimeMacAudioProc = null;
-let beforeQuitCleanupInstalled = false;
 const registeredHandlers = new Map();
 
 const GROQ_VAD = {
@@ -180,71 +176,6 @@ function processGroqVadChunk(event, data, mimeType) {
     return { success: true };
 }
 
-function convertStereoToMono(stereoBuffer) {
-    const samples = Math.floor(stereoBuffer.length / 4);
-    const mono = Buffer.alloc(samples * 2);
-    for (let i = 0; i < samples; i++) {
-        const left = stereoBuffer.readInt16LE(i * 4);
-        mono.writeInt16LE(left, i * 2);
-    }
-    return mono;
-}
-
-function stopRuntimeMacAudio() {
-    if (runtimeMacAudioProc) {
-        try {
-            runtimeMacAudioProc.kill('SIGTERM');
-        } catch {}
-        runtimeMacAudioProc = null;
-    }
-}
-
-function startRuntimeMacGroqAudio(event) {
-    stopRuntimeMacAudio();
-
-    const executablePath = app.isPackaged
-        ? path.join(process.resourcesPath, 'SystemAudioDump')
-        : path.join(__dirname, '../assets', 'SystemAudioDump');
-
-    runtimeMacAudioProc = spawn(executablePath, [], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env },
-    });
-
-    if (!runtimeMacAudioProc.pid) {
-        runtimeMacAudioProc = null;
-        return false;
-    }
-
-    const sampleRate = 24000;
-    const bytesPerFrame = 4;
-    const chunkSize = Math.floor(sampleRate * bytesPerFrame * 0.1);
-    let pending = Buffer.alloc(0);
-
-    runtimeMacAudioProc.stdout.on('data', data => {
-        pending = Buffer.concat([pending, data]);
-        while (pending.length >= chunkSize) {
-            const stereo = pending.subarray(0, chunkSize);
-            pending = pending.subarray(chunkSize);
-            const mono = convertStereoToMono(stereo);
-            processGroqVadChunk(event, mono.toString('base64'), 'audio/pcm;rate=24000');
-        }
-    });
-
-    runtimeMacAudioProc.stderr.on('data', data => {
-        console.error('SystemAudioDump stderr:', data.toString());
-    });
-    runtimeMacAudioProc.once('close', () => {
-        runtimeMacAudioProc = null;
-    });
-    runtimeMacAudioProc.once('error', error => {
-        console.error('SystemAudioDump error:', error);
-        runtimeMacAudioProc = null;
-    });
-
-    return true;
-}
-
 function shouldForwardAudioChannel(channel) {
     const mode = storage.getPreferences().audioMode || 'speaker_only';
 
@@ -263,30 +194,10 @@ function wrapIpcHandler(channel, handler) {
 
     if (channel === 'close-session') {
         return async (event, ...args) => {
-            stopRuntimeMacAudio();
             const result = await handler(event, ...args);
             runtimeProviderMode = 'byok';
             resetGroqVad();
             return result;
-        };
-    }
-
-    if (channel === 'start-macos-audio') {
-        return async (event, ...args) => {
-            const audioMode = storage.getPreferences().audioMode || 'speaker_only';
-            if (audioMode === 'mic_only') return { success: true, skipped: true };
-            if (runtimeProviderMode === 'groq') {
-                const success = startRuntimeMacGroqAudio(event);
-                return { success, error: success ? undefined : 'Could not start SystemAudioDump' };
-            }
-            return handler(event, ...args);
-        };
-    }
-
-    if (channel === 'stop-macos-audio') {
-        return async (event, ...args) => {
-            stopRuntimeMacAudio();
-            return handler(event, ...args);
         };
     }
 
@@ -306,11 +217,9 @@ function wrapIpcHandler(channel, handler) {
 function prepareRuntimeProvider(mode) {
     runtimeProviderMode = mode;
     resetGroqVad();
-    stopRuntimeMacAudio();
 }
 
 function installIpcHandlerHardening() {
-    if (!beforeQuitCleanupInstalled) { app.on('before-quit', stopRuntimeMacAudio); beforeQuitCleanupInstalled = true; }
     if (originalIpcHandle) return () => {};
 
     originalIpcHandle = ipcMain.handle.bind(ipcMain);
@@ -357,26 +266,6 @@ function setupRuntimeWindowHardening(mainWindow) {
         return { success: true, maximized: mainWindow.isMaximized() };
     });
 
-    // Windows selection, loopback and monitor fallback have one owner.
-    if (process.platform === 'win32') return;
-    session.defaultSession.setDisplayMediaRequestHandler(
-        async (request, callback) => {
-            try {
-                const sources = await desktopCapturer.getSources({ types: ['screen'] });
-                const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-                const source = sources.find(candidate => String(candidate.display_id) === primaryDisplayId) || sources[0];
-                if (!source) {
-                    callback({});
-                    return;
-                }
-                callback({ video: source, audio: 'loopback' });
-            } catch (error) {
-                console.error('Display media selection failed:', error);
-                callback({});
-            }
-        },
-        { useSystemPicker: true }
-    );
 }
 
 module.exports = {

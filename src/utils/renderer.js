@@ -1,5 +1,5 @@
 // renderer.js
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -240,9 +240,6 @@ async function ownCaptureStream(promise, epoch, signal) {
     return waitForCapture(acquired, signal);
 }
 
-const isLinux = process.platform === 'linux';
-const isMacOS = process.platform === 'darwin';
-
 // ============ STORAGE API ============
 // Writes are serialized once here, in invocation order. A failed write does not
 // block later edits, and callers receive both rejected and explicit failures.
@@ -265,9 +262,6 @@ const storage = {
         await persistenceQueue;
         const result = await ipcRenderer.invoke('storage:get-config');
         return result.success ? result.data : {};
-    },
-    async setConfig(config) {
-        return persistStorage('storage:set-config', config);
     },
     async updateConfig(key, value) {
         return persistStorage('storage:update-config', key, value);
@@ -293,9 +287,6 @@ const storage = {
         const result = await ipcRenderer.invoke('storage:get-preferences');
         if (!result?.success) throw new Error('Preferences could not be loaded. Retry before editing.');
         return result.data;
-    },
-    async setPreferences(preferences) {
-        return persistStorage('storage:set-preferences', preferences);
     },
     async updatePreference(key, value) {
         return persistStorage('storage:update-preference', key, value);
@@ -343,12 +334,6 @@ const storage = {
         return persistStorage('storage:clear-all');
     },
 
-    // Limits
-    async getTodayLimits() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-today-limits');
-        return result.success ? result.data : { flash: { count: 0 }, flashLite: { count: 0 } };
-    },
 };
 
 // Cache for preferences to avoid async calls in hot paths
@@ -462,25 +447,15 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
             ? preferencesCache.audioMode : 'speaker_only';
         const needsSystem = audioMode !== 'mic_only';
         const needsMic = audioMode !== 'speaker_only';
-        let nativeSystem = false;
         let warning = '';
-        if (isMacOS && needsSystem) {
-            const result = await ipcRenderer.invoke('start-macos-audio');
-            if (signal.aborted || epoch !== captureEpoch) throw captureAbortError();
-            if (!result?.success) throw new Error(result?.error || 'System audio could not start.');
-            nativeSystem = true;
-        }
         mediaStream = await ownCaptureStream(navigator.mediaDevices.getDisplayMedia({
             video: { frameRate: 2, width: { ideal: 3840 }, height: { ideal: 2160 } },
-            audio: !isMacOS && needsSystem,
+            audio: needsSystem,
         }), epoch, signal);
         if (!mediaStream.getVideoTracks().some(track => track.readyState === 'live')) throw new Error('No live screen was selected.');
-        const systemAvailable = nativeSystem || mediaStream.getAudioTracks().some(track => track.readyState === 'live');
-        if (needsSystem && !systemAvailable) {
-            if (!isLinux) throw new Error('System audio loopback is unavailable. Check the selected display and audio device, or choose microphone-only mode.');
-            warning = 'System audio is unavailable on this display.';
-        }
-        if (!isMacOS && systemAvailable) await setupSystemAudioProcessing(epoch, signal);
+        const systemAvailable = mediaStream.getAudioTracks().some(track => track.readyState === 'live');
+        if (needsSystem && !systemAvailable) throw new Error('System audio loopback is unavailable. Check the selected display and audio device, or choose microphone-only mode.');
+        if (systemAvailable) await setupSystemAudioProcessing(epoch, signal);
         if (needsMic) {
             try {
                 micMediaStream = await ownCaptureStream(navigator.mediaDevices.getUserMedia({
@@ -488,7 +463,7 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
                     video: false,
                 }), epoch, signal);
                 if (!micMediaStream.getAudioTracks().some(track => track.readyState === 'live')) throw new Error('No live microphone track.');
-                await setupLinuxMicProcessing(micMediaStream, epoch, signal);
+                await setupMicAudioProcessing(micMediaStream, epoch, signal);
             } catch (error) {
                 if (signal.aborted || epoch !== captureEpoch) throw captureAbortError();
                 if (audioMode === 'mic_only') throw new Error('Microphone capture is unavailable. Check microphone permissions and the selected input device.');
@@ -557,7 +532,7 @@ async function createCaptureAudioProcessor(stream, channel, epoch, signal) {
     }
 }
 
-async function setupLinuxMicProcessing(micStream, epoch, signal) {
+async function setupMicAudioProcessing(micStream, epoch, signal) {
     if (micAudioProcessor) {
         if (micAudioProcessor.port) micAudioProcessor.port.onmessage = null;
         try { micAudioProcessor.disconnect(); } catch {}
@@ -690,7 +665,6 @@ function stopCapture(warning = '', options = {}) {
     captureStreams.clear();
     mediaStream = micMediaStream = null;
     if (hadAudio) void ipcRenderer.invoke('audio-stream-end', { uiEpoch: contextHaloApp._uiSessionEpoch }).catch(() => {});
-    if (isMacOS) void ipcRenderer.invoke('stop-macos-audio').catch(() => {});
     if (hiddenVideo) {
         hiddenVideo.pause();
         hiddenVideo.srcObject = null;
@@ -1112,10 +1086,6 @@ const contextHalo = {
 
     // Refresh preferences cache (call after updating preferences)
     refreshPreferencesCache: loadPreferencesCache,
-
-    // Platform detection
-    isLinux: isLinux,
-    isMacOS: isMacOS,
 };
 
 // Make it globally available

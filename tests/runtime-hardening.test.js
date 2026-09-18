@@ -9,7 +9,7 @@ function read(relativePath) {
 
 
 
-test('preload permits required runtime events and exposes safe platform architecture', () => {
+test('preload permits required runtime events through one filtered renderer facade', () => {
     const preload = read('preload.js');
 
     assert.match(preload, /whisper-downloading/);
@@ -17,7 +17,7 @@ test('preload permits required runtime events and exposes safe platform architec
     assert.match(preload, /groq-rate-limit/);
     assert.match(preload, /removeAllListeners\(channel\)/);
     assert.match(preload, /window-toggle-maximize/);
-    assert.match(preload, /arch: process\.arch/);
+    assert.doesNotMatch(preload, /exposeInMainWorld\('require'|exposeInMainWorld\('process'/);
 });
 
 test('audio modes and Groq voice use VAD without interleaving microphone and system PCM', () => {
@@ -29,7 +29,7 @@ test('audio modes and Groq voice use VAD without interleaving microphone and sys
     assert.match(main, /runtimeProviderMode === 'groq'/);
     assert.match(main, /if \(mode === 'mic_only'\) return channel === 'send-mic-audio-content'/);
     assert.match(main, /return channel === 'send-audio-content'/);
-    assert.match(main, /startRuntimeMacGroqAudio/);
+    assert.doesNotMatch(main, /SystemAudioDump|startRuntimeMacGroqAudio|start-macos-audio|stop-macos-audio/);
 });
 
 

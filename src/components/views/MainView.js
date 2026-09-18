@@ -815,11 +815,6 @@ export class MainView extends LitElement {
 
     // ── Persistence ──
 
-    _localAiSupported() {
-        const { platform, arch } = window.process || {};
-        return (platform === 'win32' && arch === 'x64') || (platform === 'darwin' && ['x64', 'arm64'].includes(arch));
-    }
-
     async _saveMode(mode) {
         if (this.sessionActive || this.isInitializing || !['byok', 'groq', 'local'].includes(mode)) return;
         if (mode === 'local' && !this._localAiSupported()) {
