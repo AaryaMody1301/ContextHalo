@@ -570,9 +570,12 @@ async function extendedWindowsAcceptance(window, directory) {
             await evaluate(`(async()=>{const app=document.querySelector('context-halo-app');app.layoutMode=${JSON.stringify(layout)};await app.updateComplete;})()`);
             await capture(`home-${theme}-${layout}`);
             await navigate('customize');
-            const palette = await evaluate(`(async()=>{const view=document.querySelector('context-halo-app').shadowRoot.querySelector('customize-view');for(let n=0;view.settingsLoading&&n<100;n++)await new Promise(r=>setTimeout(r,10));const root=view.shadowRoot;return {theme:view.theme,background:getComputedStyle(root.querySelector('.unified-page')).backgroundColor,text:getComputedStyle(root.querySelector('.page-title')).color,scheme:getComputedStyle(root.querySelector('select')).colorScheme};})()`);
+            const palette = await evaluate(`(async()=>{const view=document.querySelector('context-halo-app').shadowRoot.querySelector('customize-view');for(let n=0;view.settingsLoading&&n<100;n++)await new Promise(r=>setTimeout(r,10));const root=view.shadowRoot;const styles=getComputedStyle(document.documentElement);return {theme:view.theme,pageBackground:getComputedStyle(root.querySelector('.unified-page')).backgroundColor,appBackground:styles.getPropertyValue('--bg-app').trim(),windowBackground:styles.getPropertyValue('--window-background').trim(),text:getComputedStyle(root.querySelector('.page-title')).color,scheme:getComputedStyle(root.querySelector('select')).colorScheme};})()`);
             const expected = theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(16, 16, 16)';
-            verify(palette.theme === theme && palette.background === expected && palette.text !== palette.background && palette.scheme === theme, `${theme}/${layout}: persisted Settings hydration keeps foreground, background and native palette consistent`);
+            verify(palette.theme === theme && palette.pageBackground === 'rgba(0, 0, 0, 0)' && palette.appBackground === expected
+                && palette.windowBackground.startsWith(theme === 'light' ? 'rgba(255, 255, 255,' : 'rgba(16, 16, 16,')
+                && palette.text !== palette.appBackground && palette.scheme === theme,
+                `${theme}/${layout}: persisted Settings hydration keeps transparent window, foreground and native palette consistent`);
             await capture(`settings-${theme}-${layout}`); await navigate('main');
         }
     }

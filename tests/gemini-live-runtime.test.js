@@ -27,7 +27,10 @@ function fakeTimers() {
 test('runtime exposes compression and ordinary resumption configuration', () => {
     const runtime = createGeminiLiveRuntime({ reconnect: async () => {} });
     assert.deepEqual(runtime.getConnectConfig(), {
-        contextWindowCompression: { slidingWindow: {} },
+        contextWindowCompression: {
+            triggerTokens: '25000',
+            slidingWindow: { targetTokens: '8000' },
+        },
         sessionResumption: {},
     });
 
@@ -210,6 +213,34 @@ test('a reconnect failure is reclassified and rescheduled with bounded backoff',
     assert.equal(pending.length, 1);
     assert.equal(pending[0].ms, 1500);
     assert.equal(runtime.getState().failureStreak, 2);
+});
+
+test('long sessions survive repeated GoAway rotations and always use the newest safe handle', async () => {
+    let clock = 1000;
+    const fake = fakeTimers();
+    const reconnects = [];
+    const runtime = createGeminiLiveRuntime({
+        reconnect: async details => reconnects.push(details),
+        now: () => clock,
+        setTimer: fake.setTimer,
+        clearTimer: fake.clearTimer,
+    });
+
+    runtime.onOpen();
+    for (let cycle = 1; cycle <= 50; cycle++) {
+        runtime.onMessage({ sessionResumptionUpdate: { resumable: true, newHandle: `resume-${cycle}` } });
+        const observed = runtime.onMessage({ goAway: { timeLeft: '2s' } });
+        assert.equal(observed.shouldRotate, true);
+        await fake.runNext();
+        assert.equal(reconnects.at(-1).usedResumption, true);
+        assert.deepEqual(reconnects.at(-1).config.sessionResumption, { handle: `resume-${cycle}` });
+        clock += 10 * 60 * 1000;
+        runtime.onOpen();
+    }
+
+    assert.equal(reconnects.length, 50);
+    assert.equal(runtime.getState().failureStreak, 0);
+    assert.equal(runtime.getState().stopped, false);
 });
 
 test('stop cancels a planned GoAway rotation', () => {

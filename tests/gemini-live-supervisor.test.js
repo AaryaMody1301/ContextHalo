@@ -13,7 +13,10 @@ const {
 test('new Live recovery state enables compression and requests resumption updates', () => {
     const state = createLiveRecoveryState();
     assert.deepEqual(liveConnectReliabilityConfig(state), {
-        contextWindowCompression: { slidingWindow: {} },
+        contextWindowCompression: {
+            triggerTokens: '25000',
+            slidingWindow: { targetTokens: '8000' },
+        },
         sessionResumption: {},
     });
 });

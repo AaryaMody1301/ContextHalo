@@ -9,7 +9,12 @@ function normalizeHandle(value) {
 function buildLiveReliabilityConfig(resumptionHandle = null) {
     const handle = normalizeHandle(resumptionHandle);
     return {
-        contextWindowCompression: { slidingWindow: {} },
+        // Google recommends compressing well before the full Live context window
+        // to keep long voice sessions responsive and bounded.
+        contextWindowCompression: {
+            triggerTokens: '25000',
+            slidingWindow: { targetTokens: '8000' },
+        },
         sessionResumption: handle ? { handle } : {},
     };
 }

@@ -12,11 +12,17 @@ const {
 
 test('Live reliability config enables compression and ordinary session resumption', () => {
     assert.deepEqual(buildLiveReliabilityConfig(), {
-        contextWindowCompression: { slidingWindow: {} },
+        contextWindowCompression: {
+            triggerTokens: '25000',
+            slidingWindow: { targetTokens: '8000' },
+        },
         sessionResumption: {},
     });
     assert.deepEqual(buildLiveReliabilityConfig(' resume-token '), {
-        contextWindowCompression: { slidingWindow: {} },
+        contextWindowCompression: {
+            triggerTokens: '25000',
+            slidingWindow: { targetTokens: '8000' },
+        },
         sessionResumption: { handle: 'resume-token' },
     });
     assert.equal(Object.hasOwn(buildLiveReliabilityConfig('token').sessionResumption, 'transparent'), false);

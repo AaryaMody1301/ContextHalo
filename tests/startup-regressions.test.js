@@ -132,6 +132,57 @@ test('Gemini Live setup retries once without Search after a setup-level WebSocke
     assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying Gemini Live without Search/i.test(value)));
 });
 
+test('a compatibility fallback is limited to one fresh session and does not disable later long-session reliability', async t => {
+    const f = geminiFixture({ search: false, live: async (params, attempt) => {
+        if (attempt === 1) {
+            assert.ok(params.config.sessionResumption);
+            assert.equal(params.config.contextWindowCompression.triggerTokens, '25000');
+            params.callbacks.onopen?.({});
+            params.callbacks.onclose?.({ code: 1011, reason: 'temporary setup incompatibility' });
+            return new Promise(() => {});
+        }
+        if (attempt === 2) {
+            assert.equal(params.config.sessionResumption, undefined);
+            assert.equal(params.config.contextWindowCompression, undefined);
+        }
+        if (attempt === 3) {
+            assert.ok(params.config.sessionResumption, 'a new user session requests resumption again');
+            assert.equal(params.config.contextWindowCompression.triggerTokens, '25000');
+            assert.equal(params.config.contextWindowCompression.slidingWindow.targetTokens, '8000');
+        }
+        return { close() {}, sendRealtimeInput() {}, sendClientContent() {} };
+    } });
+    t.after(() => f.close());
+
+    assert.equal((await f.start('byok', { uiEpoch: 31 })).success, true);
+    await f.close();
+    assert.equal((await f.start('byok', { uiEpoch: 32 })).success, true);
+    assert.equal(f.connections.length, 3);
+});
+
+test('fresh reconnect fallback replays only bounded recent local context after a long session', async t => {
+    const f = geminiFixture();
+    t.after(() => f.close());
+    assert.equal((await f.start('byok', { uiEpoch: 33 })).success, true);
+
+    for (let index = 0; index < 80; index++) {
+        f.api.saveConversationTurn(
+            `question-${index} ${'q'.repeat(3500)}`,
+            `answer-${index} ${'a'.repeat(3500)}`
+        );
+    }
+
+    f.callbacks.onclose({ code: 1006, reason: 'provider rotation' });
+    for (let count = 0; count < 8 && f.clientContent.length === 0; count++) await tick();
+
+    assert.ok(f.connections.length >= 2, 'the Live runtime reconnects after a recoverable rotation');
+    const replay = f.clientContent.at(-1)?.turns?.[0]?.parts?.[0]?.text || '';
+    assert.ok(replay.length > 0, 'recent local context is replayed when no resumption handle exists');
+    assert.ok(replay.length <= 16000, 'reconnect replay remains bounded during multi-hour sessions');
+    assert.match(replay, /question-79/);
+    assert.doesNotMatch(replay, /question-0 /);
+});
+
 test('Gemini Live setup retries with core config after a setup-level 1011 without Search', async t => {
     const f = geminiFixture({ search: false, live: async (params, attempt) => {
         if (attempt === 1) {
