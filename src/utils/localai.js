@@ -32,11 +32,16 @@ let silenceFrameCount = 0;
 let speechFrameCount = 0;
 let speechBytes = 0;
 
+const LOCAL_MAX_HISTORY_MESSAGES = 8;
+const LOCAL_MAX_HISTORY_CHARS = 9000;
+const LOCAL_MAX_OUTPUT_TOKENS = 768;
+const LOCAL_CONTEXT_TOKENS = 4096;
+
 const VAD_MODES = {
     NORMAL: { energyThreshold: 0.01, speechFramesRequired: 3, silenceFramesRequired: 30 },
     LOW_BITRATE: { energyThreshold: 0.008, speechFramesRequired: 4, silenceFramesRequired: 35 },
     AGGRESSIVE: { energyThreshold: 0.015, speechFramesRequired: 2, silenceFramesRequired: 20 },
-    VERY_AGGRESSIVE: { energyThreshold: 0.02, speechFramesRequired: 2, silenceFramesRequired: 15 },
+    VERY_AGGRESSIVE: { energyThreshold: 0.02, speechFramesRequired: 2, silenceFramesRequired: 10 },
 };
 
 let vadConfig = VAD_MODES.VERY_AGGRESSIVE;
@@ -215,6 +220,23 @@ async function readStreamingResponse(response, onText) {
     return fullText;
 }
 
+function trimLocalHistory(history) {
+    let chars = 0;
+    const kept = [];
+    for (let index = history.length - 1; index >= 0 && kept.length < LOCAL_MAX_HISTORY_MESSAGES; index--) {
+        const message = history[index];
+        const content = typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content || '');
+        if (kept.length && chars + content.length > LOCAL_MAX_HISTORY_CHARS) break;
+        if (!kept.length && content.length > LOCAL_MAX_HISTORY_CHARS) {
+            kept.unshift({ ...message, content: content.slice(-LOCAL_MAX_HISTORY_CHARS) });
+            break;
+        }
+        chars += content.length;
+        kept.unshift(message);
+    }
+    return kept;
+}
+
 async function requestLlama(messages, onText) {
     if (!llamaBaseUrl) {
         throw new Error('Llama server is not running');
@@ -228,7 +250,8 @@ async function requestLlama(messages, onText) {
             model: 'local',
             messages,
             stream: true,
-            max_tokens: 2048,
+            max_tokens: LOCAL_MAX_OUTPUT_TOKENS,
+            cache_prompt: true,
             chat_template_kwargs: {
                 enable_thinking: false,
             },
@@ -250,9 +273,7 @@ async function sendToLlama(transcription) {
         content: transcription.trim(),
     });
 
-    if (requestHistory.length > 20) {
-        requestHistory = requestHistory.slice(-20);
-    }
+    requestHistory = trimLocalHistory(requestHistory);
 
     try {
         const messages = [{ role: 'system', content: currentSystemPrompt || 'You are a helpful assistant.' }, ...requestHistory];
@@ -373,7 +394,7 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
         '--alias',
         'local',
         '-c',
-        '8192',
+        String(LOCAL_CONTEXT_TOKENS),
         '-m',
         modelPath,
         '--mmproj',
@@ -413,7 +434,10 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
         await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath, controller.signal);
         controller.signal.throwIfAborted();
 
-        sendToRenderer('update-status', 'Loading local language model...');
+        const accelerated = /vulkan/i.test(nativeFiles.llamaBinaryPath);
+        sendToRenderer('update-status', accelerated
+            ? 'Loading local language model with Vulkan acceleration...'
+            : 'Loading local language model on CPU. Select a smaller model in Home for faster replies.');
         sendDownloadProgress('Loading language model');
         await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
         controller.signal.throwIfAborted();
@@ -533,9 +557,7 @@ async function sendLocalImage(base64Data, prompt) {
 
     let requestHistory = [...localConversationHistory];
     requestHistory.push({ role: 'user', content: prompt });
-    if (requestHistory.length > 20) {
-        requestHistory = requestHistory.slice(-20);
-    }
+    requestHistory = trimLocalHistory(requestHistory);
 
     try {
         sendToRenderer('update-status', 'Analyzing image...');
