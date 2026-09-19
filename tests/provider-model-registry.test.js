@@ -79,3 +79,22 @@ test('Groq catalog keeps active task models and recommends the lower-latency vis
     assert.deepEqual(catalog.transcription.map(model => model.id), ['whisper-large-v3-turbo']);
     assert.equal(catalog.chat.some(model => model.id.includes('orpheus')), false);
 });
+
+test('catalog cancellation aborts the fetch and never returns a cached fallback as success', async t => {
+    const original = global.fetch;
+    t.after(() => { global.fetch = original; });
+    global.fetch = async () => new Response(JSON.stringify({ models: [] }));
+    await registry.listProviderModels('gemini', 'catalog-cancel-fixture', { forceRefresh: true });
+    let requestSignal;
+    let started;
+    const ready = new Promise(resolve => { started = resolve; });
+    global.fetch = async (_url, options) => {
+        requestSignal = options.signal; started();
+        return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
+    };
+    const controller = new AbortController();
+    const pending = registry.listProviderModels('gemini', 'catalog-cancel-fixture', { forceRefresh: true, signal: controller.signal });
+    await ready; controller.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(requestSignal.aborted, true);
+});

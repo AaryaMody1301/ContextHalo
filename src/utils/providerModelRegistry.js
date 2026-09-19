@@ -132,7 +132,8 @@ async function fetchJson(url, options = {}) {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+        const response = await fetch(url, { ...options, signal });
         const text = await response.text();
         if (!response.ok) {
             let detail = text;
@@ -147,7 +148,7 @@ async function fetchJson(url, options = {}) {
     }
 }
 
-async function fetchGeminiCatalog(apiKey) {
+async function fetchGeminiCatalog(apiKey, signal) {
     const models = [];
     let pageToken = '';
     let pages = 0;
@@ -158,6 +159,7 @@ async function fetchGeminiCatalog(apiKey) {
         if (pageToken) url.searchParams.set('pageToken', pageToken);
 
         const body = await fetchJson(url, {
+            signal,
             headers: {
                 Accept: 'application/json',
                 'x-goog-api-key': apiKey,
@@ -172,8 +174,9 @@ async function fetchGeminiCatalog(apiKey) {
     return buildGeminiCatalog(models);
 }
 
-async function fetchGroqCatalog(apiKey) {
+async function fetchGroqCatalog(apiKey, signal) {
     const body = await fetchJson(GROQ_MODELS_URL, {
+        signal,
         headers: {
             Accept: 'application/json',
             Authorization: `Bearer ${apiKey}`,
@@ -183,6 +186,7 @@ async function fetchGroqCatalog(apiKey) {
 }
 
 async function listProviderModels(provider, apiKey, options = {}) {
+    options.signal?.throwIfAborted();
     const normalizedProvider = String(provider || '').toLowerCase();
     if (!['gemini', 'groq'].includes(normalizedProvider)) throw new Error('Unsupported provider');
     if (!apiKey || !String(apiKey).trim()) {
@@ -200,12 +204,13 @@ async function listProviderModels(provider, apiKey, options = {}) {
 
     try {
         const catalog = normalizedProvider === 'gemini'
-            ? await fetchGeminiCatalog(String(apiKey).trim())
-            : await fetchGroqCatalog(String(apiKey).trim());
+            ? await fetchGeminiCatalog(String(apiKey).trim(), options.signal)
+            : await fetchGroqCatalog(String(apiKey).trim(), options.signal);
         const fetchedAt = Date.now();
         cache.set(cacheKey, { catalog, fetchedAt });
         return { ...catalog, fetchedAt, source: 'api', stale: false };
     } catch (error) {
+        if (options.signal?.aborted) throw options.signal.reason;
         if (existing) {
             return {
                 ...existing.catalog,
