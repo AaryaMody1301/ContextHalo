@@ -68,7 +68,7 @@ function geminiFixture(options = {}) {
         fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"}}]}\n\n')),
         require: name => {
             if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
-            if (name === '@google/genai') return { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
+            if (name === '@google/genai') return options.sdk || { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
             if (name === './localai') return local;
             if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.8-live' }] })) };
@@ -84,7 +84,7 @@ function geminiFixture(options = {}) {
                 augmentLiveTextPayload: params => params,
                 retrieveContext: () => null, appendContextToInstruction: text => text,
             };
-            if (name === './windowsRuntimeMain') return { prepareWindowsProvider: mode => preparations.push(['windows', mode]) };
+            if (name === './windowsRuntimeMain') return { prepareWindowsProvider: (mode, epoch) => preparations.push(['windows', mode, epoch]) };
             if (name === './runtimeHardeningMain') return { prepareRuntimeProvider: mode => preparations.push(['runtime', mode]) };
             if (name === './contextCaptureMain') return { cancelRegionSelection() {} };
             if (name === './geminiLiveRuntime') return {

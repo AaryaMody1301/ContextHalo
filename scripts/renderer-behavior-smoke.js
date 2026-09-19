@@ -107,6 +107,35 @@ async function rendererBehaviorSmoke() {
         const response=root.querySelector('#responseContainer');
         verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe && response.querySelector('strong')?.textContent==='Safe','Rendered Markdown removes active HTML but preserves formatting');
     } finally { api.sendTextMessage=original;app._sessionStarted=false;app._setLifecycle('idle','Fixture complete'); }
+    // Exercise the real Home controls and persistence. Only the final provider
+    // launch callback is controlled: smoke must not download models or use keys.
+    const originalMode = (await api.storage.getPreferences()).providerMode;
+    try {
+        app.currentView = 'main'; await settle(app);
+        let home = app.shadowRoot.querySelector('main-view');
+        await waitUntil(() => home && !home._configurationLoading);
+        await settle(home);
+        const select = home.shadowRoot.querySelector('#provider-choice');
+        select.value = 'local'; select.dispatchEvent(new Event('change', { bubbles: true }));
+        await home._configurationWrites; await settle(home);
+        verify(home._mode === 'local' && (await api.storage.getPreferences()).providerMode === 'local', 'Home provider dropdown selects and persists Local AI without a platform shim');
+        let starts = 0;
+        home.onStart = () => { starts++; };
+        home.shadowRoot.querySelector('.start-button').click();
+        await waitUntil(() => starts === 1);
+        verify(!home._keyError, 'Local AI Start reaches session launch without a cloud API key');
+        app.currentView = 'help'; await settle(app);
+        app.currentView = 'main'; await settle(app);
+        home = app.shadowRoot.querySelector('main-view');
+        await waitUntil(() => home && !home._configurationLoading); await settle(home);
+        verify(home._mode === 'local', 'Home reload retains the Local AI provider choice');
+        home.onStart = () => { starts++; };
+        home.shadowRoot.querySelector('.start-button').click();
+        await waitUntil(() => starts === 2);
+    } finally {
+        await api.storage.updatePreference('providerMode', originalMode || 'byok');
+        app.currentView = 'assistant'; await settle(app);
+    }
     const ipc=window.electronAPI;
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
     const text='The data pipeline uses idempotent ingestion to prevent duplicate events. Atomic checkpoints record the last committed offset so interrupted jobs resume safely. Partitioned tables and bounded retries improve recovery without silently discarding records.';

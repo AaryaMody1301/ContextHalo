@@ -817,10 +817,6 @@ export class MainView extends LitElement {
 
     async _saveMode(mode) {
         if (this.sessionActive || this.isInitializing || !['byok', 'groq', 'local'].includes(mode)) return;
-        if (mode === 'local' && !this._localAiSupported()) {
-            this.startError = 'Local AI is unavailable on this platform. Choose Gemini or Groq.';
-            return;
-        }
         this._mode = mode;
         this._keyError = false;
         this._setupOpen = !this._hasConfiguredProvider();
@@ -1012,7 +1008,6 @@ export class MainView extends LitElement {
             this.shadowRoot.querySelector('#provider-api-key')?.focus();
             return;
         }
-        if (this._mode === 'local' && !this._localAiSupported()) { this.startError = 'Local AI is unavailable on this platform.'; return; }
         return this.onStart();
     }
 
