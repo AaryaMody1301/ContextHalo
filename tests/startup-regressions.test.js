@@ -123,3 +123,25 @@ test('Gemini Live setup retries once without Search after a setup-level WebSocke
     assert.equal(f.preferences.googleSearchEnabled, true, 'saved Search preference is unchanged');
     assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying this session without Search/i.test(value)));
 });
+
+test('Gemini Live setup retries with core config after a setup-level 1011 without Search', async t => {
+    const f = geminiFixture({ search: false, live: async (params, attempt) => {
+        if (attempt === 1) {
+            assert.ok(params.config.sessionResumption);
+            assert.ok(params.config.contextWindowCompression);
+            params.callbacks.onopen?.({});
+            params.callbacks.onclose?.({ code: 1011, reason: 'optional setup unavailable' });
+            return new Promise(() => {});
+        }
+        assert.equal(params.config.sessionResumption, undefined);
+        assert.equal(params.config.contextWindowCompression, undefined);
+        assert.equal(JSON.stringify(params.config.inputAudioTranscription), '{}');
+        assert.equal(JSON.stringify(params.config.outputAudioTranscription), '{}');
+        return { close() {}, sendRealtimeInput() {}, sendClientContent() {} };
+    } });
+    t.after(() => f.close());
+    const result = await f.start('byok', { uiEpoch: 24 });
+    assert.equal(result.success, true, result.error);
+    assert.equal(f.connections.length, 2);
+    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /core Live configuration/i.test(value)));
+});
