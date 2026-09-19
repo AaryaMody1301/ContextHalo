@@ -10,6 +10,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction } = require('./realtimeContextMain');
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
+const { getResponseMode } = require('./realtimeContextCore');
 const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
@@ -186,12 +187,12 @@ function getCurrentSessionData() {
     };
 }
 
-// Search is a session policy, not a preference read on every request. Explicit
-// fallback changes all three Gemini paths and never changes the saved preference.
+// Explicit user fallback disables Search everywhere. A Live setup workaround
+// applies only to Live, never to the independent HTTP text/screen API.
 function configureSearch(provider, override) {
     const requested = getPreferences().googleSearchEnabled === true;
     const effective = provider === 'byok' && requested && override !== false;
-    searchState = { requested, effective, status: provider !== 'byok' ? 'not-supported'
+    searchState = { requested, effective, httpEffective: effective, status: provider !== 'byok' ? 'not-supported'
         : effective ? 'pending' : requested ? 'user-disabled' : 'off' };
     sendToRenderer('search-state', { ...searchState });
 }
@@ -200,31 +201,33 @@ function disableLiveSearchForSetupCompatibility() {
     if (!searchState.effective) return;
     searchState = { ...searchState, effective: false, status: 'live-setup-fallback' };
     sendToRenderer('search-state', { ...searchState });
-    sendToRenderer('update-status', 'Gemini Live rejected Search during session setup. Retrying this session without Search; your saved preference is unchanged.');
+    sendToRenderer('update-status', 'Retrying Gemini Live without Search after a setup failure. Text and screen Search remain enabled; your saved preference is unchanged.');
 }
 
 function shouldRetryLiveSetupWithoutSearch(error) {
     if (!searchState.effective) return false;
     const failure = classifyGeminiFailure(error, 'live');
     if (failure.stage !== 'setup') return false;
-    return ['unsupported-tool', 'invalid-configuration', 'quota-exhausted', 'rate-or-quota'].includes(failure.category)
-        || [1007, 1008, 1011].includes(failure.socketCode);
+    return ['unsupported-tool', 'invalid-configuration'].includes(failure.category)
+        || failure.category === 'transient' && failure.socketCode === 1011;
 }
 
 function shouldRetryLiveSetupWithCoreConfig(error) {
     if (liveSetupCompatibility) return false;
     const failure = classifyGeminiFailure(error, 'live');
     return failure.stage === 'setup' && (failure.category === 'invalid-configuration'
-        || [1007, 1008, 1011].includes(failure.socketCode));
+        || failure.category === 'transient' && failure.socketCode === 1011);
 }
 
 function enableLiveSetupCompatibility() {
     liveSetupCompatibility = true;
-    sendToRenderer('update-status', 'Gemini Live rejected optional session-management setup. Retrying this session with the core Live configuration.');
+    geminiLiveRuntime?.clearResumption();
+    sendToRenderer('update-status', 'Retrying with the core Live configuration after a setup failure. Reconnects will restore local conversation context.');
 }
 
-async function getEnabledTools() {
-    return searchState.effective ? [{ googleSearch: {} }] : [];
+async function getEnabledTools(operation = 'http') {
+    const enabled = operation === 'live' ? searchState.effective : searchState.httpEffective;
+    return enabled ? [{ googleSearch: {} }] : [];
 }
 
 function publishProviderState(state, error = null) {
@@ -324,7 +327,9 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     const retryable = ['throttled', 'transient', 'aborted-conflict'].includes(category);
     const retryAt = retryAfterMs === null ? null : now + retryAfterMs;
     let message = messages[category];
-    if (category === 'transient' && ['ENOTFOUND', 'EAI_AGAIN'].includes(networkCode)) {
+    if (category === 'transient' && httpStatus === 503) {
+        message = 'Gemini is temporarily unavailable or overloaded. Your request could not be completed after bounded retries. Retry this request; your session and draft are retained. No model or account was changed.';
+    } else if (category === 'transient' && ['ENOTFOUND', 'EAI_AGAIN'].includes(networkCode)) {
         message = 'Gemini hostname lookup failed. Check DNS and network connectivity, then retry.';
     } else if (category === 'transient' && operation === 'live' && stage) {
         message = stage === 'transport'
@@ -351,6 +356,8 @@ function cooldownKey(apiKey, model) {
 async function runGeminiRequest(work, { operation, model, apiKey = '', signal, budgetMs = 55000,
     now = Date.now, random = Math.random, wait = sleep } = {}) {
     const started = now();
+    const httpOperation = operation === 'text' || operation === 'screen';
+    const maxAttempts = httpOperation ? 4 : 2;
     const key = cooldownKey(apiKey, model || '');
     const cooling = geminiCooldowns.get(key);
     if (cooling?.retryAt > now()) throw failureError(cooling);
@@ -361,7 +368,7 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
     const deadline = deadlineSignal(signal, budgetMs);
     const operationSignal = deadline.signal;
     try {
-        for (let attempt = 0; attempt < 2; attempt++) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
             operationSignal.throwIfAborted();
             if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
             try {
@@ -373,15 +380,15 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 if (signal?.aborted) throw signal.reason;
                 if (operationSignal.aborted) throw failureError(classifyGeminiFailure(operationSignal.reason, operation, model));
                 const failure = classifyGeminiFailure(error, operation, model, now());
-                const backoff = failure.retryAfterMs ?? Math.round(600 * 2 ** attempt + random() * 300);
+                const backoff = failure.retryAfterMs ?? Math.round(Math.min(10000, (httpOperation ? 1000 : 600) * 2 ** attempt) + random() * (httpOperation ? 250 : 300));
                 // A final short-term failure also gates rapid user actions/reconnects.
                 if (failure.retryable && failure.retryAt === null) failure.retryAt = now() + backoff;
                 if (failure.retryAt > now()) geminiCooldowns.set(key, failure);
                 logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
                     status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,
                     attempt: attempt + 1, durationMs: now() - started });
-                if (!failure.retryable || attempt === 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
-                sendToRenderer('update-status', `Gemini is retrying once after ${Math.ceil(backoff / 1000)} seconds. Search settings are unchanged.`);
+                if (!failure.retryable || attempt === maxAttempts - 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
+                sendToRenderer('update-status', `Gemini ${operation || 'request'} retry ${attempt + 2}/${maxAttempts} in ${Math.ceil(backoff / 1000)} seconds. Model and Search settings are unchanged.`);
                 await abortable(() => wait(backoff, undefined, { signal: operationSignal }), operationSignal);
                 geminiCooldowns.delete(key);
             }
@@ -471,6 +478,7 @@ async function getGeminiLivePreflightError(apiKey, liveModel, signal) {
 function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000, signal) {
     let setupFinished = false;
     let opened = false;
+    let socket;
     let abandoned = false;
     let timer;
     let onAbort;
@@ -488,7 +496,12 @@ function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000, signal) {
         onerror(event) { if (!abandoned) callbacks.onerror?.(event); if (!setupFinished) fail(event); },
         onclose(event) { if (!abandoned) callbacks.onclose?.(event); if (!setupFinished) fail(event); },
         onmessage(event) { if (!abandoned) callbacks.onmessage?.(event); },
-        onopen(event) { opened = true; if (!abandoned) callbacks.onopen?.(event); },
+        onopen(event) {
+            opened = true;
+            socket = event?.target;
+            if (abandoned) { try { socket?.close(); } catch {} }
+            else callbacks.onopen?.(event);
+        },
     };
     const deadline = new Promise((_, reject) => {
         timer = setTimeout(() => reject(Object.assign(new Error('Gemini Live setup timed out'), { name: 'TimeoutError', stage: opened ? 'setup' : 'transport' })), timeoutMs);
@@ -506,6 +519,9 @@ function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000, signal) {
     ]).then(session => { setupFinished = true; return session; }, error => {
         abandoned = true;
         setupFinished = true;
+        // SDK connect() can stay pending forever without setupComplete. Close
+        // the opened transport now, rather than waiting for a Session object.
+        try { socket?.close(); } catch {}
         throw error;
     }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); });
 }
@@ -908,8 +924,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     }
     const current = () => generation === liveGeneration && !signal.aborted;
     const buildInstruction = () => {
-        currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
-        let value = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt), getPreferences().responseMode);
+        currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.httpEffective);
+        const livePrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
+        let value = tuneLiveSystemInstruction(appendSessionPack(livePrompt), getPreferences().responseMode);
         return appendContextToInstruction(value, retrieveContext('', { limit: 4, maxChars: 6500 }));
     };
     let instruction = buildInstruction();
@@ -1002,21 +1019,28 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             if (!liveSessionReady) { if (setupMessages.length < 64) setupMessages.push(message); return; }
             runtimeCallbacks.onmessage(message);
         } };
-        let tools = await getEnabledTools();
+        let tools = await getEnabledTools('live');
         let session;
         for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
             const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
             try {
-                const contextMessage = isReconnect && !reliabilityConfig.sessionResumption?.handle ? buildContextMessage() : null;
+                let contextMessage;
                 session = await runGeminiRequest(async (remaining, _attempt, operationSignal) => {
                     setupMessages = [];
-                    const connect = () => connectGeminiLiveWithGuard(client, {
-                        model: liveModel, callbacks,
-                        config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                            ...(!liveSetupCompatibility ? reliabilityConfig : {}),
-                            ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
-                            systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
-                    }, Math.min(15000, remaining), operationSignal);
+                    const attemptStarted = Date.now();
+                    const connect = () => {
+                        // Replay is based on the configuration actually sent, not
+                        // on a resumption handle omitted by compatibility mode.
+                        const connectConfig = liveSetupCompatibility ? {} : reliabilityConfig;
+                        contextMessage = isReconnect && !connectConfig.sessionResumption?.handle ? buildContextMessage() : null;
+                        return connectGeminiLiveWithGuard(client, {
+                            model: liveModel, callbacks,
+                            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                                ...connectConfig,
+                                ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
+                                systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                        }, Math.max(1, Math.min(15000, remaining - (Date.now() - attemptStarted))), operationSignal);
+                    };
                     let connected;
                     let setupError;
                     try {
@@ -1171,13 +1195,16 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     try {
         const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
         const tools = await getEnabledTools();
-        const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent(augmentGenerateParams({
+        const params = augmentGenerateParams({
             model,
             contents: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }],
-            config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.effective)),
-                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}), abortSignal: operationSignal,
+            config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.httpEffective)),
+                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}) },
+        });
+        const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent({
+            ...params, config: { ...params.config, abortSignal: operationSignal,
                 httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
-        })), { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
+        }), { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
         assertCurrentRequest();
         const text = response.text?.trim();
         if (!text) throw new Error('Empty Gemini response');
@@ -1208,13 +1235,17 @@ async function sendTypedGeminiText(text) {
         + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-8000) : '');
     const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
     const tools = await getEnabledTools();
-    const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent(augmentGenerateParams({
+    const mode = getResponseMode(getPreferences().responseMode);
+    const params = augmentGenerateParams({
         model,
         contents: [...history, { role: 'user', parts: [{ text }] }],
-        config: { systemInstruction: instruction, maxOutputTokens: 4096,
-            ...(getPreferences().responseMode === 'instant' ? screenThinkingConfig(model) : {}), ...(tools.length ? { tools } : {}),
-            httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } }, abortSignal: operationSignal },
-    })), { operation: 'text', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
+        config: { systemInstruction: instruction, maxOutputTokens: mode.maxTokens,
+            ...(mode.id === 'instant' ? screenThinkingConfig(model) : {}), ...(tools.length ? { tools } : {}) },
+    });
+    const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent({
+        ...params, config: { ...params.config, abortSignal: operationSignal,
+            httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
+    }), { operation: 'text', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
     assertCurrentRequest();
     const answer = response.text?.trim();
     if (!answer) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
@@ -1575,7 +1606,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         geminiLiveRuntime?.cancelScheduledReconnect?.();
         if (options.withoutSearch) {
             geminiLiveRuntime?.clearResumption();
-            searchState = { ...searchState, effective: false, status: 'user-disabled' };
+            searchState = { ...searchState, effective: false, httpEffective: false, status: 'user-disabled' };
             currentSystemPrompt = getSystemPrompt(currentProfile, currentCustomPrompt, false);
             sendToRenderer('search-state', { ...searchState });
         }

@@ -1465,8 +1465,8 @@ export class ContextHaloApp extends LitElement {
             </header>
             <div class="session-state">
                 <span class="status-detail" role="status">${this.sessionStatusSummary()}</span>
-                <span class="search-state" title="Google Search applies to Gemini Live, typed questions and screen analysis for this session.">
-                    ${this.searchState.status === 'pending' ? 'Search pending' : this.searchState.status === 'not-supported' ? 'Search unavailable' : this.searchState.effective ? 'Search on' : this.searchState.requested ? 'Search off (session)' : 'Search off'}
+                <span class="search-state" title="Search availability can differ between Live audio and text/screen requests. Open Session details for each path.">
+                    ${this.searchState.httpEffective && !this.searchState.effective ? 'Search: text/screen only' : this.searchState.status === 'pending' ? 'Search pending' : this.searchState.status === 'not-supported' ? 'Search unavailable' : this.searchState.effective ? 'Search on' : this.searchState.requested ? 'Search off (session)' : 'Search off'}
                 </span>
                 <button type="button" aria-haspopup="dialog" @click=${() => this.openSessionDetails()}>${this.providerError || this.requestError || this.captureState.warning ? 'Resolve issue' : 'Session details'}</button>
             </div>
@@ -1504,10 +1504,11 @@ export class ContextHaloApp extends LitElement {
                 ${this.requestError ? html`<h3>${this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention'}</h3>
                     <div class="session-actions" role="group" aria-label="Request recovery">
                         <button @click=${() => { this.closeSessionDetails(); this.retryRequest(); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'message'}</button>
-                        ${this.requestError.canDisableSearch && this.searchState.effective ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.requestError.retryAt > Date.now()}>Continue without Search</button>` : ''}
+                        ${this.requestError.canDisableSearch && (this.searchState.httpEffective ?? this.searchState.effective) ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.requestError.retryAt > Date.now()}>Continue without Search</button>` : ''}
                         <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button>
                     </div>
                     ${this.requestError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.requestError.retryAt).toLocaleTimeString()}.</p>` : ''}
+                    ${this.requestError.model ? html`<p>Model: ${this.requestError.model}</p>` : ''}
                     <details class="error-details"><summary>Read request error</summary><p>${this.requestError.message}</p></details>
                 ` : this._detailMessage?.uiEpoch === this._uiSessionEpoch ? html`<p>${this._detailMessage.message}</p>` : ''}
                 ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">
@@ -1519,7 +1520,8 @@ export class ContextHaloApp extends LitElement {
                 ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
                 <h3>Session connection</h3>
                 <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
-                <p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Effective Search: ${this.searchState.effective ? 'enabled for Live, text and screen' : 'off for this session'}. Your saved preference is unchanged.</p>
+                <p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Live audio Search: ${this.searchState.effective ? 'enabled' : 'off'}. Text and screen Search: ${(this.searchState.httpEffective ?? this.searchState.effective) ? 'enabled' : 'off'}. Your saved preference is unchanged. Enabled means the tool is available; Google decides whether a request needs a search.</p>
+                <h3>Window visibility</h3>
                 <p>Restore with ${this.visibilityShortcut} or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Hiding and minimizing do not stop capture.</p>
                 ${this.shortcutWarning ? html`<p>${this.shortcutWarning}</p>` : ''}
             </div>

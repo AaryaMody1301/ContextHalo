@@ -218,6 +218,13 @@ async function rendererBehaviorSmoke() {
     await api.storage.updatePreference('backgroundTransparency',storedAlpha);
     app.searchState={requested:true,effective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
     verify(app.shadowRoot.querySelector('.search-state').textContent.includes('off (session)'),'Requested/effective Search remains visible independently of transient status');
+    app.searchState={requested:true,effective:false,httpEffective:true,status:'live-setup-fallback'};await settle(app);
+    verify(app.shadowRoot.querySelector('.search-state').textContent.includes('text/screen only'),'Live fallback keeps HTTP Search visibly enabled');
+    app.requestError={operation:'text',httpStatus:503,model:'gemini-3.8-flash',message:'Controlled service unavailable',retryAt:0};
+    await app.openSessionDetails();await settle(app);
+    verify(app.shadowRoot.querySelector('.session-details').textContent.includes('Text and screen Search: enabled'),'Session details distinguish Live and HTTP Search');
+    verify(app.shadowRoot.querySelector('.session-details').textContent.includes('gemini-3.8-flash'),'Request recovery identifies the selected HTTP model');
+    app.closeSessionDetails();app.requestError=null;
     app.navigate('customize'); await settle(app);
     const settings = app.shadowRoot.querySelector('customize-view'); await waitUntil(() => !settings.settingsLoading);
     const originalSave = api.storage.updatePreference;

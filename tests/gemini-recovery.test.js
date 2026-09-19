@@ -50,7 +50,7 @@ test('one retry owner honors provider delay; absent delay uses bounded jitter', 
         }, { operation: 'text', model: `model-${supplied}`, apiKey: 'fake', now: () => clock, random: () => 0.5,
             wait: async milliseconds => { waits.push(milliseconds); clock += milliseconds; } });
         assert.equal(value, 'ok'); assert.equal(calls, 2);
-        assert.deepEqual(waits, [supplied ? 2000 : 750]);
+        assert.deepEqual(waits, [supplied ? 2000 : 1125]);
     }
 });
 

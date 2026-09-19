@@ -107,3 +107,16 @@ test('new background cards do not pull a reader away, but a deliberate current q
     app.addNewResponse('Another response', { requestId: 'voice-older', kind: 'voice' });
     assert.equal(app.currentResponseIndex, 0);
 });
+
+test('request recovery shows the HTTP model and keeps Live fallback distinct from HTTP Search', async () => {
+    const { app } = requestApp(); await tick();
+    app.searchState = { requested: true, effective: false, httpEffective: true, status: 'live-setup-fallback' };
+    app.requestError = { operation: 'text', httpStatus: 503, model: 'gemini-3.8-flash', message: 'Temporarily unavailable' };
+    const bar = String(app.renderLiveBar());
+    const details = String(app.renderSessionDetails());
+    assert.match(bar, /Search: text\/screen only/);
+    assert.match(details, /Live audio Search: off/);
+    assert.match(details, /Text and screen Search: enabled/);
+    assert.match(details, /Model: gemini-3\.8-flash/);
+    assert.match(details, /Window visibility/);
+});

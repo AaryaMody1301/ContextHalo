@@ -35,7 +35,7 @@ let speechBytes = 0;
 const LOCAL_MAX_HISTORY_MESSAGES = 8;
 const LOCAL_MAX_HISTORY_CHARS = 9000;
 const LOCAL_MAX_OUTPUT_TOKENS = 768;
-const LOCAL_CONTEXT_TOKENS = 4096;
+const LOCAL_CONTEXT_TOKENS = 8192;
 
 const VAD_MODES = {
     NORMAL: { energyThreshold: 0.01, speechFramesRequired: 3, silenceFramesRequired: 30 },
@@ -228,7 +228,8 @@ function trimLocalHistory(history) {
         const content = typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content || '');
         if (kept.length && chars + content.length > LOCAL_MAX_HISTORY_CHARS) break;
         if (!kept.length && content.length > LOCAL_MAX_HISTORY_CHARS) {
-            kept.unshift({ ...message, content: content.slice(-LOCAL_MAX_HISTORY_CHARS) });
+            // Trim older history, never the question the user actually asked.
+            kept.unshift(message);
             break;
         }
         chars += content.length;
@@ -436,10 +437,24 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
 
         const accelerated = /vulkan/i.test(nativeFiles.llamaBinaryPath);
         sendToRenderer('update-status', accelerated
-            ? 'Loading local language model with Vulkan acceleration...'
+            ? 'Loading the Vulkan-capable local runner; device use depends on your GPU and driver...'
             : 'Loading local language model on CPU. Select a smaller model in Home for faster replies.');
         sendDownloadProgress('Loading language model');
-        await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
+        try {
+            await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
+        } catch (error) {
+            controller.signal.throwIfAborted();
+            if (!accelerated) throw error;
+            // Download success does not prove that the GPU backend can start.
+            // Stop the failed process before trying the verified CPU runner.
+            stopNativeServer(llamaProcess);
+            llamaProcess = null;
+            llamaBaseUrl = null;
+            sendToRenderer('update-status', 'The Vulkan runner could not start. Loading the same local model with the verified CPU runner.');
+            const cpuBinary = await ensureNativeBinary('llama', undefined, controller.signal, { cpuOnly: true });
+            controller.signal.throwIfAborted();
+            await startLlamaServer(cpuBinary, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
+        }
         controller.signal.throwIfAborted();
 
         isSpeaking = false;

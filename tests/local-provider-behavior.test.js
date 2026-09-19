@@ -39,3 +39,35 @@ test('Local AI bounds repeated prompt work and output for interactive latency', 
     assert.ok(JSON.stringify(last.messages).length<14000, 'prompt history remains bounded');
     requests.closeSessionRequests();api.closeLocalSession();
 });
+
+test('a Vulkan startup failure falls back once to the verified CPU runner without changing the selected model', async t => {
+    const started = [], stopped = [], binaries = [], bodies = [];
+    const native = {
+        ensureNativeBinary: async (type, _progress, _signal, options) => {
+            binaries.push([type, options]);
+            return type === 'llama' ? options?.cpuOnly ? '/cpu/server.exe' : '/llama-vulkan/server.exe' : '/whisper.exe';
+        },
+        ensureWhisperModel: async () => '/whisper', ensureLlamaModel: async () => ({ modelPath: '/model', projectorPath: '/projector' }),
+        getAvailablePort: async () => 1234, getModelsDirectory: () => '/models',
+        startNativeServer: options => { started.push(options); return options; },
+        stopNativeServer: process => { if (process) stopped.push(process); },
+        waitForServer: async (_url, process) => { if (process.executablePath.includes('vulkan')) throw new Error('GPU backend failed'); },
+    };
+    const api = loadMain('src/utils/localai.js', {
+        fs: { existsSync: () => true, readdirSync: () => [] }, './native-ai-runtime': native, './sessionRequests': requests,
+        './gemini': { sendToRenderer() {}, initializeNewSession: () => requests.resetSessionRequests(), saveConversationTurn() {} },
+    }, { console: { log() {}, warn() {} }, fetch: async (_url, init) => {
+        bodies.push(JSON.parse(init.body));
+        return new Response('data: {"choices":[{"delta":{"content":"Answer"}}]}\n\ndata: [DONE]\n\n');
+    } });
+    t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
+    assert.equal(await api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US'), true);
+    assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/llama-vulkan/server.exe', '/cpu/server.exe']);
+    assert.equal(stopped[0], started[1]);
+    assert.equal(binaries[2][1].cpuOnly, true);
+    const question = 'Preserve my leading instructions. ' + 'x'.repeat(10000);
+    const result = await requests.runSessionRequest('text', () => api.sendLocalText(question));
+    assert.equal(result.success, true);
+    assert.equal(result.model, 'my-selected-model');
+    assert.equal(bodies[0].messages.at(-1).content, question, 'a long current question must never be silently truncated');
+});
