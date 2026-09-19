@@ -308,7 +308,6 @@ function incrementCharUsage(provider, model, charCount) {
     return entry;
 }
 function getAvailableModel() { return getConfig().geminiHttpModel || DEFAULT_CONFIG.geminiHttpModel; }
-function getModelForToday() { return getConfig().groqModel; }
 function getSessionPath(sessionId) {
     if (typeof sessionId !== 'string' || !/^\d{1,30}$/.test(sessionId)) throw new Error('Invalid session ID');
     return path.join(getHistoryDir(), `${sessionId}.json`);
@@ -425,26 +424,18 @@ module.exports = {
     initializeStorage,
     getConfigDir,
     getConfig,
-    setConfig,
     updateConfig,
-    getCredentials,
-    setCredentials,
     getApiKey,
     setApiKey,
     getGroqApiKey,
     setGroqApiKey,
     getPreferences,
-    setPreferences,
     updatePreference,
     getKeybinds,
     setKeybinds,
-    getLimits,
-    setLimits,
-    getTodayLimits,
     incrementLimitCount,
     incrementCharUsage,
     getAvailableModel,
-    getModelForToday,
     saveSession,
     getSession,
     getAllSessions,

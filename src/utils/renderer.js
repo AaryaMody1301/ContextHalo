@@ -293,11 +293,6 @@ const storage = {
     },
 
     // Keybinds
-    async getKeybinds() {
-        await persistenceQueue;
-        const result = await ipcRenderer.invoke('storage:get-keybinds');
-        return result.success ? result.data : null;
-    },
     async getShortcutState() {
         await persistenceQueue;
         return ipcRenderer.invoke('storage:get-keybinds');
@@ -378,7 +373,6 @@ async function initializeGemini(profile = 'interview', language = 'en-US', optio
     if (options.uiEpoch !== undefined && options.uiEpoch !== contextHaloApp._uiSessionEpoch) return false;
     const result = await ipcRenderer.invoke(
         'initialize-gemini',
-        null, // Legacy argument position; the trusted main process resolves the key.
         prefs.customPrompt || '',
         profile,
         language,
@@ -389,11 +383,11 @@ async function initializeGemini(profile = 'interview', language = 'en-US', optio
     contextHaloApp.setProviderState({ state: result?.success ? 'ready' : 'failed', provider, error: result?.failure, search: result?.search, uiEpoch: options.uiEpoch });
 
     if (result?.success) {
-        contextHalo.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Gemini Live connected');
+        contextHaloApp.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Gemini Live connected');
         return true;
     }
 
-    contextHalo.setStatus(result?.error || 'Connection failed');
+    contextHaloApp.setStatus(result?.error || 'Connection failed');
     return false;
 }
 
@@ -409,17 +403,14 @@ async function initializeLocal(profile = 'interview', language = 'en-US', option
     const success = result === true || result?.success === true;
     contextHaloApp.setProviderState({ state: success ? 'ready' : 'failed', provider: 'local', error: result?.failure, search: result?.search });
     if (success) {
-        contextHalo.setStatus('Local AI connected');
+        contextHaloApp.setStatus('Local AI connected');
         return true;
     } else {
-        contextHalo.setStatus(result?.error || 'Local AI could not start. Check the model and download status.');
+        contextHaloApp.setStatus(result?.error || 'Local AI could not start. Check the model and download status.');
         return false;
     }
 }
 
-async function cancelLocalInitialization() {
-    return ipcRenderer.invoke('cancel-local-initialization');
-}
 
 function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium', options = {}) {
     if (options.recovery && options.recoveryToken !== captureRecoveryToken) return Promise.resolve(false);
@@ -483,7 +474,7 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
             ? 'Capture permission was denied. Allow screen/audio access, then retry.'
             : error?.message || 'Capture could not start.';
         stopCapture(message, { preserveRecovery: options.recovery === true });
-        contextHalo.setStatus(message);
+        contextHaloApp.setStatus(message);
         return false;
     }
 }
@@ -629,7 +620,6 @@ async function captureManualScreenshot(imageQuality = null, options = {}) {
     } finally { signal?.removeEventListener('abort', cancel); }
 }
 
-window.captureManualScreenshot = captureManualScreenshot;
 
 function stopCapture(warning = '', options = {}) {
     const hadAudio = captureState.audioReady === true;
@@ -740,13 +730,13 @@ ipcRenderer.on('clear-sensitive-data', async () => {
 
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {
-    const currentView = contextHalo.getCurrentView();
+    const currentView = contextHaloApp.currentView;
 
     if (shortcutKey === 'ctrl+enter' || shortcutKey === 'cmd+enter') {
         if (currentView === 'main') {
-            void contextHalo.element().shadowRoot?.querySelector('main-view')?._handleStart();
+            void contextHaloApp.shadowRoot?.querySelector('main-view')?._handleStart();
         } else if (currentView === 'assistant') {
-            void contextHalo.element().shadowRoot?.querySelector('assistant-view')?.handleScreenAnswer();
+            void contextHaloApp.shadowRoot?.querySelector('assistant-view')?.handleScreenAnswer();
         }
     }
 }
@@ -765,11 +755,7 @@ const theme = {
             border: '#2a2a2a',
             accent: '#ffffff',
             btnPrimaryBg: '#ffffff',
-            btnPrimaryText: '#000000',
             btnPrimaryHover: '#e0e0e0',
-            tooltipBg: '#1a1a1a',
-            tooltipText: '#ffffff',
-            keyBg: 'rgba(255,255,255,0.1)',
         },
         light: {
             background: '#ffffff',
@@ -779,11 +765,7 @@ const theme = {
             border: '#e0e0e0',
             accent: '#000000',
             btnPrimaryBg: '#1a1a1a',
-            btnPrimaryText: '#ffffff',
             btnPrimaryHover: '#333333',
-            tooltipBg: '#1a1a1a',
-            tooltipText: '#ffffff',
-            keyBg: 'rgba(0,0,0,0.1)',
         },
         midnight: {
             background: '#0d1117',
@@ -793,11 +775,7 @@ const theme = {
             border: '#30363d',
             accent: '#58a6ff',
             btnPrimaryBg: '#58a6ff',
-            btnPrimaryText: '#0d1117',
             btnPrimaryHover: '#79b8ff',
-            tooltipBg: '#161b22',
-            tooltipText: '#c9d1d9',
-            keyBg: 'rgba(88,166,255,0.15)',
         },
         sepia: {
             background: '#f4ecd8',
@@ -807,11 +785,7 @@ const theme = {
             border: '#d4c8b0',
             accent: '#8b4513',
             btnPrimaryBg: '#5c4b37',
-            btnPrimaryText: '#f4ecd8',
             btnPrimaryHover: '#7a6a56',
-            tooltipBg: '#5c4b37',
-            tooltipText: '#f4ecd8',
-            keyBg: 'rgba(92,75,55,0.15)',
         },
         catppuccin: {
             background: '#1e1e2e',
@@ -821,11 +795,7 @@ const theme = {
             border: '#313244',
             accent: '#cba6f7',
             btnPrimaryBg: '#cba6f7',
-            btnPrimaryText: '#1e1e2e',
             btnPrimaryHover: '#b4befe',
-            tooltipBg: '#313244',
-            tooltipText: '#cdd6f4',
-            keyBg: 'rgba(203,166,247,0.12)',
         },
         gruvbox: {
             background: '#1d2021',
@@ -835,11 +805,7 @@ const theme = {
             border: '#3c3836',
             accent: '#fe8019',
             btnPrimaryBg: '#fe8019',
-            btnPrimaryText: '#1d2021',
             btnPrimaryHover: '#fabd2f',
-            tooltipBg: '#3c3836',
-            tooltipText: '#ebdbb2',
-            keyBg: 'rgba(254,128,25,0.12)',
         },
         rosepine: {
             background: '#191724',
@@ -849,11 +815,7 @@ const theme = {
             border: '#26233a',
             accent: '#ebbcba',
             btnPrimaryBg: '#ebbcba',
-            btnPrimaryText: '#191724',
             btnPrimaryHover: '#f6c177',
-            tooltipBg: '#26233a',
-            tooltipText: '#e0def4',
-            keyBg: 'rgba(235,188,186,0.12)',
         },
         solarized: {
             background: '#002b36',
@@ -863,11 +825,7 @@ const theme = {
             border: '#073642',
             accent: '#2aa198',
             btnPrimaryBg: '#2aa198',
-            btnPrimaryText: '#002b36',
             btnPrimaryHover: '#268bd2',
-            tooltipBg: '#073642',
-            tooltipText: '#93a1a1',
-            keyBg: 'rgba(42,161,152,0.12)',
         },
         tokyonight: {
             background: '#1a1b26',
@@ -877,11 +835,7 @@ const theme = {
             border: '#292e42',
             accent: '#7aa2f7',
             btnPrimaryBg: '#7aa2f7',
-            btnPrimaryText: '#1a1b26',
             btnPrimaryHover: '#bb9af7',
-            tooltipBg: '#292e42',
-            tooltipText: '#c0caf5',
-            keyBg: 'rgba(122,162,247,0.12)',
         },
     },
 
@@ -906,7 +860,6 @@ const theme = {
         return Object.keys(this.themes).map(key => ({
             value: key,
             name: names[key] || key,
-            colors: this.themes[key],
         }));
     },
 
@@ -970,16 +923,6 @@ const theme = {
         root.style.setProperty('--bg-elevated', bgElevated);
         root.style.setProperty('--bg-hover', bgHover);
 
-        // Legacy aliases
-        root.style.setProperty('--header-background', bgBase);
-        root.style.setProperty('--main-content-background', bgBase);
-        root.style.setProperty('--bg-primary', bgBase);
-        root.style.setProperty('--bg-secondary', bgSurface);
-        root.style.setProperty('--bg-tertiary', bgElevated);
-        root.style.setProperty('--input-background', bgElevated);
-        root.style.setProperty('--input-focus-background', bgElevated);
-        root.style.setProperty('--hover-background', bgHover);
-        root.style.setProperty('--scrollbar-background', bgBase);
     },
 
     apply(themeName, alpha = 0.8) {
@@ -996,28 +939,6 @@ const theme = {
         root.style.setProperty('--accent', colors.btnPrimaryBg);
         root.style.setProperty('--accent-hover', colors.btnPrimaryHover);
 
-        // Legacy aliases
-        root.style.setProperty('--text-color', colors.text);
-        root.style.setProperty('--border-color', colors.border);
-        root.style.setProperty('--border-default', colors.accent);
-        root.style.setProperty('--placeholder-color', colors.textMuted);
-        root.style.setProperty('--scrollbar-thumb', colors.border);
-        root.style.setProperty('--scrollbar-thumb-hover', colors.textMuted);
-        root.style.setProperty('--key-background', colors.keyBg);
-        // Primary button
-        root.style.setProperty('--btn-primary-bg', colors.btnPrimaryBg);
-        root.style.setProperty('--btn-primary-text', colors.btnPrimaryText);
-        root.style.setProperty('--btn-primary-hover', colors.btnPrimaryHover);
-        // Start button (same as primary)
-        root.style.setProperty('--start-button-background', colors.btnPrimaryBg);
-        root.style.setProperty('--start-button-color', colors.btnPrimaryText);
-        root.style.setProperty('--start-button-hover-background', colors.btnPrimaryHover);
-        // Tooltip
-        root.style.setProperty('--tooltip-bg', colors.tooltipBg);
-        root.style.setProperty('--tooltip-text', colors.tooltipText);
-        // Error color (stays constant)
-        root.style.setProperty('--error-color', '#f14c4c');
-        root.style.setProperty('--success-color', '#4caf50');
 
         // Also apply background colors from theme
         this.applyBackgrounds(colors.background, alpha);
@@ -1054,23 +975,9 @@ const contextHalo = {
         return result?.success ? result.data : '';
     },
 
-    // Element access
-    element: () => contextHaloApp,
-    e: () => contextHaloApp,
-
-    // App state functions - access properties directly from the app element
-    getCurrentView: () => contextHaloApp.currentView,
-    getLayoutMode: () => contextHaloApp.layoutMode,
-
-    // Status and response functions
-    setStatus: text => contextHaloApp.setStatus(text),
-    addNewResponse: response => contextHaloApp.addNewResponse(response),
-    updateCurrentResponse: response => contextHaloApp.updateCurrentResponse(response),
-
     // Core functionality
     initializeGemini,
     initializeLocal,
-    cancelLocalInitialization,
     startCapture,
     stopCapture,
     getCaptureState: () => ({ ...captureState }),
@@ -1084,8 +991,6 @@ const contextHalo = {
     // Theme API
     theme,
 
-    // Refresh preferences cache (call after updating preferences)
-    refreshPreferencesCache: loadPreferencesCache,
 };
 
 // Make it globally available

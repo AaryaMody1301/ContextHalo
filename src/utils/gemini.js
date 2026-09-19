@@ -1227,7 +1227,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return operation;
     });
 
-    register('initialize-gemini', async (event, _legacyKey, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
+    register('initialize-gemini', async (event, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
         if (!options || typeof options !== 'object' || (options.searchEnabled !== undefined && typeof options.searchEnabled !== 'boolean')
             || (options.uiEpoch !== undefined && !Number.isSafeInteger(options.uiEpoch))) return { success: false, error: 'Invalid session options' };
         if (typeof customPrompt !== 'string' || customPrompt.length > 32000 || typeof profile !== 'string'
@@ -1256,7 +1256,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true, provider: 'groq', search: { ...searchState } };
         }
 
-        const apiKey = getApiKey(); // Never trust or round-trip a renderer-supplied key.
+        const apiKey = getApiKey();
         if (!apiKey || !apiKey.trim()) {
             const error = 'No Gemini API key configured.';
             sendToRenderer('update-status', error);

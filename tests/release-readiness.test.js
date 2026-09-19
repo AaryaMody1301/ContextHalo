@@ -46,10 +46,19 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
     assert.doesNotMatch(runtimeHardening, /desktopCapturer|session\.defaultSession|useSystemPicker: true/);
     const nativeRuntime = read('src/utils/native-ai-runtime.js');
     assert.doesNotMatch(nativeRuntime, /darwin:|llama-server-macos|whisper-server-macos|chmodSync|executable:/);
-    assert.doesNotMatch(read('src/storage.js'), /advancedMode/);
+    const storage = read('src/storage.js');
+    assert.doesNotMatch(storage, /advancedMode|getModelForToday/);
+    for (const internalOnly of ['setConfig', 'setCredentials', 'setPreferences', 'getLimits', 'setLimits', 'getTodayLimits', 'getCredentials']) {
+        assert.doesNotMatch(storage, new RegExp(`\\n    ${internalOnly},`));
+    }
+
+    const html = read('src/index.html');
+    assert.doesNotMatch(html, /--header-background|--bg-primary|--start-button-background|--tooltip-bg/);
 
     const index = read('src/index.js');
     const renderer = read('src/utils/renderer.js');
+    assert.doesNotMatch(renderer, /Legacy argument position|window\.captureManualScreenshot|getLayoutMode:|refreshPreferencesCache:|async getKeybinds\(\)/);
+    assert.doesNotMatch(read('src/utils/gemini.js'), /_legacyKey|renderer-supplied key/);
     for (const channel of ['storage:set-config', 'storage:set-preferences', 'storage:get-today-limits']) {
         assert.doesNotMatch(preload, new RegExp(channel));
         assert.doesNotMatch(index, new RegExp(channel));

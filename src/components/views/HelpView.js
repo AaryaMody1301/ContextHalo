@@ -104,11 +104,10 @@ export class HelpView extends LitElement {
 
     async _loadKeybinds() {
         try {
-            const keybinds = await contextHalo.storage.getKeybinds();
-            if (keybinds) {
-                this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
-                this.requestUpdate();
-            }
+            const shortcutState = await contextHalo.storage.getShortcutState();
+            if (shortcutState?.success !== true) throw new Error(shortcutState?.error || 'Could not load shortcuts.');
+            this.keybinds = shortcutState.data || this.keybinds;
+            this.requestUpdate();
         } catch (error) {
             console.error('Error loading keybinds:', error);
         }

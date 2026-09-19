@@ -211,7 +211,7 @@ export class CustomizeView extends LitElement {
         this.selectedScreenshotInterval = '5';
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
-        this.keybinds = this.getDefaultKeybinds();
+        this.keybinds = {};
         this.onProfileChange = () => {};
         this.onLanguageChange = () => {};
         this.onScreenshotIntervalChange = () => {};
@@ -239,10 +239,6 @@ export class CustomizeView extends LitElement {
         this._loadFromStorage();
     }
 
-    connectedCallback() {
-        super.connectedCallback();
-    }
-
     getThemes() {
         return contextHalo.theme.getAll();
     }
@@ -263,9 +259,7 @@ export class CustomizeView extends LitElement {
             this.audioMode = prefs.audioMode ?? 'speaker_only';
             this.customPrompt = prefs.customPrompt ?? '';
             this.theme = prefs.theme ?? 'dark';
-            if (keybinds) {
-                this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
-            }
+            this.keybinds = keybinds || {};
             this.updateBackgroundAppearance();
             this.updateFontSize();
             this.requestUpdate();
@@ -307,23 +301,6 @@ export class CustomizeView extends LitElement {
             { value: 'ru-RU', name: 'Russian (Russia)' },
             { value: 'th-TH', name: 'Thai (Thailand)' },
         ];
-    }
-
-    getDefaultKeybinds() {
-        return {
-            moveUp: 'Ctrl+Up',
-            moveDown: 'Ctrl+Down',
-            moveLeft: 'Ctrl+Left',
-            moveRight: 'Ctrl+Right',
-            toggleVisibility: 'Ctrl+\\',
-            toggleClickThrough: 'Ctrl+M',
-            nextStep: 'Ctrl+Enter',
-            previousResponse: 'Ctrl+[',
-            nextResponse: 'Ctrl+]',
-            scrollUp: 'Ctrl+Shift+Up',
-            scrollDown: 'Ctrl+Shift+Down',
-            emergencyErase: 'Ctrl+Shift+E',
-        };
     }
 
     getKeybindActions() {
@@ -500,7 +477,7 @@ export class CustomizeView extends LitElement {
     }
 
     resetKeybinds() {
-        return this.saveKeybinds(this.getDefaultKeybinds());
+        return this.saveKeybinds(null);
     }
 
     async restoreAllSettings() {

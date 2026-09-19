@@ -88,15 +88,15 @@ async function rendererBehaviorSmoke() {
         button.click();await waitUntil(()=>!assistant.sending && !assistant.draft);await settle(assistant);
         verify(input.value==='','Successful send clears the submitted draft');
         verify(!app.requestError && !assistant.sendError, 'Successful text retry removes the obsolete banner and Retry action');
-        const originalCapture = window.captureManualScreenshot;
+        const originalCapture = api.captureManualScreenshot;
         try {
-            window.captureManualScreenshot = async () => ({success:false,error:'Controlled screen failure'});
+            api.captureManualScreenshot = async () => ({success:false,error:'Controlled screen failure'});
             await assistant.handleScreenAnswer(); await settle(assistant);
             verify(app.requestError?.operation === 'screen' && assistant.analysisError.includes('Controlled screen failure'), 'Screen failure has screen-owned recovery');
-            window.captureManualScreenshot = async () => ({success:true,text:'Controlled screen answer'});
+            api.captureManualScreenshot = async () => ({success:true,text:'Controlled screen answer'});
             await app.retryRequest(); await settle(assistant);
             verify(!app.requestError && !assistant.analysisError, 'Successful screen Retry removes its obsolete banner and action');
-        } finally { window.captureManualScreenshot = originalCapture; }
+        } finally { api.captureManualScreenshot = originalCapture; }
         app.addNewResponse('Typed start',{requestId:'text-smoke',kind:'text'});
         app.addNewResponse('Screen start',{requestId:'screen-smoke',kind:'screen'});
         app.updateCurrentResponse('Typed final',{requestId:'text-smoke'});

@@ -106,7 +106,7 @@ function geminiFixture(options = {}) {
         api, handlers, event, events, generated, connections, clients, realtime, clientContent, preparations, diagnostics, preferences,
         get callbacks() { return connections.at(-1)?.callbacks; },
         call: (name, ...args) => handlers.get(name)(event, ...args),
-        start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, 'test-key-not-a-real-credential', '', 'meeting', 'en-US', provider, settings),
+        start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, '', 'meeting', 'en-US', provider, settings),
         close: () => handlers.get('close-session')(event),
     };
 }

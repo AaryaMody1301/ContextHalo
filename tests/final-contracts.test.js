@@ -17,13 +17,14 @@ function timers() {
         async next() { const job = this.live()[0]; assert.ok(job); job.ran = true; await job.fn(); } };
 }
 
-test('Gemini uses the stored main-process key, never the renderer argument', async t => {
+test('Gemini initialization reads the stored main-process key without a renderer key slot', async t => {
     const f = geminiFixture({ getApiKey: () => 'stored-main-key' }); t.after(f.close);
-    const result = await f.call('initialize-gemini', 'untrusted-renderer-key', '', 'interview', 'en-US', 'byok', {});
+    const result = await f.call('initialize-gemini', '', 'interview', 'en-US', 'byok', {});
     assert.equal(result.success, true);
     assert.equal(f.clients[0].apiKey, 'stored-main-key');
     assert.equal(f.handlers.has('initialize-cloud'), false);
     const preload = fs.readFileSync('preload.js', 'utf8');
+    assert.doesNotMatch(fs.readFileSync('src/utils/gemini.js', 'utf8'), /_legacyKey|renderer-supplied key/);
     for (const channel of ['initialize-cloud', 'storage:get-credentials', 'storage:get-api-key', 'storage:get-groq-api-key', 'storage:set-credentials']) assert.equal(preload.includes(`'${channel}'`), false);
 });
 
