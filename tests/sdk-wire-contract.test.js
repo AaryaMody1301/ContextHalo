@@ -42,8 +42,10 @@ const transport = require('../src/utils/windowsProviderTransport');
 for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 ${scenario} preserves provider backoff and the typed request`, { skip: !available, timeout: 5000 }, async t => {
     const { GoogleGenAI, Modality } = require('@google/genai');
     const received = [];
+    const urls = [];
     const server = http.createServer(async (request, response) => {
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
+        urls.push(request.url);
         received.push(JSON.parse(Buffer.concat(chunks).toString()));
         response.setHeader('content-type', 'application/json');
         if (scenario === 'retry-after' || received.length < 3) {
@@ -51,7 +53,8 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
             response.setHeader('retry-after', scenario === 'retry-after' ? '120' : '0');
             response.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'Service unavailable' } }));
         } else {
-            response.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Recovered answer' }] } }] }));
+            response.setHeader('content-type', 'text/event-stream');
+            response.end('data: ' + JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Recovered answer' }] } }] }) + '\n\n');
         }
     });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -82,6 +85,8 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
         assert.equal(result.success, true, result.error);
         assert.equal(result.text, 'Recovered answer');
         assert.equal(received.length, 3);
+        assert.ok(urls.every(url => /:streamGenerateContent\?alt=sse$/.test(url)), 'typed Gemini uses the SDK streaming endpoint');
+        assert.equal(received[2].generationConfig.thinkingConfig.thinkingLevel, 'low');
         assert.deepEqual(received[0], received[2], 'retries keep the exact model, question, context and Search policy');
         assert.ok(received[2].tools.some(tool => tool.googleSearch));
         assert.equal(f.events.filter(([channel]) => channel === 'save-conversation-turn').length, 1);
