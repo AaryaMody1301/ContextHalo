@@ -29,6 +29,8 @@ async function liveServer(t, mode = 'success', fixtureOptions = {}) {
                     if (mode === 'configuration') connection.close(1008, 'Invalid setup configuration');
                     else if (mode === 'search-setup-1011' && message.setup.tools?.some(tool => tool.googleSearch)) {
                         connection.close(1011, 'Search setup unavailable for this project');
+                    } else if (mode === 'session-management-1011' && (message.setup.sessionResumption || message.setup.contextWindowCompression)) {
+                        connection.close(1011, 'Optional session management unavailable');
                     } else connection.send(JSON.stringify({ setupComplete: {} }));
                 }
             });
@@ -71,6 +73,19 @@ test('real SDK recovers from a setup-level 1011 by retrying the session without 
     assert.equal(result.search.requested, true);
     assert.equal(result.search.effective, false);
     assert.equal(result.search.status, 'live-setup-fallback');
+});
+
+test('real SDK retries setup 1011 with the documented core Live configuration', { skip: !sdk, timeout: 5000 }, async t => {
+    const { fixture, received } = await liveServer(t, 'session-management-1011');
+    const result = await fixture.start('byok', { uiEpoch: 33 });
+    assert.equal(result.success, true, result.error);
+    assert.equal(received.length, 2);
+    assert.ok(received[0].setup.sessionResumption);
+    assert.ok(received[0].setup.contextWindowCompression);
+    assert.equal(received[1].setup.sessionResumption, undefined);
+    assert.equal(received[1].setup.contextWindowCompression, undefined);
+    assert.deepEqual(received[1].setup.inputAudioTranscription, {});
+    assert.deepEqual(received[1].setup.outputAudioTranscription, {});
 });
 
 for (const [mode, category] of [['authentication', 'authentication'], ['configuration', 'invalid-configuration']]) {
