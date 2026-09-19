@@ -22,6 +22,7 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
         'src/audioUtils.js',
         'src/assets/lit-all-2.7.4.min.js',
         'src/components/index.js',
+        'src/assets/logo.png',
     ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
 
     const preload = read('preload.js');
@@ -43,7 +44,8 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
     const runtimeHardening = read('src/utils/runtimeHardeningMain.js');
     assert.doesNotMatch(runtimeHardening, /SystemAudioDump|runtimeMacAudio|start-macos-audio|stop-macos-audio/);
     assert.doesNotMatch(runtimeHardening, /desktopCapturer|session\.defaultSession|useSystemPicker: true/);
-    assert.doesNotMatch(read('src/utils/native-ai-runtime.js'), /darwin:|llama-server-macos|whisper-server-macos/);
+    const nativeRuntime = read('src/utils/native-ai-runtime.js');
+    assert.doesNotMatch(nativeRuntime, /darwin:|llama-server-macos|whisper-server-macos|chmodSync|executable:/);
     assert.doesNotMatch(read('src/storage.js'), /advancedMode/);
 
     const index = read('src/index.js');
@@ -82,6 +84,7 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.equal(pkg.dependencies['@google/genai'], '2.22.0');
     assert.equal(pkg.dependencies.ws, undefined, 'ws is supplied transitively by the Gemini SDK and is not an app dependency');
     assert.equal(pkg.devDependencies.electron, '^44.3.0');
+    assert.equal(pkg.scripts.make, undefined);
 
     const storage = read('src/storage.js');
     assert.match(storage, /geminiLiveModel: 'gemini-3\.8-live'/);
