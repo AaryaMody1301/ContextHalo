@@ -895,9 +895,11 @@ const theme = {
         alpha = Number.isFinite(Number(alpha)) ? Math.min(1, Math.max(0, Number(alpha))) : 0.8;
         this.currentAlpha = alpha;
         const baseRgb = this.hexToRgb(backgroundColor);
-        root.style.setProperty('--hud-background', `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${alpha})`);
-        // Only the HUD shell composites with the desktop. Normal pages and small
-        // interactive surfaces remain opaque; foreground text is never faded.
+        const windowBackground = `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${alpha})`;
+        root.style.setProperty('--window-background', windowBackground);
+        root.style.setProperty('--hud-background', windowBackground);
+        // The native BrowserWindow is transparent. Apply alpha only to the root
+        // window surface; text and cards keep opaque theme colors for readability.
         root.style.setProperty('--control-color-scheme', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark');
         root.style.colorScheme = (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark';
         this._appearanceRevision = (this._appearanceRevision || 0) + 1;
