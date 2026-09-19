@@ -20,7 +20,7 @@ export const unifiedPageStyles = css`
         height: auto;
         overflow: visible;
         padding: 58px var(--space-lg) var(--space-lg);
-        background: var(--bg-app);
+        background: transparent;
     }
 
     .unified-wrap {
