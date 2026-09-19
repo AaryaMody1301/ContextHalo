@@ -3,13 +3,14 @@ const assert = require('node:assert/strict');
 const { rendererFixture } = require('./helpers/renderer-fixture');
 const { createWindowModeController } = require('../src/utils/windowModeController');
 
-test('theme changes preserve the existing saved alpha, including zero; normal pages remain opaque', async () => {
+test('theme changes preserve saved alpha on the native-transparent window while child theme surfaces stay opaque', async () => {
     for (const alpha of [0, 0.25, 0.5, 0.8, 1]) {
         const f = rendererFixture({ prefs: { backgroundTransparency: alpha } });
         await f.api.theme.load(); await f.api.theme.save('light');
         assert.equal(f.api.theme.currentAlpha, alpha); assert.equal(f.prefs.backgroundTransparency, alpha);
         assert.equal(f.prefs.theme, 'light');
         assert.equal(f.variables.get('--hud-background'), `rgba(255, 255, 255, ${alpha})`);
+        assert.equal(f.variables.get('--window-background'), `rgba(255, 255, 255, ${alpha})`);
         assert.match(f.variables.get('--bg-app'), /^rgb\(/);
         const restarted = rendererFixture({ prefs: f.prefs }); await restarted.api.theme.load();
         assert.equal(restarted.api.theme.currentAlpha, alpha); assert.equal(restarted.api.theme.current, 'light');
@@ -35,7 +36,7 @@ test('resized HUD bounds survive transitions/restart and clamp after display rem
         setBounds(value) { bounds = value; }, setPosition(x, y) { bounds = { ...bounds, x, y }; },
         setMinimumSize() {}, setResizable() {}, setContentProtection: value => calls.push(['protected', value]),
         setSkipTaskbar() {}, setAlwaysOnTop: value => calls.push(['topmost', value]),
-        setIgnoreMouseEvents: value => calls.push(['click-through', value]), moveTop() {},
+        setIgnoreMouseEvents: value => calls.push(['click-through', value]), setBackgroundMaterial: value => calls.push(['material', value]), moveTop() {},
         setOpacity() { assert.fail('foreground must not be faded with native window opacity'); },
     };
     const screen = { getDisplayMatching: () => ({ workArea }) };
@@ -50,4 +51,5 @@ test('resized HUD bounds survive transitions/restart and clamp after display rem
     assert.ok(calls.some(([type, value]) => type === 'topmost' && value === true));
     assert.ok(calls.some(([type, value]) => type === 'click-through' && value === false));
     assert.ok(calls.filter(([type]) => type === 'protected').every(([, value]) => value === true));
+    assert.ok(calls.filter(([type]) => type === 'material').every(([, value]) => value === 'none'));
 });
