@@ -11,18 +11,14 @@ const { getConfigDir } = require('../storage');
 const LEGACY_RUNTIME_REPOSITORY = Buffer.from([99, 104, 101, 97, 116, 105, 110, 103, 45, 100, 97, 100, 100, 121]).toString('utf8');
 const RELEASE_BASE_URL = `https://github.com/sohzm/${LEGACY_RUNTIME_REPOSITORY}/releases/download/v0.7.0`;
 
-const BINARY_RELEASES = {
-    win32: {
-        x64: {
-            llama: {
-                filename: 'llama-server-windows-x86_64.exe',
-                sha256: '7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862',
-            },
-            whisper: {
-                filename: 'whisper-server-windows-x86_64.exe',
-                sha256: '654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435',
-            },
-        },
+const WINDOWS_X64_RELEASES = {
+    llama: {
+        filename: 'llama-server-windows-x86_64.exe',
+        sha256: '7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862',
+    },
+    whisper: {
+        filename: 'whisper-server-windows-x86_64.exe',
+        sha256: '654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435',
     },
 };
 
@@ -43,14 +39,6 @@ const WHISPER_MODELS = {
         sha256: 'c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d',
     },
 };
-
-function getPlatformReleases() {
-    const platformReleases = BINARY_RELEASES[process.platform]?.[process.arch];
-    if (!platformReleases) {
-        throw new Error(`Local AI is not available for ${process.platform}/${process.arch}`);
-    }
-    return platformReleases;
-}
 
 function getBinariesDirectory() {
     return path.join(getConfigDir(), 'binaries');
@@ -110,13 +98,10 @@ async function downloadFile(url, destinationPath, onProgress, signal) {
     }
 }
 
-async function installVerifiedFile({ url, destinationPath, sha256, executable, onProgress, signal }) {
+async function installVerifiedFile({ url, destinationPath, sha256, onProgress, signal }) {
     fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
 
     if (await fileMatchesChecksum(destinationPath, sha256)) {
-        if (executable && process.platform !== 'win32') {
-            fs.chmodSync(destinationPath, 0o755);
-        }
         return destinationPath;
     }
 
@@ -132,23 +117,22 @@ async function installVerifiedFile({ url, destinationPath, sha256, executable, o
         signal?.throwIfAborted();
         fs.renameSync(temporaryPath, destinationPath);
     
-        if (executable && process.platform !== 'win32') {
-            fs.chmodSync(destinationPath, 0o755);
-        }
     } finally { fs.rmSync(temporaryPath, { force: true }); }
 
     return destinationPath;
 }
 
 async function ensureNativeBinary(type, onProgress, signal) {
-    const release = getPlatformReleases()[type];
+    if (process.platform !== 'win32' || process.arch !== 'x64') {
+        throw new Error(`Local AI is not available for ${process.platform}/${process.arch}`);
+    }
+    const release = WINDOWS_X64_RELEASES[type];
     const destinationPath = path.join(getBinariesDirectory(), release.filename);
 
     return installVerifiedFile({
         url: `${RELEASE_BASE_URL}/${release.filename}`,
         destinationPath,
         sha256: release.sha256,
-        executable: true,
         onProgress,
         signal,
     });
@@ -177,7 +161,6 @@ async function ensureWhisperModel(modelName, onProgress, signal) {
         url: model.url,
         destinationPath,
         sha256: model.sha256,
-        executable: false,
         onProgress,
         signal,
     });
@@ -267,7 +250,6 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/main/${encodePathParts(model.model.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.model.path)),
         sha256: model.model.sha256,
-        executable: false,
         onProgress: onModelProgress,
         signal,
     });
@@ -275,7 +257,6 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/main/${encodePathParts(model.projector.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.projector.path)),
         sha256: model.projector.sha256,
-        executable: false,
         onProgress: onProjectorProgress,
         signal,
     });
