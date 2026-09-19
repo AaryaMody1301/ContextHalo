@@ -142,6 +142,7 @@ test('all appearance palettes retain readable text and native control contrast w
     for (const name of Object.keys(f.api.theme.themes)) {
         f.api.theme.apply(name, 0.37);
         assert.match(f.variables.get('--hud-background'), /0\.37\)/);
+        assert.match(f.variables.get('--window-background'), /0\.37\)/);
         for (const background of ['--bg-app', '--bg-surface', '--bg-elevated', '--bg-hover']) {
             assert.match(f.variables.get(background), /^rgb\(/, 'Normal pages and interactive surfaces stay opaque');
             for (const text of ['--text-primary', '--text-secondary', '--text-muted']) {
