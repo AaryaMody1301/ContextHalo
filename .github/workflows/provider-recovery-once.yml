@@ -1,0 +1,27 @@
+name: Verify HTTP recovery and Search isolation
+on:
+  push:
+    branches: [fix/http503-search-boundaries]
+    paths: [.github/workflows/provider-recovery-once.yml]
+permissions:
+  contents: read
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.publish.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Apply exact locally verified patch
+        shell: bash
+        env:
+          PATCH_B64: H4sIAAAAAAAC/919a1fbSLbo9/yKmkyvI3ssyw8gBNOEphO6O2eSwAUyc2bRnES2ZFAjS25JhjDE//3uR1WpSpZtSNJze93MmnQsleqxa7/3rl3tdlv4nXyURdMi72RhEoRZmLWH4ZV/E6VZO5+k16H3W/6k1WqJ4UMa/vCDaPf7XbcrWv1+z90WP/zwpCXgjz+dennoZ6Or08Ivwr37LPx9FuZFGAyKbBa64XgcjoroJhyM/TgP3auimB7qZ9Qkhw9n+cCJ4Uk7D4vZtA1t46E/unbmu/6tHxUCHhdx2IDRmrs88E2YReO7Bo1/5Qfp7UmaFh6Mnd2dhjH0n2YNR06tjUOETtMrwk/FyzQpwqTwomQUz4Iwbzj4FIEQholIk/jOabrOG5iMUNMQ12E4zcUvZ2fH4pR6FDdRHg3jOxEm/jAOA0dNC+cjQXCYZWm2dB4cXbF3Xo614bO2knqIc3Z2iMKf1wQ+TPyjIFPzBCl6tkbLHXiR4kyIh88XYJxDymx1e/1DDEGcnmWJeLcmSV6S9rItXD6UXLjx1HQBmYwji5nbMbji99naeG3w09X/gzRAh9luPI0a9Mr56I0L9WKRtDgMs3umqX8/PxZnPe63W1XwN/P8e9er+bLPB1dh8BbglAB/gtmvXJGLWNG1besLhcZsPQICNRBFWtxZtQK569g/RwhvWOpC49frlrvt5mawgPQY7bQj7Xpbn8lvaVThK0fK2pqT8DUBamCjGwt1RHrG4HE4E6t7SKkbc+ftJ+0/fwuGYkx4DO+QIEkxewZ7HcOWum9hcnLVIhzkGUkeZWecD8X8wsQ8OcXEsgsDXEuJ7MEhdq+N4qhMci/2YQW2ng84a9b6DLyPwmhWQKzBw0hApmWAf/FHuJ0BOCGdyA+cu5hxLKX2RLYD09aa0CmPXLA3B3k4g4CkRbGYl+plnvCaIqohi5KZOH1QB6IpTqXTbeq/zW7gsi60QdTcGOj625oVI3AgFxFAefO4bujs5co4GWoM9CWqcBjWtCrFuPvKSfnXXuOBKq7yQJtVDUgVI22iBSYR9CHGyMVmmSA/EueDj0XBM3hrPBPGIOOoPn/xWuBETBK53w8kFpMkNEGLHP+/gb1Ayur0RbWWUo7M0YbcRTMdK3AaGQtaoydo0SFyZmIjmhEm1VUIB2Zj0NAJiAIyVrGLMsUCzkUwXuMcwFBK3eFb03BJVmGNqlgL9YPsdTfsKKIIIHDhUJiEUbn4hjCzDkBdJDTrEgKhpGKPSImayAoMbIjUlBJZnAnHuAX/AMFSogXuLTBbg/CQiuvxe8LrWml+kOs5MKJaJaNpBnmyTsTKawCLXA/vBPZ80jk2mpUmcqDiopRoLRHCboxSQItlwTgMJ+s5x3COXHSWYEV4HVbWnvC4msIcjc2smCgQCAnJCZYuJb9CUJCgq8+CkeyAK1NzhLsEyLolDgyEIkiSyhwFsULMSphT1MaJ9jpUPgpV0SCQo7ieLboUnAPcFDvk/vhibEIPLy1CSYsELjF+F6wwM4mDEtc0L6NJBEuyYmgGjCSnpYPULszDXBSGCJLQ9SqWYFkKPVhwHJQOOEXtpiK0FE8hwEvJ+/sqdkdtOgjuSGycvbpDoLrIvpDU+8HnPPYLXAQpfbtzoIeEOHdRq5MnWdWDztEUVDkkCOH3xaRflTvEaWWVRif7KvGFfjRejhPIXbPCGtYrOCUfEnimFtqm1uYYTsXLlg0YkgoShOUfuJoDOl/cHBSECitBK/2+frUIBbFwvJnwtYMQSTmnDDx/Cqh8dnwwRJDaBAphKEcEHGpnIJBEBMqBC2BtrItNdjxFKtAeHB6enUBmIXOYu/Ez0ZYBeQBUbQDCSAwR/KIx/jAtQUOh52gKzXt/T50UvjaUXLMAe94vuNi2lEMkEyOI83DNYJFNVGaEZUf/NwDOydcgFHLYmBiOfLcXiESGUT2IQwikEOYGphgxh9A8DZFcMBVH8LiMVnD7sKHqbUCEKhLCFZHxiLAwEdBcHBJaAjKEVsyc3scCGhsVs+yipPKVlKeRHh/GXXPWYBA24QoBDmbJDJJJArNSInLIFx5kkT+d0woyGRBquhfF0LQDIXTNXBHFgb82kKoKS59HwUwzejnKgDBgg/yrlODgUQTXDrRmMRFmA9+xRAOCMnNGXwY3I6wEwxGeYTVasjrMHnmTKjyJiINB/hG64X4DHQIeHLXEflczyLfEvFJNqOiPsEEL/BHr5OoWTvGFxRnXQQNKwyTBID/qYGUKkcjhHG0nbWpAjODIb5HJyQIoWKDV4byQ3ywjEIwCKmKCspPSKAJyXXgrDIhxDTMsjhohimMRPHqDJznHEO44HVVPYk0Ymj4QuYQkG1eDjKLKHDNKxnMNoik4Q0BA7zhqpKNjxk6Af/VLWExRaENISULIWmn4FsIsyrBhkuPMhIW20IOYC0jIeihwxOmimhaMGiQgTmCACRmEMgIjgyfJgMQgxnpMw34NgzJooHOxCsIwRGWTXSLOPfc+pjmvKmDJNEGsODWRxKSOB/XiaJJKJ0YLTHDOMwvLpzp4lhkLnxMWLTEUYQOcGWbbBSHI4RAUNIVJMPlxlNRliRTiWWAf13FoR2PmF8xPxduPZHIH5DjKMxpVe58WaJE3MWWXM5tiYnukGjBoLDNpXmGIbUfytlm/Fkc60XsMwCPjsCPApM3hckZaHcTEQcwOiXLR4H1uSKxsztJhRkpNSKkyDKcptYPgmMO1fvNLjkNyfj12BnqWKAjMEBIU8NYgACxzYYvzMu2BGlWOHcj5+CThfPbNoj8IQY3MnSoPwFWtozl//CnEcIAAAA
+        run: |
+          echo 'Patch staging placeholder: refusing to apply until complete payload is installed.'
+          exit 1
