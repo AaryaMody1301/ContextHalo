@@ -6,9 +6,9 @@ import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 const LOCAL_LLM_PRESETS = [
     { value: 'unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M', label: 'Qwen 3.5 0.8B Q4 — 0.74 GB · Fastest' },
     { value: 'unsloth/Qwen3.5-0.8B-GGUF:Q8_0', label: 'Qwen 3.5 0.8B Q8 — 1.02 GB' },
-    { value: 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M', label: 'Qwen 3.5 2B Q4 — 1.95 GB' },
+    { value: 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M', label: 'Qwen 3.5 2B Q4 — 1.95 GB · Recommended' },
     { value: 'unsloth/Qwen3.5-2B-GGUF:Q8_0', label: 'Qwen 3.5 2B Q8 — 2.68 GB' },
-    { value: 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M', label: 'Qwen 3.5 4B Q4 — 3.42 GB · Recommended' },
+    { value: 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M', label: 'Qwen 3.5 4B Q4 — 3.42 GB · Higher quality, slower' },
     { value: 'unsloth/Qwen3.5-4B-GGUF:Q8_0', label: 'Qwen 3.5 4B Q8 — 5.16 GB' },
     { value: 'unsloth/Qwen3.5-9B-GGUF:Q4_K_M', label: 'Qwen 3.5 9B Q4 — 6.60 GB' },
     { value: 'unsloth/Qwen3.5-9B-GGUF:Q8_0', label: 'Qwen 3.5 9B Q8 — 10.45 GB' },
@@ -731,7 +731,7 @@ export class MainView extends LitElement {
         this._disableGroqThinking = true;
         this._keyError = false;
         this._showLocalHelp = false;
-        this._localLlmModel = 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
+        this._localLlmModel = 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
         this._useCustomLocalLlmModel = false;
         this._whisperModel = 'tiny.en';
 
@@ -1144,8 +1144,9 @@ export class MainView extends LitElement {
         const fields = gemini ? [
             { label: 'Gemini Live Model', value: this._geminiLiveModel, preferred: catalog?.live, all: catalog?.live || [],
                 allowAdvanced: false, onSave: this._saveGeminiLiveModel, helper: 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
-            { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all,
-                onSave: this._saveGeminiHttpModel, helper: 'Text and screenshots share this model. Advanced choices may not support every input or tool.' },
+            { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all: catalog?.screen || [],
+                allowAdvanced: false, onSave: this._saveGeminiHttpModel,
+                helper: 'Text and screenshots use stable Gemini Flash models; Gemini 3.8 Flash is the current default.' },
         ] : [
             { label: 'Text / Reasoning Model', value: this._groqModel, preferred: catalog?.chat, all, onSave: this._saveGroqModel },
             { label: 'Screenshot / Vision Model', value: this._groqImageModel, preferred: catalog?.vision, all, onSave: this._saveGroqImageModel,
