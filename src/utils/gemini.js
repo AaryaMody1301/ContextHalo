@@ -24,6 +24,7 @@ let mainSessionActive = false;
 let providerUiEpoch;
 let lastGeminiFailure = null;
 let searchState = { requested: false, effective: false, status: 'off' };
+let liveSetupCompatibility = false;
 const geminiCooldowns = new Map();
 
 
@@ -208,6 +209,18 @@ function shouldRetryLiveSetupWithoutSearch(error) {
     if (failure.stage !== 'setup') return false;
     return ['unsupported-tool', 'invalid-configuration', 'quota-exhausted', 'rate-or-quota'].includes(failure.category)
         || [1007, 1008, 1011].includes(failure.socketCode);
+}
+
+function shouldRetryLiveSetupWithCoreConfig(error) {
+    if (liveSetupCompatibility) return false;
+    const failure = classifyGeminiFailure(error, 'live');
+    return failure.stage === 'setup' && (failure.category === 'invalid-configuration'
+        || [1007, 1008, 1011].includes(failure.socketCode));
+}
+
+function enableLiveSetupCompatibility() {
+    liveSetupCompatibility = true;
+    sendToRenderer('update-status', 'Gemini Live rejected optional session-management setup. Retrying this session with the core Live configuration.');
 }
 
 async function getEnabledTools() {
@@ -1000,22 +1013,32 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     const connect = () => connectGeminiLiveWithGuard(client, {
                         model: liveModel, callbacks,
                         config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                            ...reliabilityConfig,
+                            ...(!liveSetupCompatibility ? reliabilityConfig : {}),
                             ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
                             systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
                     }, Math.min(15000, remaining), operationSignal);
                     let connected;
+                    let setupError;
                     try {
                         connected = await connect();
                     } catch (error) {
-                        if (!shouldRetryLiveSetupWithoutSearch(error)) throw error;
+                        setupError = error;
+                    }
+                    if (!connected && shouldRetryLiveSetupWithoutSearch(setupError)) {
                         disableLiveSearchForSetupCompatibility();
                         tools = [];
                         instruction = buildInstruction();
                         setupMessages = [];
                         operationSignal.throwIfAborted();
+                        try { connected = await connect(); } catch (error) { setupError = error; }
+                    }
+                    if (!connected && shouldRetryLiveSetupWithCoreConfig(setupError)) {
+                        enableLiveSetupCompatibility();
+                        setupMessages = [];
+                        operationSignal.throwIfAborted();
                         connected = await connect();
                     }
+                    if (!connected) throw setupError;
                     if (contextMessage) {
                         try {
                             connected.sendClientContent({
@@ -1255,6 +1278,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 liveController = new AbortController();
                 isUserClosing = false;
                 isInitializingSession = false;
+                liveSetupCompatibility = false;
                 resetSessionRequests();
                 const local = channel === 'initialize-local';
                 const mode = local ? 'local' : args[3] === 'groq' ? 'groq' : 'byok';
