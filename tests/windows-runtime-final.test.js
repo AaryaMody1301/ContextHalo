@@ -126,7 +126,7 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
     assert.throws(() => parseModelReference('owner/..:Q4'), /unsupported|unsafe|format/i);
 });
 
-test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime', () => {
+test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime', async () => {
     assert.equal(VULKAN_LLAMA_RELEASE.tag, 'b10964');
     assert.equal(VULKAN_LLAMA_RELEASE.sha256, '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642');
     assert.match(VULKAN_LLAMA_RELEASE.url, /^https:\/\/github\.com\/ggml-org\/llama\.cpp\/releases\/download\/b10964\//);
@@ -142,7 +142,7 @@ test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime'
             fs.writeFileSync(path.join(target, 'ggml-vulkan.dll'), 'vulkan');
             return { status: 0 };
         };
-        const executable = extractVulkanRuntime(path.join(tempRoot, 'runtime.zip'), runtimeDirectory, spawn);
+        const executable = await extractVulkanRuntime(path.join(tempRoot, 'runtime.zip'), runtimeDirectory, spawn);
         assert.equal(path.basename(executable), 'llama-server.exe');
         assert.equal(fs.existsSync(path.join(runtimeDirectory, 'ggml-vulkan.dll')), true);
         assert.equal(fs.readFileSync(path.join(runtimeDirectory, '.archive-sha256'), 'utf8'), VULKAN_LLAMA_RELEASE.sha256);
@@ -190,4 +190,21 @@ test('Windows security and packaging configuration are enabled together', () => 
 test('Retry-After numeric values are interpreted as seconds', () => {
     const headers = new Headers({ 'retry-after': '2.5' });
     assert.equal(parseRetryAfterMs(headers), 2500);
+});
+
+test('cancelled asynchronous Vulkan extraction never promotes its partial files', async t => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-extract-abort-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const destination = path.join(directory, 'runtime');
+    const controller = new AbortController();
+    await assert.rejects(extractVulkanRuntime('/archive.zip', destination, async (_command, args, options) => {
+        assert.equal(options.signal, controller.signal);
+        const stage = args[args.indexOf('-C') + 1];
+        fs.writeFileSync(path.join(stage, 'llama-server.exe'), 'partial');
+        await new Promise(resolve => setImmediate(resolve));
+        controller.abort();
+        return { status: 0 };
+    }, controller.signal), error => error.name === 'AbortError');
+    assert.equal(fs.existsSync(destination), false);
+    assert.deepEqual(fs.readdirSync(directory), []);
 });

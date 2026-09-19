@@ -2,6 +2,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const { getRequestSignal } = require('./sessionRequests');
+const { abortable } = require('./requestDeadline');
 
 const providerScope = new AsyncLocalStorage();
 const activeControllers = new Set();
@@ -187,7 +188,37 @@ function wrapResponseBody(response, controller, timer, idleMs, requestLabel) {
     });
 }
 
+// SDK ApiError drops HTTP headers. Preserve Retry-After at the transport
+// boundary without adding another retry owner or changing a successful response.
+async function geminiHttpResponse(input, init) {
+    const response = await originalFetch(input, init);
+    if (response.ok) return response;
+    const reader = response.body?.getReader();
+    const chunks = [];
+    let bytes = 0;
+    try {
+        while (reader) {
+            const result = init.signal ? await abortable(() => reader.read(), init.signal) : await reader.read();
+            if (result.done) break;
+            bytes += result.value.byteLength;
+            if (bytes > 65536) { chunks.length = 0; break; }
+            chunks.push(Buffer.from(result.value));
+        }
+    } finally {
+        try { await reader?.cancel(); } catch {}
+        reader?.releaseLock();
+    }
+    throw Object.assign(new Error(Buffer.concat(chunks).toString('utf8') || 'Gemini HTTP request failed'), {
+        status: response.status, headers: { 'retry-after': response.headers.get('retry-after') },
+    });
+}
+
 async function boundedFetch(input, init = {}) {
+    const url = requestUrl(input);
+    if (url?.hostname === 'generativelanguage.googleapis.com'
+        && /^\/v1(?:beta|alpha)?\/models\/[^/]+:(?:generateContent|streamGenerateContent)$/.test(url.pathname)) {
+        return geminiHttpResponse(input, init);
+    }
     const kind = classifyProviderRequest(input, init);
     if (!kind || !POLICIES[kind] || !originalFetch) return originalFetch(input, init);
 

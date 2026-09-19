@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { spawnSync } = require('node:child_process');
+const { execFile } = require('node:child_process');
+const runFile = require('node:util').promisify(execFile);
 
 const VULKAN_LLAMA_RELEASE = Object.freeze({
     tag: 'b10964',
@@ -141,17 +142,20 @@ function extractedVulkanRuntime(runtimeDirectory) {
     return fs.existsSync(backend) ? executable : null;
 }
 
-function extractVulkanRuntime(archivePath, runtimeDirectory, spawn = spawnSync) {
+async function extractVulkanRuntime(archivePath, runtimeDirectory, run = runFile, signal) {
+    signal?.throwIfAborted();
     const stagingDirectory = `${runtimeDirectory}.extract-${process.pid}-${Date.now()}`;
     fs.rmSync(stagingDirectory, { recursive: true, force: true });
     fs.mkdirSync(stagingDirectory, { recursive: true });
     try {
-        const result = spawn('tar.exe', ['-xf', archivePath, '-C', stagingDirectory], {
+        const result = await run('tar.exe', ['-xf', archivePath, '-C', stagingDirectory], {
+            signal,
             windowsHide: true,
             encoding: 'utf8',
             timeout: 120000,
         });
-        if (result.error || result.status !== 0) throw new Error('Windows could not unpack the verified llama.cpp Vulkan runtime');
+        if (result.error || (result.status !== undefined && result.status !== 0)) throw new Error('Windows could not unpack the verified llama.cpp Vulkan runtime');
+        signal?.throwIfAborted();
         const executable = extractedVulkanRuntime(stagingDirectory);
         if (!executable) throw new Error('The verified llama.cpp Vulkan package is missing its server or Vulkan backend');
         fs.writeFileSync(path.join(stagingDirectory, '.archive-sha256'), VULKAN_LLAMA_RELEASE.sha256, 'utf8');
@@ -178,7 +182,7 @@ async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
     const acceleratorSignal = signal ? AbortSignal.any([signal, acceleratorTimeout]) : acceleratorTimeout;
     await downloadVerifiedFile(VULKAN_LLAMA_RELEASE.url, archivePath, VULKAN_LLAMA_RELEASE.sha256, onProgress, acceleratorSignal);
     signal?.throwIfAborted();
-    return extractVulkanRuntime(archivePath, runtimeDirectory);
+    return extractVulkanRuntime(archivePath, runtimeDirectory, runFile, acceleratorSignal);
 }
 
 async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onProjectorProgress, signal) {
@@ -224,15 +228,15 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
 }
 
 function installWindowsLocalAiRuntime() {
-    if (process.platform !== 'win32') return;
+    if (process.platform !== 'win32' || process.arch !== 'x64') return;
 
     const runtime = require('./native-ai-runtime');
     if (runtime.__windowsXetPatched) return;
     const originalEnsureLlamaModel = runtime.ensureLlamaModel.bind(runtime);
     const originalEnsureNativeBinary = runtime.ensureNativeBinary.bind(runtime);
 
-    runtime.ensureNativeBinary = async (type, onProgress, signal) => {
-        if (type !== 'llama') return originalEnsureNativeBinary(type, onProgress, signal);
+    runtime.ensureNativeBinary = async (type, onProgress, signal, { cpuOnly = false } = {}) => {
+        if (type !== 'llama' || cpuOnly) return originalEnsureNativeBinary(type, onProgress, signal);
         try {
             return await ensureVulkanLlamaRuntime(runtime, onProgress, signal);
         } catch (error) {

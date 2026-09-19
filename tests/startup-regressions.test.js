@@ -121,7 +121,7 @@ test('Gemini Live setup retries once without Search after a setup-level WebSocke
     assert.equal(result.search.effective, false);
     assert.equal(result.search.status, 'live-setup-fallback');
     assert.equal(f.preferences.googleSearchEnabled, true, 'saved Search preference is unchanged');
-    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying this session without Search/i.test(value)));
+    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying Gemini Live without Search/i.test(value)));
 });
 
 test('Gemini Live setup retries with core config after a setup-level 1011 without Search', async t => {
