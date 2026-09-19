@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 const {
     boundedFetch,
@@ -14,7 +15,7 @@ const {
 } = require('../src/utils/windowsProviderTransport');
 const { loadMain } = require('./helpers/native-boundary');
 const { mixPcm16 } = loadMain('src/utils/windowsRuntimeMain.js');
-const { normalizeEtag, parseModelReference } = loadMain('src/utils/windowsLocalAiRuntime.js');
+const { normalizeEtag, parseModelReference, extractVulkanRuntime, VULKAN_LLAMA_RELEASE } = loadMain('src/utils/windowsLocalAiRuntime.js');
 
 function read(relativePath) {
     return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
@@ -123,6 +124,31 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
     });
     assert.throws(() => parseModelReference('../bad:Q4'), /unsupported|unsafe|format/i);
     assert.throws(() => parseModelReference('owner/..:Q4'), /unsupported|unsafe|format/i);
+});
+
+test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime', () => {
+    assert.equal(VULKAN_LLAMA_RELEASE.tag, 'b10964');
+    assert.equal(VULKAN_LLAMA_RELEASE.sha256, '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642');
+    assert.match(VULKAN_LLAMA_RELEASE.url, /^https:\/\/github\.com\/ggml-org\/llama\.cpp\/releases\/download\/b10964\//);
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'contexthalo-vulkan-'));
+    const runtimeDirectory = path.join(tempRoot, 'runtime');
+    try {
+        const spawn = (command, args) => {
+            assert.equal(command, 'tar.exe');
+            const target = args[args.indexOf('-C') + 1];
+            fs.mkdirSync(target, { recursive: true });
+            fs.writeFileSync(path.join(target, 'llama-server.exe'), 'server');
+            fs.writeFileSync(path.join(target, 'ggml-vulkan.dll'), 'vulkan');
+            return { status: 0 };
+        };
+        const executable = extractVulkanRuntime(path.join(tempRoot, 'runtime.zip'), runtimeDirectory, spawn);
+        assert.equal(path.basename(executable), 'llama-server.exe');
+        assert.equal(fs.existsSync(path.join(runtimeDirectory, 'ggml-vulkan.dll')), true);
+        assert.equal(fs.readFileSync(path.join(runtimeDirectory, '.archive-sha256'), 'utf8'), VULKAN_LLAMA_RELEASE.sha256);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
 });
 
 test('Windows security and packaging configuration are enabled together', () => {
