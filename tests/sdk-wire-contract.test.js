@@ -42,10 +42,9 @@ const transport = require('../src/utils/windowsProviderTransport');
 for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 ${scenario} preserves provider backoff and the typed request`, { skip: !available, timeout: 5000 }, async t => {
     const { GoogleGenAI, Modality } = require('@google/genai');
     const received = [];
-    const urls = [];
+    const providerUrls = [];
     const server = http.createServer(async (request, response) => {
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
-        urls.push(request.url);
         received.push(JSON.parse(Buffer.concat(chunks).toString()));
         response.setHeader('content-type', 'application/json');
         if (scenario === 'retry-after' || received.length < 3) {
@@ -63,7 +62,11 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     // Keep the production URL through the real transport classifier. Only the
     // final socket destination is redirected to loopback; no provider is called.
-    transport.setFetchImplementationForTests((input, init) => nativeFetch(baseUrl + new URL(input).pathname, init));
+    transport.setFetchImplementationForTests((input, init) => {
+        const url = new URL(input);
+        providerUrls.push(url.pathname + url.search);
+        return nativeFetch(baseUrl + url.pathname, init);
+    });
     global.fetch = transport.boundedFetch;
     t.after(() => {
         global.fetch = originalFetch; transport.setFetchImplementationForTests(originalFetch);
@@ -85,7 +88,7 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
         assert.equal(result.success, true, result.error);
         assert.equal(result.text, 'Recovered answer');
         assert.equal(received.length, 3);
-        assert.ok(urls.every(url => /:streamGenerateContent\?alt=sse$/.test(url)), 'typed Gemini uses the SDK streaming endpoint');
+        assert.ok(providerUrls.every(url => /:streamGenerateContent\?alt=sse$/.test(url)), 'typed Gemini uses the SDK streaming endpoint');
         assert.equal(received[2].generationConfig.thinkingConfig.thinkingLevel, 'low');
         assert.deepEqual(received[0], received[2], 'retries keep the exact model, question, context and Search policy');
         assert.ok(received[2].tools.some(tool => tool.googleSearch));
