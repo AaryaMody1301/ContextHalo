@@ -1,9 +1,6 @@
 name: Maintain ContextHalo branches and releases
 
 on:
-  push:
-    branches: [fix/startup-regressions-and-retention]
-    paths: [scripts/repository-maintenance.js]
   workflow_run:
     workflows: [Build ContextHalo Windows Portable EXE]
     types: [completed]
@@ -25,13 +22,13 @@ concurrency:
 
 jobs:
   maintain:
-    if: github.repository == 'AaryaMody1301/ContextHalo' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    if: github.repository == 'AaryaMody1301/ContextHalo' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -41,7 +38,7 @@ jobs:
       - name: Prune merged branches and retain recent build releases
         env:
           GH_TOKEN: ${{ github.token }}
-          APPLY: ${{ github.event_name != 'workflow_dispatch' || inputs.apply }}
+          APPLY: ${{ github.event_name == 'workflow_run' || inputs.apply }}
         run: |
           if [ "$APPLY" = "true" ]; then
             node scripts/repository-maintenance.js --apply
