@@ -155,7 +155,7 @@ export class ContextHaloApp extends LitElement {
             overflow: hidden;
             border: 2px solid rgba(255, 255, 255, 0.18);
             border-radius: 11px;
-            background: var(--bg-app);
+            background: var(--window-background, var(--bg-app));
         }
 
         .top-drag-bar {
@@ -364,11 +364,11 @@ export class ContextHaloApp extends LitElement {
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            background: var(--bg-app);
+            background: transparent;
         }
 
         /* A single alpha surface; child backgrounds must not compound it. */
-        .app-shell.live-hud { background: var(--hud-background, rgba(10,10,10,0.8)); }
+        .app-shell.live-hud { background: var(--window-background, var(--hud-background, rgba(10,10,10,0.8))); }
         .live-hud .content, .content-inner.live { background: transparent; }
         .live-bar {
             display: grid;
@@ -476,7 +476,7 @@ export class ContextHaloApp extends LitElement {
             position: fixed;
             inset: 0;
             z-index: 100;
-            background: var(--bg-app);
+            background: var(--window-background, var(--bg-app));
         }
 
         .startup-shell {
@@ -484,7 +484,7 @@ export class ContextHaloApp extends LitElement {
             height: 100%;
             display: grid;
             place-items: center;
-            background: var(--bg-app);
+            background: var(--window-background, var(--bg-app));
             color: var(--text-primary);
         }
 
