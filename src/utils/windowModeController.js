@@ -122,7 +122,7 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         mainWindow.setContentProtection(true);
         mainWindow.setAlwaysOnTop(false);
         setSkipTaskbar(mainWindow, false);
-        setBackgroundMaterial(mainWindow, 'mica');
+        setBackgroundMaterial(mainWindow, 'none');
 
         if (hudActive && normalBounds) {
             const display = getDisplayForBounds(screen, normalBounds);
@@ -163,7 +163,7 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         mainWindow.setBounds(clampBoundsToWorkArea(normalBounds, display.workArea), false);
     }
     mainWindow.setContentProtection(true);
-    setBackgroundMaterial(mainWindow, 'mica');
+    setBackgroundMaterial(mainWindow, 'none');
 
     return {
         rememberBounds,
