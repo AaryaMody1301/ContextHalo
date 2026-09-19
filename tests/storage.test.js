@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-test('storage v6 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
+test('storage v7 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -53,7 +53,7 @@ test('storage v6 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 6);
+    assert.equal(config.configVersion, 7);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live');
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
@@ -75,6 +75,34 @@ test('storage v6 migration upgrades provider models without deleting user data',
 
     storage.updatePreference('providerMode', 'cloud');
     assert.equal(storage.getPreferences().providerMode, 'byok');
+});
+
+test('storage v7 migrates persisted Gemini 2.5 defaults and the old Local AI default', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-v7-'));
+    const originalHomedir = os.homedir;
+    os.homedir = () => tempHome;
+    const storagePath = require.resolve('../src/storage');
+    delete require.cache[storagePath];
+    const storage = require(storagePath);
+    t.after(() => {
+        delete require.cache[storagePath];
+        os.homedir = originalHomedir;
+        fs.rmSync(tempHome, { recursive: true, force: true });
+    });
+    const configDir = storage.getConfigDir();
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({
+        configVersion: 6, onboarded: true,
+        geminiLiveModel: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        geminiHttpModel: 'gemini-2.5-flash',
+    }));
+    fs.writeFileSync(path.join(configDir, 'preferences.json'), JSON.stringify({
+        localLlmModel: 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M',
+    }));
+    storage.initializeStorage();
+    assert.equal(storage.getConfig().geminiLiveModel, 'gemini-3.8-live');
+    assert.equal(storage.getConfig().geminiHttpModel, 'gemini-3.8-flash');
+    assert.equal(storage.getPreferences().localLlmModel, 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M');
 });
 
 test('storage preserves a supported explicitly configured Gemini 3.7 model', { concurrency: false }, t => {
@@ -109,8 +137,8 @@ test('storage preserves a supported explicitly configured Gemini 3.7 model', { c
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 6);
-    assert.equal(config.geminiLiveModel, 'gemini-3.1-flash-live-preview', 'explicit supported legacy Live selections are preserved');
+    assert.equal(config.configVersion, 7);
+    assert.equal(config.geminiLiveModel, 'gemini-3.8-live', 'legacy Live selections migrate to the current stable low-latency model');
     assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
 });
 
