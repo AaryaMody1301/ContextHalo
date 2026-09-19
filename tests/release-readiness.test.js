@@ -103,6 +103,8 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.match(storage, /groqTranscriptionModel: 'whisper-large-v3-turbo'/);
     assert.match(storage, /RETIRED_GEMINI_HTTP_MODELS[\s\S]{0,300}'gemini-2\.5-flash'/);
     assert.match(storage, /localLlmModel: 'unsloth\/Qwen3\.5-2B-GGUF:Q4_K_M'/);
+    assert.doesNotMatch(read('src/utils/renderer.js'), /localLlmModel \|\| 'unsloth\/Qwen3\.5-4B-GGUF:Q4_K_M'/);
+    assert.doesNotMatch(read('src/components/views/MainView.js'), /prefs\.localLlmModel \|\| 'unsloth\/Qwen3\.5-4B-GGUF:Q4_K_M'/);
 });
 
 test('local model errors describe the supported projector fallback rather than BF16 only', () => {
