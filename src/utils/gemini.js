@@ -24,6 +24,7 @@ let mainSessionActive = false;
 let providerUiEpoch;
 let lastGeminiFailure = null;
 let searchState = { requested: false, effective: false, status: 'off' };
+let liveSetupCompatibility = false;
 const geminiCooldowns = new Map();
 
 
@@ -195,6 +196,33 @@ function configureSearch(provider, override) {
     sendToRenderer('search-state', { ...searchState });
 }
 
+function disableLiveSearchForSetupCompatibility() {
+    if (!searchState.effective) return;
+    searchState = { ...searchState, effective: false, status: 'live-setup-fallback' };
+    sendToRenderer('search-state', { ...searchState });
+    sendToRenderer('update-status', 'Gemini Live rejected Search during session setup. Retrying this session without Search; your saved preference is unchanged.');
+}
+
+function shouldRetryLiveSetupWithoutSearch(error) {
+    if (!searchState.effective) return false;
+    const failure = classifyGeminiFailure(error, 'live');
+    if (failure.stage !== 'setup') return false;
+    return ['unsupported-tool', 'invalid-configuration', 'quota-exhausted', 'rate-or-quota'].includes(failure.category)
+        || [1007, 1008, 1011].includes(failure.socketCode);
+}
+
+function shouldRetryLiveSetupWithCoreConfig(error) {
+    if (liveSetupCompatibility) return false;
+    const failure = classifyGeminiFailure(error, 'live');
+    return failure.stage === 'setup' && (failure.category === 'invalid-configuration'
+        || [1007, 1008, 1011].includes(failure.socketCode));
+}
+
+function enableLiveSetupCompatibility() {
+    liveSetupCompatibility = true;
+    sendToRenderer('update-status', 'Gemini Live rejected optional session-management setup. Retrying this session with the core Live configuration.');
+}
+
 async function getEnabledTools() {
     return searchState.effective ? [{ googleSearch: {} }] : [];
 }
@@ -254,7 +282,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         if (Number.isFinite(seconds) && seconds >= 0) retryAfterMs = Math.max(retryAfterMs || 0, Math.ceil(seconds * 1000));
     }
     const cancelled = chain.some(value => value?.name === 'AbortError') && !/timed?\s*out|timeout/i.test(text);
-    const quota = /quota_exceeded|per.?day|daily|per.?month|monthly|limit[: =]+0\b/.test(combined);
+    const quota = /quota_exceeded|quota.{0,24}exceeded|exceeded.{0,24}quota|per.?day|daily|per.?month|monthly|limit[: =]+0\b/.test(combined);
     const throttled = /rate_limit_exceeded|per.?minute|per.?second|requestsperminute|tokensperminute/.test(combined);
     const searchRelated = /google.?search|grounding/.test(combined);
     let category = 'unknown';
@@ -263,8 +291,8 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     else if (httpStatus === 407) category = 'proxy-authentication';
     else if (httpStatus === 401 || /unauthenticated|api.?key.?invalid|api key not valid/.test(text)) category = 'authentication';
     else if (httpStatus === 403 || /permission_denied|forbidden/.test(text)) category = 'permission';
-    else if (httpStatus === 429 || /resource[_ -]?exhausted|quota_exceeded|rate_limit_exceeded/.test(text)) {
-        category = quota ? 'quota-exhausted' : throttled || retryAfterMs !== null ? 'throttled' : 'rate-or-quota';
+    else if (httpStatus === 429 || /resource[_ -]?exhausted|quota_exceeded|quota.{0,24}exceeded|exceeded.{0,24}quota|rate_limit_exceeded/.test(text)) {
+        category = throttled ? 'throttled' : quota ? 'quota-exhausted' : retryAfterMs !== null ? 'throttled' : 'rate-or-quota';
     } else if (httpStatus === 404 || /model_not_found|model.+not found/.test(text)) category = 'model-unavailable';
     else if (httpStatus === 409 && /\baborted\b/.test(text) && !/already[_ -]?exists/.test(text)) category = 'aborted-conflict';
     else if (httpStatus === 409) category = 'state-conflict';
@@ -879,9 +907,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         });
     }
     const current = () => generation === liveGeneration && !signal.aborted;
-    currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
-    let instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt), getPreferences().responseMode);
-    instruction = appendContextToInstruction(instruction, retrieveContext('', { limit: 4, maxChars: 6500 }));
+    const buildInstruction = () => {
+        currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
+        let value = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt), getPreferences().responseMode);
+        return appendContextToInstruction(value, retrieveContext('', { limit: 4, maxChars: 6500 }));
+    };
+    let instruction = buildInstruction();
     publishProviderState(isReconnect ? 'reconnecting' : 'connecting');
     try {
         if (!isReconnect) {
@@ -971,7 +1002,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             if (!liveSessionReady) { if (setupMessages.length < 64) setupMessages.push(message); return; }
             runtimeCallbacks.onmessage(message);
         } };
-        const tools = await getEnabledTools();
+        let tools = await getEnabledTools();
         let session;
         for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
             const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
@@ -979,13 +1010,35 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 const contextMessage = isReconnect && !reliabilityConfig.sessionResumption?.handle ? buildContextMessage() : null;
                 session = await runGeminiRequest(async (remaining, _attempt, operationSignal) => {
                     setupMessages = [];
-                    const connected = await connectGeminiLiveWithGuard(client, {
+                    const connect = () => connectGeminiLiveWithGuard(client, {
                         model: liveModel, callbacks,
                         config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                            ...reliabilityConfig,
+                            ...(!liveSetupCompatibility ? reliabilityConfig : {}),
                             ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
                             systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
                     }, Math.min(15000, remaining), operationSignal);
+                    let connected;
+                    let setupError;
+                    try {
+                        connected = await connect();
+                    } catch (error) {
+                        setupError = error;
+                    }
+                    if (!connected && shouldRetryLiveSetupWithoutSearch(setupError)) {
+                        disableLiveSearchForSetupCompatibility();
+                        tools = [];
+                        instruction = buildInstruction();
+                        setupMessages = [];
+                        operationSignal.throwIfAborted();
+                        try { connected = await connect(); } catch (error) { setupError = error; }
+                    }
+                    if (!connected && shouldRetryLiveSetupWithCoreConfig(setupError)) {
+                        enableLiveSetupCompatibility();
+                        setupMessages = [];
+                        operationSignal.throwIfAborted();
+                        connected = await connect();
+                    }
+                    if (!connected) throw setupError;
                     if (contextMessage) {
                         try {
                             connected.sendClientContent({
@@ -1225,6 +1278,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 liveController = new AbortController();
                 isUserClosing = false;
                 isInitializingSession = false;
+                liveSetupCompatibility = false;
                 resetSessionRequests();
                 const local = channel === 'initialize-local';
                 const mode = local ? 'local' : args[3] === 'groq' ? 'groq' : 'byok';
