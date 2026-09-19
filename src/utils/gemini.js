@@ -73,6 +73,8 @@ const GROQ_MAX_HISTORY_MESSAGES = 8;
 const GROQ_MAX_HISTORY_CHARS = 12000;
 const GROQ_MAX_SYSTEM_PROMPT_CHARS = 6000;
 const GROQ_AUDIO_CHUNK_SECONDS = 8;
+const LIVE_RECONNECT_CONTEXT_MAX_CHARS = 16000;
+const LIVE_RECONNECT_TURN_PART_MAX_CHARS = 2500;
 let groqSystemAudioBuffer = Buffer.alloc(0);
 let groqTranscriptionInFlight = false;
 let groqRateLimitState = null;
@@ -96,14 +98,28 @@ function sendToRenderer(channel, data, metadata = getRequestMetadata()) {
 
 // Build context message for session restoration
 function buildContextMessage() {
-    const lastTurns = conversationHistory.slice(-20);
-    const validTurns = lastTurns.filter(turn => turn.transcription?.trim() && turn.ai_response?.trim());
+    const header = "Session reconnected. Here's the recent conversation:";
+    const footer = 'Continue from here.';
+    const blocks = [];
+    let chars = header.length + footer.length + 4;
 
-    if (validTurns.length === 0) return null;
+    // Replay only recent bounded context when a provider resumption handle is not
+    // available. Full history remains persisted locally for History.
+    for (let index = conversationHistory.length - 1; index >= 0 && blocks.length < 20; index--) {
+        const turn = conversationHistory[index];
+        const transcription = String(turn?.transcription || '').trim();
+        const answer = String(turn?.ai_response || '').trim();
+        if (!transcription || !answer) continue;
+        const clippedQuestion = transcription.slice(-LIVE_RECONNECT_TURN_PART_MAX_CHARS);
+        const clippedAnswer = answer.slice(-LIVE_RECONNECT_TURN_PART_MAX_CHARS);
+        const block = `[Interviewer]: ${clippedQuestion}\n[Your answer]: ${clippedAnswer}`;
+        if (blocks.length && chars + block.length + 2 > LIVE_RECONNECT_CONTEXT_MAX_CHARS) break;
+        blocks.unshift(block);
+        chars += block.length + 2;
+    }
 
-    const contextLines = validTurns.map(turn => `[Interviewer]: ${turn.transcription.trim()}\n[Your answer]: ${turn.ai_response.trim()}`);
-
-    return `Session reconnected. Here's the conversation so far:\n\n${contextLines.join('\n\n')}\n\nContinue from here.`;
+    if (!blocks.length) return null;
+    return `${header}\n\n${blocks.join('\n\n')}\n\n${footer}`;
 }
 
 // Conversation management functions
@@ -932,6 +948,8 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     if (!isReconnect) {
         geminiLiveRuntime?.stop();
         geminiLiveRuntime = null;
+        // A one-session compatibility fallback must not poison later sessions.
+        liveSetupCompatibility = false;
         sessionParams = { apiKey, customPrompt, profile, language, provider: 'byok' };
     }
     let liveSessionReady = false;
