@@ -100,3 +100,26 @@ test('startup diagnostics distinguish DNS and TLS failures without returning raw
     }
     assert.equal(f.api.classifyGeminiFailure({ status: 407 }).category, 'proxy-authentication');
 });
+
+
+test('Gemini Live setup retries once without Search after a setup-level WebSocket 1011', async t => {
+    const f = geminiFixture({ search: true, live: async (params, attempt) => {
+        if (attempt === 1) {
+            params.callbacks.onopen?.({});
+            params.callbacks.onclose?.({ code: 1011, reason: 'internal setup failure' });
+            return new Promise(() => {});
+        }
+        return { close() {}, sendRealtimeInput() {}, sendClientContent() {} };
+    } });
+    t.after(() => f.close());
+    const result = await f.start('byok', { uiEpoch: 23 });
+    assert.equal(result.success, true, result.error);
+    assert.equal(f.connections.length, 2);
+    assert.equal(JSON.stringify(f.connections[0].config.tools), JSON.stringify([{ googleSearch: {} }]));
+    assert.equal(f.connections[1].config.tools, undefined);
+    assert.equal(result.search.requested, true);
+    assert.equal(result.search.effective, false);
+    assert.equal(result.search.status, 'live-setup-fallback');
+    assert.equal(f.preferences.googleSearchEnabled, true, 'saved Search preference is unchanged');
+    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying this session without Search/i.test(value)));
+});
