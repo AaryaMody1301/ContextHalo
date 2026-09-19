@@ -32,10 +32,22 @@ function geminiFixture(options = {}) {
     const readySession = { close() {}, sendRealtimeInput: data => realtime.push(data), sendClientContent: data => clientContent.push(data) };
     class AI {
         constructor(params) { clients.push(params); }
-        models = { generateContent: async params => {
-            generated.push(params);
-            return options.generate ? options.generate(params, generated.length) : { text: 'The answer' };
-        } };
+        models = {
+            generateContent: async params => {
+                generated.push(params);
+                return options.generate ? options.generate(params, generated.length) : { text: 'The answer' };
+            },
+            generateContentStream: async params => {
+                generated.push(params);
+                const response = options.generate ? await options.generate(params, generated.length) : { text: 'The answer' };
+                if (response && typeof response[Symbol.asyncIterator] === 'function') return response;
+                async function* chunks() {
+                    if (Array.isArray(response?.chunks)) { for (const chunk of response.chunks) yield chunk; }
+                    else yield response;
+                }
+                return chunks();
+            },
+        };
         live = { connect: async params => {
             connections.push(params);
             return options.live ? options.live(params, connections.length) : readySession;

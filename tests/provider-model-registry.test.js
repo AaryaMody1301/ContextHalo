@@ -27,6 +27,8 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             displayName: 'Gemini 3.8 Flash',
             supportedGenerationMethods: ['generateContent', 'countTokens'],
         },
+        { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro Preview', supportedGenerationMethods: ['generateContent'] },
         {
             name: 'models/gemini-embedding-2',
             displayName: 'Gemini Embedding 2',
@@ -36,6 +38,8 @@ test('Gemini catalog separates Live and generateContent models from API metadata
 
     assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
     assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
+    assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
+    assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');
     assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
 });
@@ -58,7 +62,8 @@ test('Gemini Omni is never offered as an interview Live model', () => {
     ]);
 
     assert.equal(catalog.live.some(model => model.id === 'gemini-omni-1.1-flash'), false);
-    assert.equal(catalog.recommended.live, 'example-live-preview');
+    assert.equal(catalog.live.some(model => model.id === 'example-live-preview'), false);
+    assert.equal(catalog.recommended.live, null);
 });
 
 test('Groq catalog keeps active task models and recommends the lower-latency vision default', () => {

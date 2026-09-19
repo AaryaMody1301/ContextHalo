@@ -71,9 +71,17 @@ test('Live ErrorEvent preserves nested authentication failure instead of calling
     });
 });
 
+test('current Gemini 3.8 Live starts without a blocking advisory model-list request', async t => {
+    const f = geminiFixture({ catalog: async () => { throw new Error('catalog should not block current stable Live'); } });
+    t.after(() => f.close());
+    const result = await f.start();
+    assert.equal(result.success, true, result.error);
+    assert.equal(f.connections.length, 1);
+});
+
 test('ending a session during model discovery promptly releases Start and permits another provider', async t => {
     let release;
-    const f = geminiFixture({ catalog: () => new Promise(resolve => { release = resolve; }) });
+    const f = geminiFixture({ config: { geminiLiveModel: 'gemini-3.1-flash-live-preview' }, catalog: () => new Promise(resolve => { release = resolve; }) });
     t.after(() => f.close());
     const pending = f.start(); await tick(); await f.close();
     let completed = false; pending.then(() => { completed = true; });

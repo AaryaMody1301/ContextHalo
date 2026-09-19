@@ -1,5 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const {loadMain}=require('./helpers/native-boundary');
 const requests=require('../src/utils/sessionRequests');
 
@@ -70,4 +71,12 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     assert.equal(result.success, true);
     assert.equal(result.model, 'my-selected-model');
     assert.equal(bodies[0].messages.at(-1).content, question, 'a long current question must never be silently truncated');
+});
+
+
+test('fast local presets use a smaller native context and current Vulkan cache reuse', () => {
+    const source = fs.readFileSync('src/utils/localai.js', 'utf8');
+    assert.match(source, /LOCAL_FAST_CONTEXT_TOKENS = 4096/);
+    assert.match(source, /Qwen3\.5-\(\?:0\.8B\|2B\)/);
+    assert.match(source, /argumentsList\.push\('--cache-reuse', '256'\)/);
 });

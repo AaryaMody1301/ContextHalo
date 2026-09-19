@@ -36,6 +36,7 @@ const LOCAL_MAX_HISTORY_MESSAGES = 8;
 const LOCAL_MAX_HISTORY_CHARS = 9000;
 const LOCAL_MAX_OUTPUT_TOKENS = 768;
 const LOCAL_CONTEXT_TOKENS = 8192;
+const LOCAL_FAST_CONTEXT_TOKENS = 4096;
 
 const VAD_MODES = {
     NORMAL: { energyThreshold: 0.01, speechFramesRequired: 3, silenceFramesRequired: 30 },
@@ -378,6 +379,10 @@ async function startWhisperServer(executablePath, modelPath, signal) {
     await waitForServer(`${whisperBaseUrl}/`, whisperProcess, 120000, signal);
 }
 
+function localContextTokens(modelReference) {
+    return /Qwen3\.5-(?:0\.8B|2B)-/i.test(String(modelReference || '')) ? LOCAL_FAST_CONTEXT_TOKENS : LOCAL_CONTEXT_TOKENS;
+}
+
 async function startLlamaServer(executablePath, modelPath, projectorPath, signal) {
     if (!modelPath || !fs.existsSync(modelPath)) {
         throw new Error(`Language model path is invalid: ${modelPath}`);
@@ -395,13 +400,15 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
         '--alias',
         'local',
         '-c',
-        String(LOCAL_CONTEXT_TOKENS),
+        String(localContextTokens(llamaModel)),
         '-m',
         modelPath,
         '--mmproj',
         projectorPath,
     ];
-
+    // The pinned official Vulkan runner supports cache-reuse. Keep the old CPU
+    // fallback's conservative CLI untouched because its flag surface predates it.
+    if (/vulkan/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
 
     llamaBaseUrl = `http://127.0.0.1:${port}`;
     llamaProcess = startNativeServer({

@@ -19,6 +19,22 @@ test('typed Gemini uses selected HTTP model and session context without muting l
     assert.ok(f.events.some(([channel,,metadata])=>channel==='new-response' && metadata.kind==='text'));
     lifecycle.closeSessionRequests();
 });
+test('typed Gemini streams partial text immediately and keeps balanced mode at low thinking', async () => {
+    const f=fixture({ model:'gemini-3.8-flash', generate: async () => ({ chunks:[
+        { text:'First ' }, { text:'token' },
+    ] }) });
+    const start=await f.handlers.get('initialize-gemini')(f.event,'','meeting','en-US','byok');
+    assert.equal(start.success,true);
+    const result=await f.handlers.get('send-text-message')(f.event,'Be fast');
+    assert.equal(result.success,true);
+    assert.equal(result.text,'First token');
+    assert.equal(f.generated[0].config.thinkingConfig.thinkingLevel,'low');
+    const responseEvents=f.events.filter(([channel])=>channel==='new-response'||channel==='update-response');
+    assert.ok(responseEvents.some(([channel,text])=>channel==='new-response'&&text==='First '));
+    assert.ok(responseEvents.some(([channel,text])=>channel==='update-response'&&text==='First token'));
+    lifecycle.closeSessionRequests();
+});
+
 test('Live saves final transcription only at turn completion and does not concatenate duplicate text modalities', async () => {
     const f=fixture();
     await f.handlers.get('initialize-gemini')(f.event,'','meeting','en-US','byok');

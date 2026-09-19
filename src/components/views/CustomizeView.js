@@ -700,7 +700,7 @@ export class CustomizeView extends LitElement {
                             .value=${this.backgroundTransparency}
                             @input=${this.handleBackgroundTransparencyChange}
                         />
-                        <div class="form-hint">0% is transparent; 100% is opaque. Text and controls stay solid. Normal pages are unaffected.</div>
+                        <div class="form-hint">0% is transparent; 100% is opaque. The window background changes while text and controls stay solid.</div>
                     </div>
                     <div class="form-group slider-wrap">
                         <div class="slider-header">
