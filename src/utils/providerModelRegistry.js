@@ -49,14 +49,21 @@ function normalizeGeminiModel(raw) {
 
 function buildGeminiCatalog(rawModels) {
     const all = sortModels(rawModels.map(normalizeGeminiModel).filter(Boolean));
-    // The method list is authoritative for capability, but explicitly exclude
-    // Omni video-generation models from interview Live recommendations. Omni is
-    // documented as text/image/video -> video and is not the audio dialogue model.
-    const live = all.filter(model => model.methods.includes('bidiGenerateContent') && !/^gemini-omni-/i.test(model.id));
+    // ContextHalo exposes only the documented interactive model families for
+    // interview use. The raw provider catalog can also contain image/video,
+    // Pro, legacy and specialized models that do not belong in these pickers.
+    const liveIds = new Set(['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
+    const live = all.filter(model => model.methods.includes('bidiGenerateContent') && liveIds.has(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
-    const screen = generate.filter(
-        model => !/(embedding|imagen|veo|lyria|tts|transcribe|robotics|computer-use|(?:^|-)image(?:-|$))/i.test(model.id)
-    );
+    const screenIds = new Set([
+        'gemini-3.8-flash',
+        'gemini-3.7-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+    ]);
+    const screen = generate.filter(model => screenIds.has(model.id) && !model.preview);
 
     const pick = (list, preferredIds) => {
         for (const id of preferredIds) {
