@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { randomUUID } = require('node:crypto');
 
-const CONFIG_VERSION = 6;
+const CONFIG_VERSION = 7;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
@@ -28,7 +28,8 @@ const DEFAULT_PREFERENCES = {
     fontSize: 20,
     backgroundTransparency: 0.8,
     googleSearchEnabled: false,
-    localLlmModel: 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M',
+    localLlmModel: 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M',
+    localModelDefaultVersion: 1,
     whisperModel: 'tiny.en',
 };
 const DEFAULT_KEYBINDS = null;
@@ -37,11 +38,16 @@ const DEFAULT_LIMITS = { data: [] };
 const RETIRED_GEMINI_LIVE_MODELS = new Set([
     'gemini-live-2.5-flash',
     'gemini-2.5-flash-native-audio-preview-09-2025',
+    'gemini-2.5-flash-native-audio-preview-12-2025',
+    'gemini-3.1-flash-live-preview',
     'gemini-2.0-flash-live-001',
 ]);
 const RETIRED_GEMINI_HTTP_MODELS = new Set([
     'gemini-2.0-flash',
     'gemini-2.0-flash-001',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro',
 ]);
 const LEGACY_WHISPER_MODELS = {
     'Xenova/whisper-tiny': 'tiny.en',
@@ -218,6 +224,13 @@ function migratePreferences(rawPreferences = {}) {
 
     preferences.fontSize = normalizeFontSize(preferences.fontSize);
     preferences.whisperModel = LEGACY_WHISPER_MODELS[preferences.whisperModel] || preferences.whisperModel || DEFAULT_PREFERENCES.whisperModel;
+    // Qwen 3.5 4B was the old implicit default. Move only that old default to
+    // the faster 2B preset once; custom/explicit alternatives remain untouched.
+    if ((Number(source.localModelDefaultVersion) || 0) < 1
+        && (!source.localLlmModel || source.localLlmModel === 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M')) {
+        preferences.localLlmModel = DEFAULT_PREFERENCES.localLlmModel;
+    }
+    preferences.localModelDefaultVersion = 1;
 
     if (typeof preferences.googleSearchEnabled === 'string') {
         preferences.googleSearchEnabled = preferences.googleSearchEnabled === 'true';
