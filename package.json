@@ -15,7 +15,6 @@
     "scripts": {
         "start": "electron .",
         "package": "electron-builder --dir --win --x64 --publish never",
-        "make": "npm run build:portable",
         "build:portable": "electron-builder --win portable --x64",
         "check": "node scripts/check-source.js",
         "lint": "npm run check",
