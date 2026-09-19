@@ -393,7 +393,7 @@ async function initializeGemini(profile = 'interview', language = 'en-US', optio
 
 async function initializeLocal(profile = 'interview', language = 'en-US', options = {}) {
     const prefs = await storage.getPreferences();
-    const localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
+    const localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
     const whisperModel = prefs.whisperModel || 'tiny.en';
     const customPrompt = prefs.customPrompt || '';
 
