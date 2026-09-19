@@ -77,6 +77,6 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
 test('fast local presets use a smaller native context and current Vulkan cache reuse', () => {
     const source = fs.readFileSync('src/utils/localai.js', 'utf8');
     assert.match(source, /LOCAL_FAST_CONTEXT_TOKENS = 4096/);
-    assert.match(source, /Qwen3\\.5-\(\?:0\\.8B\|2B\)/);
-    assert.match(source, /argumentsList\\.push\('--cache-reuse', '256'\)/);
+    assert.match(source, /Qwen3\.5-\(\?:0\.8B\|2B\)/);
+    assert.match(source, /argumentsList\.push\('--cache-reuse', '256'\)/);
 });
