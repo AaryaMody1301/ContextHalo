@@ -380,6 +380,10 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 if (signal?.aborted) throw signal.reason;
                 if (operationSignal.aborted) throw failureError(classifyGeminiFailure(operationSignal.reason, operation, model));
                 const failure = classifyGeminiFailure(error, operation, model, now());
+                // Once a streaming response has rendered tokens, retrying the same
+                // request would duplicate visible output. Pre-response failures keep
+                // the normal bounded retry policy.
+                if (error?.noRetryAfterPartial) throw failureError(failure);
                 const backoff = failure.retryAfterMs ?? Math.round(Math.min(10000, (httpOperation ? 1000 : 600) * 2 ** attempt) + random() * (httpOperation ? 250 : 300));
                 // A final short-term failure also gates rapid user actions/reconnects.
                 if (failure.retryable && failure.retryAt === null) failure.retryAt = now() + backoff;
@@ -411,6 +415,40 @@ function groundingFromResponse(response) {
     return { sources, supports: (value.groundingSupports || []).slice(0, 256),
         queries: (value.webSearchQueries || []).slice(0, 32).map(query => String(query).slice(0, 1000)),
         renderedContent: String(value.searchEntryPoint?.renderedContent || '').slice(0, 128000) };
+}
+
+function interactiveGeminiThinkingConfig(model, modeId = 'balanced') {
+    const low = screenThinkingConfig(model);
+    if (!low.thinkingConfig) return {};
+    return modeId === 'detailed' ? { thinkingConfig: { thinkingLevel: 'medium' } } : low;
+}
+
+async function generateGeminiStream(ai, params, requestOptions, onText) {
+    return runGeminiRequest(async (remaining, _attempt, operationSignal) => {
+        let text = '';
+        let grounding;
+        let emitted = false;
+        try {
+            const stream = await ai.models.generateContentStream({
+                ...params, config: { ...params.config, abortSignal: operationSignal,
+                    httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
+            });
+            for await (const chunk of stream) {
+                operationSignal.throwIfAborted();
+                const piece = String(chunk?.text || '');
+                grounding = groundingFromResponse(chunk) || grounding;
+                if (!piece) continue;
+                text += piece;
+                emitted = true;
+                onText?.(text, grounding);
+            }
+            if (!text.trim()) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
+            return { text: text.trim(), grounding };
+        } catch (error) {
+            if (emitted && error && typeof error === 'object') error.noRetryAfterPartial = true;
+            throw error;
+        }
+    }, requestOptions);
 }
 
 // helper to check if groq has been configured
@@ -935,9 +973,14 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         if (!isReconnect) {
             startTransportLog(String(Date.now()));
             logTransportEvent('gemini.live.start', { model: liveModel, operation: 'live' });
-            const preflight = await getGeminiLivePreflightError(apiKey, liveModel, signal);
-            signal.throwIfAborted();
-            if (preflight) throw preflight;
+            // The current stable default is already validated by Live setup. Avoid
+            // a second models.list network round trip on every cold start; retain
+            // advisory discovery for manually selected/legacy Live IDs.
+            if (liveModel !== 'gemini-3.8-live') {
+                const preflight = await getGeminiLivePreflightError(apiKey, liveModel, signal);
+                signal.throwIfAborted();
+                if (preflight) throw preflight;
+            }
         }
         const client = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
         const runtimeCallbacks = geminiLiveRuntime.callbacks({
@@ -1195,21 +1238,23 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     try {
         const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
         const tools = await getEnabledTools();
+        const mode = getResponseMode(getPreferences().responseMode);
         const params = augmentGenerateParams({
             model,
             contents: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }],
             config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.httpEffective)),
-                maxOutputTokens: 4096, ...screenThinkingConfig(model), ...(tools.length ? { tools } : {}) },
+                maxOutputTokens: mode.maxTokens, ...interactiveGeminiThinkingConfig(model, 'instant'), ...(tools.length ? { tools } : {}) },
         });
-        const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent({
-            ...params, config: { ...params.config, abortSignal: operationSignal,
-                httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
-        }), { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
+        let first = true;
+        const response = await generateGeminiStream(ai, params,
+            { operation: 'screen', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS },
+            (partial, grounding) => {
+                sendToRenderer(first ? 'new-response' : 'update-response', partial, { ...getRequestMetadata(), grounding, model });
+                first = false;
+            });
         assertCurrentRequest();
-        const text = response.text?.trim();
-        if (!text) throw new Error('Empty Gemini response');
-        const grounding = groundingFromResponse(response);
-        sendToRenderer('new-response', text, { ...getRequestMetadata(), grounding, model });
+        const { text, grounding } = response;
+        if (!first && grounding) sendToRenderer('update-response', text, { ...getRequestMetadata(), grounding, model });
         saveScreenAnalysis(prompt, text, model, grounding);
         incrementLimitCount(model);
         return { success: true, text, model, grounding };
@@ -1224,15 +1269,15 @@ async function sendTypedGeminiText(text) {
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
     const model = getAvailableModel();
     const session = require('../storage').getSession(currentSessionId);
-    const transcript = (session?.liveTranscript || []).slice(-30).map(item => item.text).join('\n').slice(-16000);
-    const history = conversationHistory.slice(-12).flatMap(turn => [
-        { role: 'user', parts: [{ text: String(turn.transcription || '').slice(-4000) }] },
-        { role: 'model', parts: [{ text: String(turn.ai_response || '').slice(-4000) }] },
+    const transcript = (session?.liveTranscript || []).slice(-12).map(item => item.text).join('\n').slice(-6000);
+    const history = conversationHistory.slice(-6).flatMap(turn => [
+        { role: 'user', parts: [{ text: String(turn.transcription || '').slice(-2500) }] },
+        { role: 'model', parts: [{ text: String(turn.ai_response || '').slice(-2500) }] },
     ]);
     const screenContext = screenAnalysisHistory.slice(-1).map(item => item.response).join('');
     const instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.'), getPreferences().responseMode)
         + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
-        + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-8000) : '');
+        + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-4000) : '');
     const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
     const tools = await getEnabledTools();
     const mode = getResponseMode(getPreferences().responseMode);
@@ -1240,17 +1285,18 @@ async function sendTypedGeminiText(text) {
         model,
         contents: [...history, { role: 'user', parts: [{ text }] }],
         config: { systemInstruction: instruction, maxOutputTokens: mode.maxTokens,
-            ...(mode.id === 'instant' ? screenThinkingConfig(model) : {}), ...(tools.length ? { tools } : {}) },
+            ...interactiveGeminiThinkingConfig(model, mode.id), ...(tools.length ? { tools } : {}) },
     });
-    const response = await runGeminiRequest((remaining, _attempt, operationSignal) => ai.models.generateContent({
-        ...params, config: { ...params.config, abortSignal: operationSignal,
-            httpOptions: { timeout: remaining, retryOptions: { attempts: 1 } } },
-    }), { operation: 'text', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS });
+    let first = true;
+    const response = await generateGeminiStream(ai, params,
+        { operation: 'text', model, apiKey, signal: getRequestSignal(), budgetMs: SCREEN_PROVIDER_BUDGET_MS },
+        (partial, grounding) => {
+            sendToRenderer(first ? 'new-response' : 'update-response', partial, { ...getRequestMetadata(), grounding, model });
+            first = false;
+        });
     assertCurrentRequest();
-    const answer = response.text?.trim();
-    if (!answer) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
-    const grounding = groundingFromResponse(response);
-    sendToRenderer('new-response', answer, { ...getRequestMetadata(), grounding, model });
+    const { text: answer, grounding } = response;
+    if (!first && grounding) sendToRenderer('update-response', answer, { ...getRequestMetadata(), grounding, model });
     saveConversationTurn(text, answer, grounding);
     incrementLimitCount(model);
     return { success: true, text: answer, model, grounding };
