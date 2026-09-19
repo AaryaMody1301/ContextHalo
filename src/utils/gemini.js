@@ -110,8 +110,8 @@ function buildContextMessage() {
         const transcription = String(turn?.transcription || '').trim();
         const answer = String(turn?.ai_response || '').trim();
         if (!transcription || !answer) continue;
-        const clippedQuestion = transcription.slice(-LIVE_RECONNECT_TURN_PART_MAX_CHARS);
-        const clippedAnswer = answer.slice(-LIVE_RECONNECT_TURN_PART_MAX_CHARS);
+        const clippedQuestion = transcription.slice(0, LIVE_RECONNECT_TURN_PART_MAX_CHARS);
+        const clippedAnswer = answer.slice(0, LIVE_RECONNECT_TURN_PART_MAX_CHARS);
         const block = `[Interviewer]: ${clippedQuestion}\n[Your answer]: ${clippedAnswer}`;
         if (blocks.length && chars + block.length + 2 > LIVE_RECONNECT_CONTEXT_MAX_CHARS) break;
         blocks.unshift(block);
