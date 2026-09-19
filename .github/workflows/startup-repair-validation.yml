@@ -1,0 +1,90 @@
+name: Verify startup repair without portable packaging
+
+on:
+  push:
+    branches: [fix/startup-regressions-and-retention]
+    paths: [.repair/apply.py]
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - name: Apply byte-verified startup repair
+        run: python3 .repair/apply.py
+      - name: Publish repair on its own branch
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .repair/apply.py
+          git add src scripts tests
+          git diff --cached --check
+          git commit -m 'fix: restore provider startup and preserve actionable Gemini failures'
+          git push origin HEAD:refs/heads/fix/startup-regressions-and-retention
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  validate:
+    needs: apply
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.apply.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - name: All tests including installed SDK loopback contracts
+        run: npm test
+      - name: Real sandboxed Windows renderer smoke
+        shell: pwsh
+        run: |
+          & '.\node_modules\.bin\electron.cmd' . --ci-smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Renderer smoke failed' }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: ContextHalo-Startup-Repair-Evidence
+          path: qa-results/
+          retention-days: 7
+  maintain:
+    needs: apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.apply.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - run: node --test tests/repository-maintenance.test.js
+      - name: Prune only proven merged branches and obsolete automated releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/repository-maintenance.js --apply
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: ContextHalo-Repository-Maintenance
+          path: qa-results/repository-maintenance.json
+          if-no-files-found: error
+          retention-days: 30
