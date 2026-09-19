@@ -771,7 +771,7 @@ export class MainView extends LitElement {
             this._disableGroqThinking = config.disableGroqThinking === true;
 
             // Load local AI settings
-            this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M';
+            this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
             this._useCustomLocalLlmModel = !LOCAL_LLM_PRESETS.some(preset => preset.value === this._localLlmModel);
             this._whisperModel = prefs.whisperModel || 'tiny.en';
             if (this._savedKeys?.gemini) void this._refreshProviderModels('gemini');
