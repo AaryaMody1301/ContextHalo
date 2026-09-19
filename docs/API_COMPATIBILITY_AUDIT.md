@@ -26,7 +26,7 @@ Defaults are not a claim that a user's account has access, quota, billing eligib
 
 ## Product-specific model choices
 
-`gemini-3.8-flash` remains the default typed/screen model because it is a current stable Flash release with no announced shutdown. `gemini-3.8-live` is now the default Live model because Google released it as Stable on September 15, 2026 and recommends it for most low-latency voice agents. Explicitly saved `gemini-3.1-flash-live-preview` selections are preserved because Google has not announced a shutdown date; model discovery lets users move deliberately rather than silently rewriting a supported saved selection.
+`gemini-3.8-flash` is the default typed/screen model because it is the current stable Flash release. `gemini-3.8-live` is the default Live model because Google recommends it for most low-latency voice-agent experiences and explicitly describes Gemini 3.1 Flash Live as legacy. Config v7 therefore migrates saved 2.5/3.1 Live defaults to stable 3.8 Live and saved 2.5 HTTP defaults to 3.8 Flash; supported explicit Gemini 3.x Flash HTTP selections remain preserved.
 
 Groq text uses the production `openai/gpt-oss-120b`, and transcription uses production `whisper-large-v3-turbo`. Groq currently has no production multimodal model in the same low-latency fit: both Qwen 3.6 and 3.8 vision models are Preview. ContextHalo keeps Qwen 3.6 as the default screen model because it is faster and cheaper for frequent screen assistance, while dynamic discovery exposes Qwen 3.8 for users who prefer its newer reasoning/coding quality. The UI and catalog explicitly mark both as Preview.
 
