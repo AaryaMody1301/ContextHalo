@@ -1180,7 +1180,7 @@ export class ContextHaloApp extends LitElement {
         const owner = this._beginRequest('screen', { ...(options.region ? { region: { ...options.region } } : {}) });
         let result;
         try {
-            result = await window.captureManualScreenshot(null, { ...options, request: { requestId: owner.requestId, uiEpoch: owner.uiEpoch } });
+            result = await contextHalo.captureManualScreenshot(null, { ...options, request: { requestId: owner.requestId, uiEpoch: owner.uiEpoch } });
         } catch (error) {
             result = { success: false, cancelled: options.signal?.aborted || error?.name === 'AbortError', error: error?.message || 'Screen analysis failed. Retry or review capture settings.' };
         }

@@ -69,8 +69,8 @@ test('storage v6 migration upgrades provider models without deleting user data',
     assert.equal(preferences.googleSearchEnabled, true);
 
     assert.equal(storage.getAvailableModel(), 'gemini-3.8-flash');
-    assert.equal(storage.getCredentials().apiKey, 'gemini-secret');
-    assert.equal(storage.getCredentials().groqApiKey, 'groq-secret');
+    assert.equal(storage.getApiKey(), 'gemini-secret');
+    assert.equal(storage.getGroqApiKey(), 'groq-secret');
     assert.equal(fs.existsSync(path.join(historyDir, '123.json')), true);
 
     storage.updatePreference('providerMode', 'cloud');

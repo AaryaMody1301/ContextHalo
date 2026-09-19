@@ -33,7 +33,7 @@ export class GroundingSources extends LitElement {
         a { color: var(--link-color, #2563eb); overflow-wrap: anywhere; }
         a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
         iframe { border: 0; display: block; width: 100%; height: 64px; max-height: 160px; background: var(--bg-surface); border-radius: 6px; }
-        .error { color: var(--error-color); }
+        .error { color: var(--danger); }
     `;
     constructor() { super(); this.grounding = null; this.error = ''; this._documentSource = null; this._documentHtml = ''; }
     async openSource(event, href) {

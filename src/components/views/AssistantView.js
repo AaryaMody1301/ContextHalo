@@ -577,9 +577,9 @@ export class AssistantView extends LitElement {
         this.isAnalyzing = true;
         this.analysisError = '';
         try {
-            if (!this.onAnalyzeScreen && typeof window.captureManualScreenshot !== 'function') throw new Error('Screen capture is not ready.');
+            if (!this.onAnalyzeScreen && typeof contextHalo.captureManualScreenshot !== 'function') throw new Error('Screen capture is not ready.');
             const captureOptions = { signal: controller.signal, region: options.region };
-            const result = this.onAnalyzeScreen ? await this.onAnalyzeScreen(captureOptions) : await window.captureManualScreenshot(null, captureOptions);
+            const result = this.onAnalyzeScreen ? await this.onAnalyzeScreen(captureOptions) : await contextHalo.captureManualScreenshot(null, captureOptions);
             if (result?.success !== true) throw new Error(result?.error || 'Screen analysis failed.');
             if ('text' in result && !String(result.text || '').trim()) throw new Error('The provider returned no answer. Review model settings and retry.');
             return result;

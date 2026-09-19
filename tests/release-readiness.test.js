@@ -22,6 +22,7 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
         'src/audioUtils.js',
         'src/assets/lit-all-2.7.4.min.js',
         'src/components/index.js',
+        'src/assets/logo.png',
     ]) assert.equal(fs.existsSync(path), false, `${path} must not ship`);
 
     const preload = read('preload.js');
@@ -43,11 +44,21 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
     const runtimeHardening = read('src/utils/runtimeHardeningMain.js');
     assert.doesNotMatch(runtimeHardening, /SystemAudioDump|runtimeMacAudio|start-macos-audio|stop-macos-audio/);
     assert.doesNotMatch(runtimeHardening, /desktopCapturer|session\.defaultSession|useSystemPicker: true/);
-    assert.doesNotMatch(read('src/utils/native-ai-runtime.js'), /darwin:|llama-server-macos|whisper-server-macos/);
-    assert.doesNotMatch(read('src/storage.js'), /advancedMode/);
+    const nativeRuntime = read('src/utils/native-ai-runtime.js');
+    assert.doesNotMatch(nativeRuntime, /darwin:|llama-server-macos|whisper-server-macos|chmodSync|executable:/);
+    const storage = read('src/storage.js');
+    assert.doesNotMatch(storage, /advancedMode|getModelForToday/);
+    for (const internalOnly of ['setConfig', 'setCredentials', 'setPreferences', 'getLimits', 'setLimits', 'getTodayLimits', 'getCredentials']) {
+        assert.doesNotMatch(storage, new RegExp(`\\n    ${internalOnly},`));
+    }
+
+    const html = read('src/index.html');
+    assert.doesNotMatch(html, /--header-background|--bg-primary|--start-button-background|--tooltip-bg/);
 
     const index = read('src/index.js');
     const renderer = read('src/utils/renderer.js');
+    assert.doesNotMatch(renderer, /Legacy argument position|window\.captureManualScreenshot|getLayoutMode:|refreshPreferencesCache:|async getKeybinds\(\)/);
+    assert.doesNotMatch(read('src/utils/gemini.js'), /_legacyKey|renderer-supplied key/);
     for (const channel of ['storage:set-config', 'storage:set-preferences', 'storage:get-today-limits']) {
         assert.doesNotMatch(preload, new RegExp(channel));
         assert.doesNotMatch(index, new RegExp(channel));
@@ -82,6 +93,7 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.equal(pkg.dependencies['@google/genai'], '2.22.0');
     assert.equal(pkg.dependencies.ws, undefined, 'ws is supplied transitively by the Gemini SDK and is not an app dependency');
     assert.equal(pkg.devDependencies.electron, '^44.3.0');
+    assert.equal(pkg.scripts.make, undefined);
 
     const storage = read('src/storage.js');
     assert.match(storage, /geminiLiveModel: 'gemini-3\.8-live'/);

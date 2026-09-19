@@ -2,17 +2,12 @@ const { execFileSync } = require('node:child_process');
 const { readdirSync, statSync } = require('node:fs');
 const { join } = require('node:path');
 
-function collectJavaScriptFiles(directory) {
-    return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-        const filePath = join(directory, entry.name);
-        if (entry.isDirectory()) {
-            return collectJavaScriptFiles(filePath);
-        }
-        return entry.isFile() && entry.name.endsWith('.js') ? [filePath] : [];
-    });
-}
-
-const files = [...collectJavaScriptFiles('src'), 'preload.js'];
+const files = [
+    ...readdirSync('src', { recursive: true })
+        .filter(file => file.endsWith('.js'))
+        .map(file => join('src', file)),
+    'preload.js',
+];
 
 for (const file of files) {
     if (!statSync(file).isFile()) {
