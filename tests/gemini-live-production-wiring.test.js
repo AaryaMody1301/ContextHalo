@@ -8,7 +8,10 @@ test('production Live connection enables compression and resumption updates', as
 
     assert.equal(result.success, true);
     assert.equal(fixture.connections.length, 1);
-    assert.deepEqual(fixture.connections[0].config.contextWindowCompression, { slidingWindow: {} });
+    assert.deepEqual(fixture.connections[0].config.contextWindowCompression, {
+        triggerTokens: '25000',
+        slidingWindow: { targetTokens: '8000' },
+    });
     assert.deepEqual(fixture.connections[0].config.sessionResumption, {});
     assert.equal(fixture.connections[0].model, 'gemini-3.8-live');
     assert.equal(fixture.connections[0].config.thinkingConfig, undefined);
