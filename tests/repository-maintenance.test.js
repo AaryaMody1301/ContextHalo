@@ -20,3 +20,13 @@ test('release retention removes only obsolete complete automated builds and leav
     assert.deepEqual(releasePlan(candidates.slice(0, 3), 3), []);
     assert.equal(releasePlan(candidates, 1).some(item => item.tag_name === ROLLBACK_TAG), false);
 });
+
+test('legacy releases without checksum assets expire only behind three complete successors', () => {
+    const release = (id, assets) => ({ id, tag_name: `v0.8.0-portable.${id}`, published_at: `2026-09-${String(id).padStart(2, '0')}T00:00:00Z`,
+        author: { login: 'github-actions[bot]' }, assets: assets.map(name => ({ name, state: 'uploaded' })) });
+    const complete = [4, 5, 6].map(id => release(id, ['ContextHalo-Windows-x64.exe', 'SHA256SUMS.txt']));
+    const legacy = release(1, ['ContextHalo-Windows-x64.exe']);
+    const uploading = release(7, []);
+    assert.deepEqual(releasePlan([legacy, uploading, ...complete], 6).map(item => item.id), [1]);
+    assert.deepEqual(releasePlan([legacy, ...complete.slice(0, 2)], 5), []);
+});

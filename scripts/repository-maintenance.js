@@ -13,11 +13,15 @@ function branchRetention(branch, { defaultBranch, currentBranch, openHeads, merg
 }
 function releasePlan(releases, latestId) {
     const automated = releases.filter(release => /^v\d+\.\d+\.\d+-portable\.\d+$/.test(release.tag_name)
-        && release.author?.login === 'github-actions[bot]' && !release.draft && !release.prerelease && !release.immutable
-        && ['ContextHalo-Windows-x64.exe', 'SHA256SUMS.txt'].every(name => release.assets?.some(asset => asset.name === name && asset.state === 'uploaded')))
+        && release.author?.login === 'github-actions[bot]' && !release.draft && !release.prerelease && !release.immutable)
         .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)));
-    const keep = new Set(automated.slice(0, 3).map(release => release.id));
-    return automated.filter(release => !keep.has(release.id) && release.id !== latestId && release.tag_name !== ROLLBACK_TAG);
+    const complete = automated.filter(release => ['ContextHalo-Windows-x64.exe', 'SHA256SUMS.txt']
+        .every(name => release.assets?.some(asset => asset.name === name && asset.state === 'uploaded')));
+    if (complete.length < 3) return [];
+    const cutoff = complete[2].published_at;
+    // Older builds predate checksum publishing. Do not keep them forever, but
+    // leave newer/in-progress uploads alone until three complete successors exist.
+    return automated.filter(release => release.published_at < cutoff && release.id !== latestId && release.tag_name !== ROLLBACK_TAG);
 }
 
 async function maintain({ apply = false } = {}) {
