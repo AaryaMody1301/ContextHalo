@@ -36,6 +36,8 @@ The GitHub Actions workflow also launches the real Electron renderer in sandboxe
 - Keep changes focused on the supported Windows target unless shared code requires otherwise.
 - Avoid drive-by refactors and unrelated formatting changes.
 - Update documentation when behavior, configuration, privacy/security handling, or supported functionality changes.
+- When adding or changing vendored JavaScript/CSS, native executables, downloadable models, or other non-npm runtime artifacts, update `THIRD_PARTY_NOTICES.md` and `docs/THIRD_PARTY_PROVENANCE.json` with the upstream source, version/revision, license, and integrity digest where available.
+- Do not replace checksum-pinned native/model artifacts with floating URLs without an explicit provenance and rollback plan.
 - Redact secrets and personal information from screenshots and logs.
 
 ## Code style
