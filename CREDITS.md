@@ -7,6 +7,6 @@ ContextHalo is a substantially modified and rebranded derivative of GPL-3.0-lice
 
 The application has been substantially modified, including provider integrations, Windows runtime behavior, model updates, security hardening, storage migrations, testing, packaging, and branding.
 
-The project remains licensed under GNU GPL v3.0. See [LICENSE](LICENSE).
+The project remains licensed under GNU GPL v3.0. See [LICENSE](LICENSE). Third-party packaged and runtime-downloaded components are indexed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 A legacy native-runtime download URL still points to the original upstream release because those checksum-pinned runner binaries are consumed as build/runtime dependencies. It is not used as ContextHalo product branding.
