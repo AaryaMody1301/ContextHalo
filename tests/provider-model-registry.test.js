@@ -36,7 +36,7 @@ test('Gemini catalog separates Live and generateContent models from API metadata
         },
     ]);
 
-    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
+    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live']);
     assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
     assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
