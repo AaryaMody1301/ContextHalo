@@ -26,6 +26,7 @@ function rendererFixture(options = {}) {
             const override = options.invoke?.(channel, ...args);
             if (override !== undefined) return override;
             if (channel === 'storage:get-preferences') return { success: true, data: { ...prefs } };
+            if (channel === 'updates:check') return { success: true, data: { status: 'development', currentVersion: '0.8.0' } };
             if (channel === 'storage:update-preference') { prefs[args[0]] = args[1]; return { success: true }; }
             if (channel === 'send-image-content') return options.image ? options.image(...args) : { success: true, text: 'Complete answer' };
             return { success: true };
