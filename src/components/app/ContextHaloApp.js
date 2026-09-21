@@ -1,7 +1,7 @@
 import { initRealtimeContext, refreshPreferences, resolveSessionId, flushSessionContext } from '../../utils/realtimeContextRenderer.js';
 import { loadContextState, saveSessionPack, persistPackToCurrentSession } from '../../utils/contextCaptureRenderer.js';
 import { openPanel, closePanel } from '../../utils/phase4Renderer.js';
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
 import { HelpView } from '../views/HelpView.js';
