@@ -17,6 +17,9 @@ const DEFAULT_CONFIG = {
     disableGroqThinking: true,
 };
 const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '' };
+let credentialCache = { ...DEFAULT_CREDENTIALS };
+let credentialStorageReady = false;
+let credentialStorageLocked = false;
 const DEFAULT_PREFERENCES = {
     customPrompt: '',
     providerMode: 'byok',
@@ -109,13 +112,29 @@ function writeJsonFile(filePath, data) {
     }
 }
 
-function getWindowsSafeStorage() {
+function normalizeCredentials(credentials) {
+    return {
+        apiKey: String(credentials?.apiKey || '').trim(),
+        groqApiKey: String(credentials?.groqApiKey || '').trim(),
+    };
+}
+
+function isPackagedWindows() {
+    if (os.platform() !== 'win32') return false;
+    try { return require('electron').app?.isPackaged === true; }
+    catch { return false; }
+}
+
+async function getWindowsAsyncSafeStorage() {
     if (os.platform() !== 'win32') return null;
     try {
         const electron = require('electron');
         const safeStorage = electron && typeof electron === 'object' ? electron.safeStorage : null;
-        if (!safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function') return null;
-        return safeStorage.isEncryptionAvailable() ? safeStorage : null;
+        if (!safeStorage
+            || typeof safeStorage.isAsyncEncryptionAvailable !== 'function'
+            || typeof safeStorage.encryptStringAsync !== 'function'
+            || typeof safeStorage.decryptStringAsync !== 'function') return null;
+        return await safeStorage.isAsyncEncryptionAvailable() ? safeStorage : null;
     } catch {
         return null;
     }
@@ -125,32 +144,32 @@ function isEncryptedCredentialFile(raw) {
     return raw?.format === CREDENTIAL_FORMAT && raw?.encrypted && typeof raw.encrypted === 'object';
 }
 
-function encryptCredential(value, safeStorage) {
+async function encryptCredentialAsync(value, safeStorage) {
     if (!value) return '';
-    return safeStorage.encryptString(String(value)).toString('base64');
+    return (await safeStorage.encryptStringAsync(String(value))).toString('base64');
 }
 
-function decryptCredential(value, safeStorage) {
-    if (!value) return '';
-    return safeStorage.decryptString(Buffer.from(String(value), 'base64'));
+async function decryptCredentialAsync(value, safeStorage) {
+    if (!value) return { result: '', shouldReEncrypt: false };
+    const decoded = await safeStorage.decryptStringAsync(Buffer.from(String(value), 'base64'));
+    if (!decoded || typeof decoded.result !== 'string') throw new Error('Windows credential decryption returned an invalid result.');
+    return { result: decoded.result, shouldReEncrypt: decoded.shouldReEncrypt === true };
 }
 
-function decodeStoredCredentials(raw) {
+async function decodeStoredCredentialsAsync(raw, safeStorage) {
     if (!isEncryptedCredentialFile(raw)) {
-        return { apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey : '',
-            groqApiKey: typeof raw?.groqApiKey === 'string' ? raw.groqApiKey : '' };
+        return { credentials: normalizeCredentials(raw), shouldReEncrypt: false };
     }
-
-    const safeStorage = getWindowsSafeStorage();
-    if (!safeStorage) {
-        console.warn('Windows credential encryption is unavailable; encrypted API keys cannot be read in this process.');
-        return null;
-    }
+    if (!safeStorage) return null;
 
     try {
+        const [apiKey, groqApiKey] = await Promise.all([
+            decryptCredentialAsync(raw.encrypted.apiKey, safeStorage),
+            decryptCredentialAsync(raw.encrypted.groqApiKey, safeStorage),
+        ]);
         return {
-            apiKey: decryptCredential(raw.encrypted.apiKey, safeStorage),
-            groqApiKey: decryptCredential(raw.encrypted.groqApiKey, safeStorage),
+            credentials: normalizeCredentials({ apiKey: apiKey.result, groqApiKey: groqApiKey.result }),
+            shouldReEncrypt: apiKey.shouldReEncrypt || groqApiKey.shouldReEncrypt,
         };
     } catch (error) {
         console.error('Could not decrypt Windows credentials:', error.message);
@@ -158,33 +177,81 @@ function decodeStoredCredentials(raw) {
     }
 }
 
-function writeCredentialsFile(credentials) {
-    const normalized = { apiKey: String(credentials?.apiKey || '').trim(),
-        groqApiKey: String(credentials?.groqApiKey || '').trim() };
-    const safeStorage = getWindowsSafeStorage();
+async function writeCredentialsFileAsync(credentials, safeStorageOverride) {
+    const normalized = normalizeCredentials(credentials);
+    const safeStorage = safeStorageOverride === undefined ? await getWindowsAsyncSafeStorage() : safeStorageOverride;
 
     if (safeStorage) {
-        return writeJsonFile(getCredentialsPath(), {
+        const [apiKey, groqApiKey] = await Promise.all([
+            encryptCredentialAsync(normalized.apiKey, safeStorage),
+            encryptCredentialAsync(normalized.groqApiKey, safeStorage),
+        ]);
+        const saved = writeJsonFile(getCredentialsPath(), {
             format: CREDENTIAL_FORMAT,
-            encrypted: {
-                apiKey: encryptCredential(normalized.apiKey, safeStorage),
-                groqApiKey: encryptCredential(normalized.groqApiKey, safeStorage),
-            },
+            encrypted: { apiKey, groqApiKey },
         });
+        if (saved) {
+            credentialCache = normalized;
+            credentialStorageReady = true;
+            credentialStorageLocked = false;
+        }
+        return saved;
     }
 
-    if (os.platform() === 'win32') {
-        try {
-            if (require('electron').app?.isPackaged) {
-                throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
-            }
-        } catch (error) {
-            if (error.code !== 'MODULE_NOT_FOUND') throw error;
-        }
+    if (isPackagedWindows()) {
+        throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
     }
+
     // Plain JSON remains only as a development/test fallback when Electron's
-    // Windows DPAPI-backed safeStorage API is not available (for example node:test).
-    return writeJsonFile(getCredentialsPath(), normalized);
+    // Windows DPAPI-backed async safeStorage API is unavailable.
+    const saved = writeJsonFile(getCredentialsPath(), normalized);
+    if (saved) {
+        credentialCache = normalized;
+        credentialStorageReady = true;
+        credentialStorageLocked = false;
+    }
+    return saved;
+}
+
+async function initializeCredentialStorage() {
+    const rawCredentials = readJsonFile(getCredentialsPath(), {});
+
+    if (os.platform() !== 'win32') {
+        credentialCache = isEncryptedCredentialFile(rawCredentials)
+            ? { ...DEFAULT_CREDENTIALS }
+            : normalizeCredentials({ ...DEFAULT_CREDENTIALS, ...rawCredentials });
+        credentialStorageReady = true;
+        credentialStorageLocked = isEncryptedCredentialFile(rawCredentials);
+        return !credentialStorageLocked;
+    }
+
+    const safeStorage = await getWindowsAsyncSafeStorage();
+    if (isEncryptedCredentialFile(rawCredentials)) {
+        if (!safeStorage) {
+            console.warn('Windows credential encryption is temporarily unavailable; encrypted API keys were left unchanged.');
+            credentialCache = { ...DEFAULT_CREDENTIALS };
+            credentialStorageReady = false;
+            credentialStorageLocked = true;
+            return false;
+        }
+        const decoded = await decodeStoredCredentialsAsync(rawCredentials, safeStorage);
+        if (!decoded) {
+            credentialCache = { ...DEFAULT_CREDENTIALS };
+            credentialStorageReady = false;
+            credentialStorageLocked = true;
+            return false;
+        }
+        credentialCache = decoded.credentials;
+        credentialStorageReady = true;
+        credentialStorageLocked = false;
+        if (decoded.shouldReEncrypt && !await writeCredentialsFileAsync(decoded.credentials, safeStorage)) {
+            console.warn('Windows credential key rotation could not be persisted; the decrypted keys remain available for this session.');
+        }
+        return true;
+    }
+
+    const normalized = normalizeCredentials({ ...DEFAULT_CREDENTIALS, ...rawCredentials });
+    return writeCredentialsFileAsync(normalized, safeStorage);
 }
 
 function normalizeFontSize(value) {
@@ -255,11 +322,16 @@ function initializeStorage() {
 
     const rawCredentials = readJsonFile(getCredentialsPath(), {});
     if (isEncryptedCredentialFile(rawCredentials)) {
-        // Never rewrite an encrypted file if DPAPI is temporarily unavailable.
-        const decoded = decodeStoredCredentials(rawCredentials);
-        if (decoded && getWindowsSafeStorage()) writeCredentialsFile(decoded);
+        // Async safeStorage is initialized after app.ready. Never rewrite an
+        // encrypted file from this synchronous bootstrap path.
+        credentialCache = { ...DEFAULT_CREDENTIALS };
+        credentialStorageReady = false;
+        credentialStorageLocked = os.platform() !== 'win32';
     } else {
-        writeCredentialsFile({ ...DEFAULT_CREDENTIALS, ...rawCredentials });
+        credentialCache = normalizeCredentials({ ...DEFAULT_CREDENTIALS, ...rawCredentials });
+        credentialStorageReady = os.platform() !== 'win32';
+        credentialStorageLocked = false;
+        if (os.platform() !== 'win32') writeJsonFile(getCredentialsPath(), credentialCache);
     }
 
     writeJsonFile(getPreferencesPath(), migratePreferences(readJsonFile(getPreferencesPath(), {})));
@@ -270,14 +342,19 @@ function initializeStorage() {
 function getConfig() { return migrateConfig(readJsonFile(getConfigPath(), {})); }
 function setConfig(config) { return writeJsonFile(getConfigPath(), migrateConfig({ ...getConfig(), ...config })); }
 function updateConfig(key, value) { return setConfig({ [key]: value }); }
-function getCredentials() {
-    const decoded = decodeStoredCredentials(readJsonFile(getCredentialsPath(), {}));
-    return decoded || { ...DEFAULT_CREDENTIALS };
+function getCredentials() { return { ...credentialCache }; }
+async function setCredentials(credentials) {
+    if (os.platform() === 'win32' && !credentialStorageReady) {
+        await initializeCredentialStorage();
+        if (!credentialStorageReady && credentialStorageLocked) {
+            throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
+        }
+    }
+    return writeCredentialsFileAsync({ ...credentialCache, ...credentials });
 }
-function setCredentials(credentials) { return writeCredentialsFile({ ...getCredentials(), ...credentials }); }
-function getApiKey() { return getCredentials().apiKey || ''; }
+function getApiKey() { return credentialCache.apiKey || ''; }
 function setApiKey(apiKey) { return setCredentials({ apiKey }); }
-function getGroqApiKey() { return getCredentials().groqApiKey || ''; }
+function getGroqApiKey() { return credentialCache.groqApiKey || ''; }
 function setGroqApiKey(groqApiKey) { return setCredentials({ groqApiKey }); }
 function getPreferences() { return migratePreferences(readJsonFile(getPreferencesPath(), {})); }
 function setPreferences(preferences) { return writeJsonFile(getPreferencesPath(), migratePreferences({ ...getPreferences(), ...preferences })); }
@@ -432,6 +509,9 @@ function deleteAllSessions() {
 function clearAllData() {
     try {
         fs.rmSync(getConfigDir(), { recursive: true, force: true });
+        credentialCache = { ...DEFAULT_CREDENTIALS };
+        credentialStorageReady = os.platform() !== 'win32';
+        credentialStorageLocked = false;
         initializeStorage();
         return true;
     } catch (error) {
@@ -442,6 +522,7 @@ function clearAllData() {
 
 module.exports = {
     initializeStorage,
+    initializeCredentialStorage,
     getConfigDir,
     getConfig,
     updateConfig,
