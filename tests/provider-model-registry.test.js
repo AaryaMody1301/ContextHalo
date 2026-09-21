@@ -36,7 +36,7 @@ test('Gemini catalog separates Live and generateContent models from API metadata
         },
     ]);
 
-    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
+    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live']);
     assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
     assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
@@ -66,7 +66,7 @@ test('Gemini Omni is never offered as an interview Live model', () => {
     assert.equal(catalog.recommended.live, null);
 });
 
-test('Groq catalog keeps active task models and recommends the lower-latency vision default', () => {
+test('Groq catalog keeps active task models and recommends the current vision replacement', () => {
     const catalog = buildGroqCatalog([
         { id: 'openai/gpt-oss-120b', active: true, owned_by: 'OpenAI' },
         { id: 'qwen/qwen3.6-27b', active: true, owned_by: 'Qwen' },
@@ -80,7 +80,7 @@ test('Groq catalog keeps active task models and recommends the lower-latency vis
     assert.equal(catalog.chat.some(model => model.id === 'openai/gpt-oss-120b'), true);
     assert.deepEqual(catalog.vision.map(model => model.id).sort(), ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']);
     assert.equal(catalog.vision.every(model => model.preview), true);
-    assert.equal(catalog.recommended.vision, 'qwen/qwen3.6-27b');
+    assert.equal(catalog.recommended.vision, 'qwen/qwen3.8-27b');
     assert.deepEqual(catalog.transcription.map(model => model.id), ['whisper-large-v3-turbo']);
     assert.equal(catalog.chat.some(model => model.id.includes('orpheus')), false);
 });

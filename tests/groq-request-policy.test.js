@@ -8,7 +8,7 @@ test('Qwen text requests keep instructions in the latest user message', () => {
         { role: 'assistant', content: 'Earlier answer' },
         { role: 'user', content: 'Current question' },
     ];
-    const messages = buildGroqMessages('qwen/qwen3.6-27b', 'Interview instructions', history, 6000);
+    const messages = buildGroqMessages('qwen/qwen3.8-27b', 'Interview instructions', history, 6000);
 
     assert.equal(messages.some(message => message.role === 'system'), false);
     assert.equal(messages[0].content, 'Earlier question');
@@ -40,22 +40,22 @@ test('GPT-OSS preserves the system-role hierarchy', () => {
 });
 
 test('provider instructions remain bounded before being inserted', () => {
-    const messages = buildGroqMessages('qwen/qwen3.6-27b', 'abcdef', [{ role: 'user', content: 'Question' }], 3);
+    const messages = buildGroqMessages('qwen/qwen3.8-27b', 'abcdef', [{ role: 'user', content: 'Question' }], 3);
     assert.match(messages[0].content, /Instructions for this request:\nabc\n\nRequest:\nQuestion$/);
     assert.doesNotMatch(messages[0].content, /abcdef/);
 });
 
-test('Qwen reasoning mode is explicit in both enabled and disabled states', () => {
-    assert.deepEqual(getGroqReasoningOptions('qwen/qwen3.6-27b', false), {
-        reasoning_format: 'hidden', reasoning_effort: 'default',
-    });
-    assert.deepEqual(getGroqReasoningOptions('qwen/qwen3.8-27b', true), {
-        reasoning_format: 'hidden', reasoning_effort: 'none',
-    });
+test('Qwen 3.8 reasoning mode is explicit and never mixes reasoning output controls', () => {
+    for (const disableThinking of [false, true]) {
+        const options = getGroqReasoningOptions('qwen/qwen3.8-27b', disableThinking);
+        assert.equal(options.reasoning_format, 'hidden');
+        assert.equal(options.reasoning_effort, disableThinking ? 'none' : 'default');
+        assert.equal(Object.hasOwn(options, 'include_reasoning'), false);
+    }
 });
 
-test('GPT-OSS keeps its low-latency reasoning policy', () => {
-    assert.deepEqual(getGroqReasoningOptions('openai/gpt-oss-120b', false), {
-        include_reasoning: false, reasoning_effort: 'low',
-    });
+test('GPT-OSS keeps its low-latency reasoning policy without unsupported reasoning_format', () => {
+    const options = getGroqReasoningOptions('openai/gpt-oss-120b', false);
+    assert.deepEqual(options, { include_reasoning: false, reasoning_effort: 'low' });
+    assert.equal(Object.hasOwn(options, 'reasoning_format'), false);
 });

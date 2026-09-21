@@ -23,7 +23,7 @@ function read(relativePath) {
 
 test('Windows provider transport classifies cloud and local runtime calls', () => {
     const textBody = JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [] });
-    const imageBody = JSON.stringify({ model: 'qwen/qwen3.6-27b', messages: [{ content: [{ type: 'image_url' }] }] });
+    const imageBody = JSON.stringify({ model: 'qwen/qwen3.8-27b', messages: [{ content: [{ type: 'image_url' }] }] });
 
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: textBody }), 'groq-text');
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: imageBody }), 'groq-image');
@@ -58,6 +58,51 @@ test('Groq Retry-After is honored before retrying a 429', async () => {
         assert.equal(calls, 2);
         assert.equal(response.status, 200);
         assert.equal(await response.text(), 'ok');
+    } finally {
+        setFetchImplementationForTests(nativeFetch.bind(global));
+        resetProviderSession();
+    }
+});
+
+test('Groq transport retries only the provider-documented HTTP statuses', async () => {
+    const nativeFetch = global.fetch;
+    const retryable = [422, 429, 498, 500, 502, 503];
+    const nonRetryable = [400, 401, 403, 404, 409, 413, 425, 504];
+
+    try {
+        for (const status of retryable) {
+            resetProviderSession();
+            let calls = 0;
+            setFetchImplementationForTests(async () => {
+                calls += 1;
+                return calls === 1
+                    ? new Response('retry', { status, headers: { 'retry-after': '0' } })
+                    : new Response('ok', { status: 200 });
+            });
+            const response = await boundedFetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [] }),
+            });
+            assert.equal(response.status, 200, 'status ' + status + ' should retry');
+            assert.equal(calls, 2, 'status ' + status + ' should have one bounded retry');
+            await response.text();
+        }
+
+        for (const status of nonRetryable) {
+            resetProviderSession();
+            let calls = 0;
+            setFetchImplementationForTests(async () => {
+                calls += 1;
+                return new Response('no retry', { status });
+            });
+            const response = await boundedFetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                body: JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [] }),
+            });
+            assert.equal(response.status, status);
+            assert.equal(calls, 1, 'status ' + status + ' must not be retried');
+            await response.text();
+        }
     } finally {
         setFetchImplementationForTests(nativeFetch.bind(global));
         resetProviderSession();

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-test('storage v7 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
+test('storage v8 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -53,11 +53,11 @@ test('storage v7 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 7);
+    assert.equal(config.configVersion, 8);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live');
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
-    assert.equal(config.groqImageModel, 'qwen/qwen3.6-27b');
+    assert.equal(config.groqImageModel, 'qwen/qwen3.8-27b');
     assert.equal(config.groqTranscriptionModel, 'whisper-large-v3-turbo');
     assert.equal(config.onboarded, true);
     assert.equal(config.layout, 'compact');
@@ -77,8 +77,8 @@ test('storage v7 migration upgrades provider models without deleting user data',
     assert.equal(storage.getPreferences().providerMode, 'byok');
 });
 
-test('storage v7 migrates persisted Gemini 2.5 defaults and the old Local AI default', { concurrency: false }, t => {
-    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-v7-'));
+test('storage v8 migrates persisted Gemini 2.5 defaults and the old Local AI default', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-v8-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
     const storagePath = require.resolve('../src/storage');
@@ -137,12 +137,35 @@ test('storage preserves a supported explicitly configured Gemini 3.7 model', { c
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 7);
+    assert.equal(config.configVersion, 8);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live', 'legacy Live selections migrate to the current stable low-latency model');
     assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
 });
 
 
+test('storage v8 preserves an explicitly reselected enterprise Qwen 3.6 vision model', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-enterprise-'));
+    const originalHomedir = os.homedir;
+    os.homedir = () => tempHome;
+    const storagePath = require.resolve('../src/storage');
+    delete require.cache[storagePath];
+    const storage = require(storagePath);
+    t.after(() => {
+        delete require.cache[storagePath];
+        os.homedir = originalHomedir;
+        fs.rmSync(tempHome, { recursive: true, force: true });
+    });
+
+    const configDir = storage.getConfigDir();
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({
+        configVersion: 8,
+        groqImageModel: 'qwen/qwen3.6-27b',
+    }));
+
+    storage.initializeStorage();
+    assert.equal(storage.getConfig().groqImageModel, 'qwen/qwen3.6-27b');
+});
 
 test('backend keeps providers isolated and routes screenshots to the matching provider', () => {
     const gemini = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'gemini.js'), 'utf8');

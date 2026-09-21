@@ -11,7 +11,7 @@ let installed = false;
 let originalFetch = null;
 let sessionController = new AbortController();
 
-const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const GROQ_RETRYABLE_STATUS_CODES = new Set([422, 429, 498, 500, 502, 503]);
 
 const POLICIES = {
     'groq-transcription': { totalMs: 30000, attemptMs: 14000, idleMs: 10000, attempts: 2 },
@@ -248,7 +248,7 @@ async function boundedFetch(input, init = {}) {
 
         try {
             const response = await originalFetch(input, { ...requestInit, signal });
-            const retryableStatus = RETRYABLE_STATUS_CODES.has(response.status);
+            const retryableStatus = kind.startsWith('groq-') && GROQ_RETRYABLE_STATUS_CODES.has(response.status);
 
             if (retryableStatus && attempt < policy.attempts - 1) {
                 const waitMs = getRetryDelayMs(response, attempt);

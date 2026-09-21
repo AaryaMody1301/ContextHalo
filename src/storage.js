@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { randomUUID } = require('node:crypto');
 
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 8;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
@@ -12,7 +12,7 @@ const DEFAULT_CONFIG = {
     geminiLiveModel: 'gemini-3.8-live',
     geminiHttpModel: 'gemini-3.8-flash',
     groqModel: 'openai/gpt-oss-120b',
-    groqImageModel: 'qwen/qwen3.6-27b',
+    groqImageModel: 'qwen/qwen3.8-27b',
     groqTranscriptionModel: 'whisper-large-v3-turbo',
     disableGroqThinking: true,
 };
@@ -209,6 +209,13 @@ function migrateConfig(rawConfig = {}) {
         config.groqModel = DEFAULT_CONFIG.groqModel;
     }
     if (!config.groqModel) config.groqModel = DEFAULT_CONFIG.groqModel;
+    // Groq shut down Qwen 3.6 for Free/Developer on 2026-09-14 and names
+    // Qwen 3.8 as its replacement. Migrate the old ContextHalo default once.
+    // Enterprise catalogs may still expose 3.6, so the dynamic picker can
+    // surface it again after this migration when the account reports access.
+    if (previousVersion < 8 && source.groqImageModel === 'qwen/qwen3.6-27b') {
+        config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
+    }
     if (!config.groqImageModel) config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
     if (!config.groqTranscriptionModel) config.groqTranscriptionModel = DEFAULT_CONFIG.groqTranscriptionModel;
 

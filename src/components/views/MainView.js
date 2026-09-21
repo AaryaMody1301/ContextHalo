@@ -727,7 +727,7 @@ export class MainView extends LitElement {
         this._groqKey = '';
         this._geminiLiveModel = GEMINI_DEFAULTS.live;
         this._groqModel = GROQ_DEFAULTS.chat;
-        this._groqImageModel = 'qwen/qwen3.6-27b';
+        this._groqImageModel = GROQ_DEFAULTS.vision;
         this._disableGroqThinking = true;
         this._keyError = false;
         this._showLocalHelp = false;

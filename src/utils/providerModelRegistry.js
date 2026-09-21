@@ -52,7 +52,7 @@ function buildGeminiCatalog(rawModels) {
     // ContextHalo exposes only the documented interactive model families for
     // interview use. The raw provider catalog can also contain image/video,
     // Pro, legacy and specialized models that do not belong in these pickers.
-    const liveIds = new Set(['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
+    const liveIds = new Set(['gemini-3.8-live']);
     const live = all.filter(model => model.methods.includes('bidiGenerateContent') && liveIds.has(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
     const screenIds = new Set([
@@ -80,7 +80,7 @@ function buildGeminiCatalog(rawModels) {
         generate,
         screen,
         recommended: {
-            live: pick(live, ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']),
+            live: pick(live, ['gemini-3.8-live']),
             screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
         },
     };
@@ -125,10 +125,11 @@ function buildGroqCatalog(rawModels) {
         transcription,
         recommended: {
             chat: pick(chat, ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']),
-            // Both current Qwen vision choices are Preview. Prefer 3.6 for
-            // frequent interactive screenshots: Groq documents ~500 t/s and
-            // lower token pricing than 3.8, while 3.8 remains selectable.
-            vision: pick(vision, ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']),
+            // Groq deprecated Qwen 3.6 for Free/Developer on 2026-09-14 and
+            // documents Qwen 3.8 as the current vision model. Keep 3.6 in the
+            // discovered catalog only when an account still reports it (for
+            // example, eligible enterprise accounts).
+            vision: pick(vision, ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']),
             transcription: pick(transcription, ['whisper-large-v3-turbo', 'whisper-large-v3']),
         },
     };
