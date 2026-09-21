@@ -52,7 +52,7 @@ function buildGeminiCatalog(rawModels) {
     // ContextHalo exposes only the documented interactive model families for
     // interview use. The raw provider catalog can also contain image/video,
     // Pro, legacy and specialized models that do not belong in these pickers.
-    const liveIds = new Set(['gemini-3.8-live', 'gemini-3.1-flash-live-preview']);
+    const liveIds = new Set(['gemini-3.8-live']);
     const live = all.filter(model => model.methods.includes('bidiGenerateContent') && liveIds.has(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
     const screenIds = new Set([
@@ -80,7 +80,7 @@ function buildGeminiCatalog(rawModels) {
         generate,
         screen,
         recommended: {
-            live: pick(live, ['gemini-3.8-live', 'gemini-3.1-flash-live-preview']),
+            live: pick(live, ['gemini-3.8-live']),
             screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
         },
     };
