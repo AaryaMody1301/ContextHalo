@@ -55,6 +55,7 @@ test('machine-readable npm provenance matches the production lockfile', () => {
 test('vendored and native provenance records point to owned artifacts', () => {
     const provenance = JSON.parse(read('docs/THIRD_PARTY_PROVENANCE.json'));
     const notices = read('THIRD_PARTY_NOTICES.md');
+    const nativeRuntime = read('src/utils/native-ai-runtime.js');
 
     for (const item of provenance.vendoredRenderer) {
         assert.equal(fs.existsSync(item.path), true, item.path);
@@ -71,6 +72,8 @@ test('vendored and native provenance records point to owned artifacts', () => {
     for (const item of provenance.whisperModels) {
         assert.match(item.sha256, /^[a-f0-9]{64}$/);
         assert.match(item.source, /^https:\/\/huggingface\.co\//);
+        assert.match(nativeRuntime, new RegExp(`sha256: '${item.sha256}'`));
+        assert.ok(nativeRuntime.includes(item.source), item.source + ' must match the runtime download source');
     }
 
     assert.match(notices, /GPL-3\.0/);
