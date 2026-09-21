@@ -64,3 +64,16 @@ test('source validation includes tests and validation scripts', () => {
     assert.match(check, /sourceFiles\('tests'\)/);
     assert.match(check, /sourceFiles\('scripts'\)/);
 });
+
+
+test('Windows smoke separates renderer behavior from native acceptance', () => {
+    const smoke = read('scripts/renderer-behavior-smoke.js');
+    const native = read('scripts/windows-acceptance.js');
+    const pkg = JSON.parse(read('package.json'));
+
+    assert.match(smoke, /require\('\.\/windows-acceptance'\)/);
+    assert.doesNotMatch(smoke, /async function extendedWindowsAcceptance\(/);
+    assert.match(native, /async function extendedWindowsAcceptance\(/);
+    assert.match(native, /Accessibility\.getFullAXTree/);
+    assert.ok(pkg.build.files.includes('scripts/windows-acceptance.js'));
+});
