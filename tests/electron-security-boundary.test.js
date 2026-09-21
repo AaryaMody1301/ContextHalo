@@ -272,7 +272,7 @@ test('every BrowserWindow in runtime source is represented by the Phase 3 window
     }
     const creations = files.flatMap(file => {
         const source = fs.readFileSync(file, 'utf8');
-        return Array.from({ length: (source.match(/new BrowserWindow\s*\(/g) || []).length }, () => path.relative(process.cwd(), file));
+        return Array.from({ length: (source.match(/new BrowserWindow\s*\(/g) || []).length }, () => path.relative(process.cwd(), file).split(path.sep).join('/'));
     });
     assert.deepEqual(creations.sort(), ['src/utils/contextCaptureMain.js', 'src/utils/window.js']);
     assert.equal(inventory.browserWindows.length, 2);
