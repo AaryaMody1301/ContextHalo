@@ -57,8 +57,12 @@ test('real SDK completes the production Live setup and serializes its audio/tran
     assert.deepEqual(setup.generationConfig.responseModalities, ['AUDIO']);
     assert.deepEqual(setup.inputAudioTranscription, {});
     assert.deepEqual(setup.outputAudioTranscription, {});
-    assert.ok(setup.sessionResumption);
-    assert.ok(setup.contextWindowCompression);
+    assert.deepEqual(setup.sessionResumption, {});
+    assert.deepEqual(setup.contextWindowCompression, {
+        triggerTokens: '25000',
+        slidingWindow: { targetTokens: '8000' },
+    });
+    assert.equal(setup.generationConfig.thinkingConfig, undefined, 'Gemini 3.8 Live rejects thinkingConfig');
     assert.equal(JSON.stringify(setup).includes('abortSignal'), false);
     assert.deepEqual(fixture.preparations, [['windows', 'byok', 31], ['runtime', 'byok']]);
 });
