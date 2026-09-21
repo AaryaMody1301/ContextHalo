@@ -66,14 +66,17 @@ test('vendored and native provenance records point to owned artifacts', () => {
 
     for (const item of provenance.nativeRuntime) {
         assert.match(item.sha256, /^[a-f0-9]{64}$/);
-        assert.match(item.source, /^https:\/\/github\.com\//);
+        assert.match(item.commit, /^[a-f0-9]{40}$/);
+        assert.match(item.source, /^https:\/\/github\.com\/ggml-org\/(?:llama|whisper)\.cpp\/releases\/tag\//);
+        assert.equal(item.status.includes('official'), true);
     }
 
     for (const item of provenance.whisperModels) {
         assert.match(item.sha256, /^[a-f0-9]{64}$/);
-        assert.match(item.source, /^https:\/\/huggingface\.co\//);
+        assert.match(item.revision, /^[a-f0-9]{40}$/);
+        assert.match(item.source, new RegExp(`^https://huggingface\\.co/ggerganov/whisper\\.cpp/resolve/${item.revision}/`));
         assert.match(nativeRuntime, new RegExp(`sha256: '${item.sha256}'`));
-        assert.ok(nativeRuntime.includes(item.source), item.source + ' must match the runtime download source');
+        assert.ok(nativeRuntime.includes(item.revision), item.revision + ' must match the runtime download revision');
     }
 
     assert.match(notices, /GPL-3\.0/);
@@ -81,5 +84,7 @@ test('vendored and native provenance records point to owned artifacts', () => {
     assert.match(notices, /Marked 4\.3\.0/);
     assert.match(notices, /highlight\.js 11\.9\.0/);
     assert.match(notices, /b10964/);
-    assert.match(notices, /mutable `main`/);
+    assert.match(notices, /b5130/);
+    assert.doesNotMatch(nativeRuntime, /resolve\/main|sohzm|llama-server-windows-x86_64|whisper-server-windows-x86_64/);
+    assert.equal(provenance.ggufPolicy.downloadRevision, 'resolved immutable repository commit SHA');
 });
