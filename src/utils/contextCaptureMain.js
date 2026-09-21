@@ -212,7 +212,8 @@ function selectRegion(mainWindow) {
             resolve(result);
         };
 
-        selector.webContents.on('ipc-message', (_event, channel, payload) => {
+        selector.webContents.on('ipc-message', (event, channel, payload) => {
+            if (event.senderFrame !== selector.webContents.mainFrame) return;
             if (channel === 'region-selector-cancel') {
                 finish({ success: false, cancelled: true });
                 return;
