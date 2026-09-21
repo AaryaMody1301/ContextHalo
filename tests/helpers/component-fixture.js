@@ -42,6 +42,7 @@ function appFixture(options = {}) {
     const calls=[];
     const api = {
         getVersion: async () => '0.8.0',
+        checkForUpdates: async () => ({ status: 'development', currentVersion: '0.8.0' }),
         storage: { getConfig: async () => ({onboarded:true}), getPreferences: async () => ({ providerMode: options.mode || 'byok' }), getKeybinds: async () => ({}), getShortcutState: async () => ({ success: true, data: {}, conflicts: {} }), getCredentialStatus: async () => { calls.push('credential-status'); return options.credentials || { gemini: true, groq: true }; } },
         initializeGemini: async () => { calls.push('provider'); return true; },
         initializeLocal: async () => { calls.push('local'); return true; },
