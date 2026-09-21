@@ -23,7 +23,7 @@ function read(relativePath) {
 
 test('Windows provider transport classifies cloud and local runtime calls', () => {
     const textBody = JSON.stringify({ model: 'openai/gpt-oss-120b', messages: [] });
-    const imageBody = JSON.stringify({ model: 'qwen/qwen3.6-27b', messages: [{ content: [{ type: 'image_url' }] }] });
+    const imageBody = JSON.stringify({ model: 'qwen/qwen3.8-27b', messages: [{ content: [{ type: 'image_url' }] }] });
 
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: textBody }), 'groq-text');
     assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/chat/completions', { body: imageBody }), 'groq-image');
