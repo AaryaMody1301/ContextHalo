@@ -381,7 +381,7 @@
     {
       "role": "CPU llama fallback",
       "platform": "windows-x64",
-      "source": "https://github.com/sohzm/cheating-daddy/releases/tag/v0.7.0",
+      "source": "https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0",
       "artifact": "llama-server-windows-x86_64.exe",
       "revision": "v0.7.0",
       "sha256": "7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862",
@@ -391,7 +391,7 @@
     {
       "role": "Whisper runtime fallback",
       "platform": "windows-x64",
-      "source": "https://github.com/sohzm/cheating-daddy/releases/tag/v0.7.0",
+      "source": "https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0",
       "artifact": "whisper-server-windows-x86_64.exe",
       "revision": "v0.7.0",
       "sha256": "654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435",
@@ -404,7 +404,7 @@
       "id": "tiny.en",
       "artifact": "ggml-tiny.en.bin",
       "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
-      "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1",
+      "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
       "revisionPolicy": "mutable main + fixed digest"
     },
     {
