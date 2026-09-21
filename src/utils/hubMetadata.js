@@ -31,12 +31,18 @@ async function resolveModelRevision(repository, signal) {
 async function listModelFiles(repository, revision, signal) {
     if (!validRevision(revision)) throw new Error('Model revision must be a full Hugging Face commit SHA');
     const encoded = encodeRepository(repository);
-    const prefix = `${HUB_ORIGIN}/api/models/${encoded}/tree/${revision}`;
+    const treePath = `/api/models/${encoded}/tree/${revision}`;
+    const prefix = `${HUB_ORIGIN}${treePath}`;
     let url = `${prefix}?recursive=true&expand=true&limit=100`;
     const seen = new Set();
     const files = [];
     for (let page = 0; url && page < 50; page++) {
-        if (!url.startsWith(prefix) || seen.has(url)) throw new Error('Invalid model pagination response');
+        let pageUrl;
+        try { pageUrl = new URL(url); } catch { throw new Error('Invalid model pagination response'); }
+        if (pageUrl.origin !== HUB_ORIGIN || pageUrl.pathname !== treePath || seen.has(pageUrl.toString())) {
+            throw new Error('Invalid model pagination response');
+        }
+        url = pageUrl.toString();
         seen.add(url);
         const { response, body } = await fetchHubJson(url, signal);
         if (!Array.isArray(body)) throw new Error('Invalid Hugging Face model metadata');
