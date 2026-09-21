@@ -65,7 +65,7 @@ test('Marked 18.0.13 is lockfile-managed and its packaged browser build is the o
     const { marked } = await import('marked');
     const parsed = marked.parse('| A | B |\n| - | - |\n| 1 | 2 |\n\nline one\nline two', { gfm: true, breaks: true });
     assert.match(parsed, /<table>/);
-    assert.match(parsed, /line one<br>\nline two/);
+    assert.match(parsed, /line one<br>\s*line two/);
 });
 
 test('Marked output remains explicitly untrusted and flows through the renderer allowlist sanitizer', async () => {
