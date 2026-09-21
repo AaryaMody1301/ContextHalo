@@ -199,3 +199,53 @@ test('credential storage no longer calls synchronous safeStorage encryption APIs
     assert.doesNotMatch(storage, /safeStorage\.encryptString\s*\(/);
     assert.doesNotMatch(storage, /safeStorage\.decryptString\s*\(/);
 });
+
+
+test('Phase 3 trust inventory exactly owns every preload IPC capability', () => {
+    const preload = read('preload.js');
+    const inventory = JSON.parse(read('docs/PHASE_3_TRUST_BOUNDARIES.json'));
+    const extract = key => {
+        const start = preload.indexOf(key + ':');
+        assert.ok(start >= 0, key);
+        const open = preload.indexOf('[', start);
+        const close = preload.indexOf(']', open);
+        return [...preload.slice(open + 1, close).matchAll(/'([^']+)'/g)].map(match => match[1]);
+    };
+    const expectedInvoke = inventory.rendererToMain
+        .filter(group => group.transport === 'invoke')
+        .flatMap(group => group.channels)
+        .sort();
+    const expectedSend = inventory.rendererToMain
+        .filter(group => group.transport === 'send')
+        .flatMap(group => group.channels)
+        .sort();
+
+    assert.deepEqual(extract('invoke').sort(), expectedInvoke);
+    assert.deepEqual(extract('send').sort(), expectedSend);
+    assert.deepEqual(extract('on').sort(), [...inventory.mainToRenderer.channels].sort());
+    assert.equal(extract('send').includes('log-message'), false);
+});
+
+test('custom Local AI absolute paths are limited to regular GGUF model/projector files', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-local-path-policy-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const native = loadMain('src/utils/native-ai-runtime.js', {
+        '../storage': { getConfigDir: () => path.join(root, 'config') },
+    });
+
+    const textFile = path.join(root, 'notes.txt');
+    fs.writeFileSync(textFile, 'not a model');
+    await assert.rejects(native.ensureLlamaModel(textFile), /regular \.gguf/i);
+
+    const directoryModel = path.join(root, 'folder.gguf');
+    fs.mkdirSync(directoryModel);
+    await assert.rejects(native.ensureLlamaModel(directoryModel), /regular file/i);
+
+    const model = path.join(root, 'model.gguf');
+    fs.writeFileSync(model, 'model fixture');
+    await assert.rejects(native.ensureLlamaModel(model), /projector/i);
+
+    const projector = path.join(root, 'mmproj-F16.gguf');
+    fs.writeFileSync(projector, 'projector fixture');
+    assert.deepEqual(await native.ensureLlamaModel(model), { modelPath: model, projectorPath: projector });
+});
