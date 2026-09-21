@@ -5,6 +5,10 @@ const vm = require('node:vm');
 function loadClass(file, name) {
     const source = fs.readFileSync(file, 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class ', 'class ');
     const context = { contextHaloAppStyles: '', LitElement: class { dispatchEvent() {} }, html: () => '', css: () => '', customElements: { define() {} }, window: {}, console, CustomEvent: class { constructor(type, init) { this.type=type; Object.assign(this, init); } }, expandQuickCommand: text => text === '/shorter' ? 'Make the previous answer shorter.' : null };
+    if (file.endsWith('ContextHaloApp.js')) {
+        const responseState = fs.readFileSync('src/components/app/responseStateRenderer.js', 'utf8').replace(/^export /gm, '');
+        vm.runInNewContext(responseState, context);
+    }
     vm.runInNewContext(source + `\nthis.Target = ${name};`, context);
     return context.Target;
 }
