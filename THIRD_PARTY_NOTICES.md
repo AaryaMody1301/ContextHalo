@@ -26,17 +26,19 @@ The vendored JavaScript assets retain upstream copyright/license headers. Contex
 
 ContextHalo downloads native runtimes on demand; they are not committed to this repository.
 
-- Preferred Windows x64 Vulkan llama.cpp runtime: upstream `ggml-org/llama.cpp` release `b10964`, archive `llama-b10964-bin-win-vulkan-x64.zip`, SHA-256 `1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642`. llama.cpp is MIT licensed.
-- CPU llama fallback: legacy upstream [v0.7.0 release](https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0), file `llama-server-windows-x86_64.exe`, SHA-256 `7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862`.
-- Whisper runtime fallback: legacy upstream [v0.7.0 release](https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0), file `whisper-server-windows-x86_64.exe`, SHA-256 `654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435`.
+- Preferred Windows x64 Vulkan llama.cpp runtime: official `ggml-org/llama.cpp` release `b10964`, source commit `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, archive `llama-b10964-bin-win-vulkan-x64.zip`, SHA-256 `1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642`. llama.cpp is MIT licensed.
+- CPU llama fallback: the same official `ggml-org/llama.cpp` `b10964` source commit, archive `llama-b10964-bin-win-cpu-x64.zip`, SHA-256 `917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7`.
+- Whisper runtime: official `ggml-org/whisper.cpp` developer release `b5130`, source commit `927cfce34f31707e17f2bff35c349632fb9e2c3a`, archive `whisper-bin-x64.zip`, SHA-256 `f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c`. This is the same source commit referenced by stable `v1.9.4`; whisper.cpp is MIT licensed.
 
-The checksum pins establish byte identity for the legacy fallback executables; they do not by themselves establish a complete reproducible build chain. Replacing or independently reproducing those legacy binaries remains a dedicated Local AI supply-chain task.
+The former legacy v0.7.0 llama/Whisper executables are no longer runtime dependencies. Historical audit documents retain their old hashes only as evidence of the pre-Phase-4 baseline. Installed official runtime directories carry a `.source.json` file recording the upstream tag, full commit, archive, URL and SHA-256 used for that installation.
 
 ## Downloaded models
 
 Whisper GGML model files and user-selected GGUF/projector files are downloaded only when Local AI is configured. ContextHalo verifies expected SHA-256 values before installation and uses atomic temporary downloads.
 
-The current download implementation resolves Hugging Face files from the mutable `main` revision. A future supply-chain phase should resolve and persist a full repository commit before downloading model/projector files. Model licenses are defined by their individual upstream repositories; ContextHalo does not relicense downloaded models.
+The bundled Whisper model choices are pinned to Hugging Face repository `ggerganov/whisper.cpp` at full commit `5359861c739e955e79d9a303bcbc70fb988958b1` in addition to their existing file SHA-256 values. For user-selected Hugging Face GGUF repositories, ContextHalo first resolves the repository's full 40-character commit SHA, lists files at that immutable revision, downloads the selected model/projector from the same revision, verifies their LFS/Xet SHA-256 values, and persists the revision plus artifact paths/checksums in a local `.source-{quant}.json` provenance record.
+
+Model licenses are defined by their individual upstream repositories; ContextHalo does not relicense downloaded models.
 
 ## Build and release tooling
 

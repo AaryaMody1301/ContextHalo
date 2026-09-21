@@ -1,44 +1,52 @@
-const { listModelFiles, selectProjector } = require('./hubMetadata');
+const { getModelSnapshot, selectProjector } = require('./hubMetadata');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
+const { promisify } = require('util');
 const { getConfigDir } = require('../storage');
 
-const LEGACY_RUNTIME_REPOSITORY = Buffer.from([99, 104, 101, 97, 116, 105, 110, 103, 45, 100, 97, 100, 100, 121]).toString('utf8');
-const RELEASE_BASE_URL = `https://github.com/sohzm/${LEGACY_RUNTIME_REPOSITORY}/releases/download/v0.7.0`;
+const runFile = promisify(execFile);
 
-const WINDOWS_X64_RELEASES = {
-    llama: {
-        filename: 'llama-server-windows-x86_64.exe',
-        sha256: '7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862',
-    },
-    whisper: {
-        filename: 'whisper-server-windows-x86_64.exe',
-        sha256: '654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435',
-    },
-};
+const WINDOWS_X64_RELEASES = Object.freeze({
+    llama: Object.freeze({
+        tag: 'b10964',
+        commit: 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4',
+        archive: 'llama-b10964-bin-win-cpu-x64.zip',
+        executable: 'llama-server.exe',
+        sha256: '917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7',
+        url: 'https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-cpu-x64.zip',
+    }),
+    whisper: Object.freeze({
+        tag: 'b5130',
+        stableVersion: 'v1.9.4',
+        commit: '927cfce34f31707e17f2bff35c349632fb9e2c3a',
+        archive: 'whisper-bin-x64.zip',
+        executable: 'whisper-server.exe',
+        sha256: 'f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c',
+        url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip',
+    }),
+});
 
-const WHISPER_MODELS = {
-    'tiny.en': {
+const WHISPER_MODEL_REPOSITORY = 'ggerganov/whisper.cpp';
+const WHISPER_MODEL_REVISION = '5359861c739e955e79d9a303bcbc70fb988958b1';
+const WHISPER_MODELS = Object.freeze({
+    'tiny.en': Object.freeze({
         filename: 'ggml-tiny.en.bin',
-        url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin',
         sha256: '921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f',
-    },
-    'base.en': {
+    }),
+    'base.en': Object.freeze({
         filename: 'ggml-base.en.bin',
-        url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin',
         sha256: 'a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002',
-    },
-    'small.en': {
+    }),
+    'small.en': Object.freeze({
         filename: 'ggml-small.en.bin',
-        url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin',
         sha256: 'c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d',
-    },
-};
+    }),
+});
 
 function getBinariesDirectory() {
     return path.join(getConfigDir(), 'binaries');
@@ -122,20 +130,102 @@ async function installVerifiedFile({ url, destinationPath, sha256, onProgress, s
     return destinationPath;
 }
 
+function findRuntimeFile(directory, fileName) {
+    if (!fs.existsSync(directory)) return null;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+            const nested = findRuntimeFile(entryPath, fileName);
+            if (nested) return nested;
+        } else if (entry.isFile() && entry.name.toLowerCase() === fileName.toLowerCase()) {
+            return entryPath;
+        }
+    }
+    return null;
+}
+
+function writeJsonAtomic(filePath, value) {
+    const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    try {
+        fs.writeFileSync(temporaryPath, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+        fs.renameSync(temporaryPath, filePath);
+    } finally {
+        fs.rmSync(temporaryPath, { force: true });
+    }
+}
+
+function runtimeSource(release) {
+    return {
+        tag: release.tag,
+        commit: release.commit,
+        archive: release.archive,
+        sha256: release.sha256,
+        url: release.url,
+    };
+}
+
+function installedRuntimeMatches(runtimeDirectory, release) {
+    const executable = findRuntimeFile(runtimeDirectory, release.executable);
+    if (!executable) return null;
+    try {
+        const source = JSON.parse(fs.readFileSync(path.join(runtimeDirectory, '.source.json'), 'utf8'));
+        return JSON.stringify(source) === JSON.stringify(runtimeSource(release)) ? executable : null;
+    } catch {
+        return null;
+    }
+}
+
+async function extractRuntimeArchive(archivePath, runtimeDirectory, release, run = runFile, signal) {
+    signal?.throwIfAborted();
+    const stagingDirectory = `${runtimeDirectory}.extract-${process.pid}-${Date.now()}`;
+    fs.rmSync(stagingDirectory, { recursive: true, force: true });
+    fs.mkdirSync(stagingDirectory, { recursive: true });
+    try {
+        const result = await run('tar.exe', ['-xf', archivePath, '-C', stagingDirectory], {
+            signal,
+            windowsHide: true,
+            encoding: 'utf8',
+            timeout: 120000,
+        });
+        if (result?.error || (result?.status !== undefined && result.status !== 0)) {
+            throw new Error(`Windows could not unpack the verified ${release.tag} runtime`);
+        }
+        signal?.throwIfAborted();
+        if (!findRuntimeFile(stagingDirectory, release.executable)) {
+            throw new Error(`The verified ${release.tag} package is missing ${release.executable}`);
+        }
+        writeJsonAtomic(path.join(stagingDirectory, '.source.json'), runtimeSource(release));
+        fs.rmSync(runtimeDirectory, { recursive: true, force: true });
+        fs.renameSync(stagingDirectory, runtimeDirectory);
+        return findRuntimeFile(runtimeDirectory, release.executable);
+    } catch (error) {
+        fs.rmSync(stagingDirectory, { recursive: true, force: true });
+        throw error;
+    }
+}
+
 async function ensureNativeBinary(type, onProgress, signal) {
     if (process.platform !== 'win32' || process.arch !== 'x64') {
         throw new Error(`Local AI is not available for ${process.platform}/${process.arch}`);
     }
     const release = WINDOWS_X64_RELEASES[type];
-    const destinationPath = path.join(getBinariesDirectory(), release.filename);
+    if (!release) throw new Error(`Unsupported Local AI runtime: ${type}`);
+    const binariesDirectory = getBinariesDirectory();
+    const archivePath = path.join(binariesDirectory, release.archive);
+    const runtimeDirectory = path.join(binariesDirectory, `${type}-${release.tag}-cpu`);
+    const existing = installedRuntimeMatches(runtimeDirectory, release);
+    if (existing && await fileMatchesChecksum(archivePath, release.sha256)) return existing;
 
-    return installVerifiedFile({
-        url: `${RELEASE_BASE_URL}/${release.filename}`,
-        destinationPath,
+    await installVerifiedFile({
+        url: release.url,
+        destinationPath: archivePath,
         sha256: release.sha256,
         onProgress,
         signal,
     });
+    signal?.throwIfAborted();
+    return extractRuntimeArchive(archivePath, runtimeDirectory, release, runFile, signal);
 }
 
 function normalizeWhisperModel(modelName) {
@@ -158,7 +248,7 @@ async function ensureWhisperModel(modelName, onProgress, signal) {
 
     const destinationPath = path.join(getModelsDirectory(), 'whisper', model.filename);
     return installVerifiedFile({
-        url: model.url,
+        url: `https://huggingface.co/${WHISPER_MODEL_REPOSITORY}/resolve/${WHISPER_MODEL_REVISION}/${model.filename}`,
         destinationPath,
         sha256: model.sha256,
         onProgress,
@@ -193,7 +283,7 @@ function parseHuggingFaceModelReference(modelReference) {
 
 async function resolveHuggingFaceGguf(modelReference, signal) {
     const { repository, quant } = parseHuggingFaceModelReference(modelReference);
-    const files = await listModelFiles(repository, signal);
+    const { revision, files } = await getModelSnapshot(repository, signal);
     const normalizedQuant = quant.toUpperCase();
     const matches = files.filter(file => {
         return file.type === 'file' && file.path?.toLowerCase().endsWith('.gguf') && file.path.toUpperCase().includes(normalizedQuant) && !file.path.toLowerCase().startsWith('mmproj-');
@@ -215,6 +305,8 @@ async function resolveHuggingFaceGguf(modelReference, signal) {
 
     return {
         repository,
+        revision,
+        quant,
         model: {
             path: file.path,
             sha256: file.lfs.oid,
@@ -253,24 +345,41 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
     const model = await resolveHuggingFaceGguf(modelReference, signal);
     const repositoryDirectory = path.join(getModelsDirectory(), 'llama', model.repository);
     const modelPath = await installVerifiedFile({
-        url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/main/${encodePathParts(model.model.path)}`,
+        url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.model.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.model.path)),
         sha256: model.model.sha256,
         onProgress: onModelProgress,
         signal,
     });
     const projectorPath = await installVerifiedFile({
-        url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/main/${encodePathParts(model.projector.path)}`,
+        url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.projector.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.projector.path)),
         sha256: model.projector.sha256,
         onProgress: onProjectorProgress,
         signal,
     });
 
+    persistModelProvenance(repositoryDirectory, {
+        schemaVersion: 1,
+        repository: model.repository,
+        revision: model.revision,
+        quant: model.quant,
+        model: model.model,
+        projector: model.projector,
+    });
+
     return {
         modelPath,
         projectorPath,
     };
+}
+
+function persistModelProvenance(repositoryDirectory, source) {
+    if (!source?.revision || !/^[a-f0-9]{40}$/i.test(source.revision)) {
+        throw new Error('Cannot persist model provenance without an immutable repository revision');
+    }
+    const quant = String(source.quant || 'model').replace(/[^A-Za-z0-9._-]/g, '_');
+    writeJsonAtomic(path.join(repositoryDirectory, `.source-${quant}.json`), source);
 }
 
 async function getAvailablePort() {
@@ -335,6 +444,10 @@ module.exports = {
     ensureNativeBinary,
     ensureLlamaModel,
     ensureWhisperModel,
+    extractRuntimeArchive,
+    persistModelProvenance,
+    WINDOWS_X64_RELEASES,
+    WHISPER_MODEL_REVISION,
     getAvailablePort,
     getModelsDirectory,
     startNativeServer,

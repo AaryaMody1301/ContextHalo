@@ -374,58 +374,67 @@
       "source": "https://github.com/ggml-org/llama.cpp/releases/tag/b10964",
       "artifact": "llama-b10964-bin-win-vulkan-x64.zip",
       "revision": "b10964",
+      "commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
       "sha256": "1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642",
       "license": "MIT",
-      "status": "checksum-pinned upstream release"
+      "status": "official checksum-pinned upstream release"
     },
     {
       "role": "CPU llama fallback",
       "platform": "windows-x64",
-      "source": "https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0",
-      "artifact": "llama-server-windows-x86_64.exe",
-      "revision": "v0.7.0",
-      "sha256": "7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862",
-      "license": "inherited legacy upstream release; review independently",
-      "status": "checksum-pinned legacy fallback"
+      "source": "https://github.com/ggml-org/llama.cpp/releases/tag/b10964",
+      "artifact": "llama-b10964-bin-win-cpu-x64.zip",
+      "revision": "b10964",
+      "commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
+      "sha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+      "license": "MIT",
+      "status": "official checksum-pinned upstream release"
     },
     {
-      "role": "Whisper runtime fallback",
+      "role": "Whisper runtime",
       "platform": "windows-x64",
-      "source": "https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0",
-      "artifact": "whisper-server-windows-x86_64.exe",
-      "revision": "v0.7.0",
-      "sha256": "654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435",
-      "license": "inherited legacy upstream release; review independently",
-      "status": "checksum-pinned legacy fallback"
+      "source": "https://github.com/ggml-org/whisper.cpp/releases/tag/b5130",
+      "artifact": "whisper-bin-x64.zip",
+      "revision": "b5130",
+      "stableVersion": "v1.9.4",
+      "commit": "927cfce34f31707e17f2bff35c349632fb9e2c3a",
+      "sha256": "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c",
+      "license": "MIT",
+      "status": "official checksum-pinned upstream release; same commit as v1.9.4"
     }
   ],
   "whisperModels": [
     {
       "id": "tiny.en",
       "artifact": "ggml-tiny.en.bin",
-      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
+      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin",
       "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
-      "revisionPolicy": "mutable main + fixed digest"
+      "revisionPolicy": "fixed full repository commit + fixed digest",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1"
     },
     {
       "id": "base.en",
       "artifact": "ggml-base.en.bin",
-      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin",
       "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
-      "revisionPolicy": "mutable main + fixed digest"
+      "revisionPolicy": "fixed full repository commit + fixed digest",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1"
     },
     {
       "id": "small.en",
       "artifact": "ggml-small.en.bin",
-      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
+      "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.en.bin",
       "sha256": "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
-      "revisionPolicy": "mutable main + fixed digest"
+      "revisionPolicy": "fixed full repository commit + fixed digest",
+      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1"
     }
   ],
   "ggufPolicy": {
-    "catalogSource": "Hugging Face Hub tree API",
-    "downloadRevision": "main",
-    "integrity": "LFS SHA-256 OID / ETag verified before atomic install",
-    "openRisk": "resolve and persist an immutable repository commit before downloading model and projector files"
+    "catalogSource": "Hugging Face Hub model metadata + tree API",
+    "revisionResolution": "resolve the repository's full 40-character commit SHA before listing files",
+    "downloadRevision": "resolved immutable repository commit SHA",
+    "integrity": "LFS SHA-256 OID / Xet ETag verified before atomic install",
+    "persistence": "persist repository revision, quant, model/projector paths and SHA-256 values in .source-{quant}.json",
+    "openRisk": "model licenses remain repository-specific and must be reviewed for any new default model"
   }
 }

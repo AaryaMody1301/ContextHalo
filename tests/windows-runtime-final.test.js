@@ -173,6 +173,7 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
 
 test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime', async () => {
     assert.equal(VULKAN_LLAMA_RELEASE.tag, 'b10964');
+    assert.equal(VULKAN_LLAMA_RELEASE.commit, 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4');
     assert.equal(VULKAN_LLAMA_RELEASE.sha256, '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642');
     assert.match(VULKAN_LLAMA_RELEASE.url, /^https:\/\/github\.com\/ggml-org\/llama\.cpp\/releases\/download\/b10964\//);
 
@@ -190,7 +191,11 @@ test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime'
         const executable = await extractVulkanRuntime(path.join(tempRoot, 'runtime.zip'), runtimeDirectory, spawn);
         assert.equal(path.basename(executable), 'llama-server.exe');
         assert.equal(fs.existsSync(path.join(runtimeDirectory, 'ggml-vulkan.dll')), true);
-        assert.equal(fs.readFileSync(path.join(runtimeDirectory, '.archive-sha256'), 'utf8'), VULKAN_LLAMA_RELEASE.sha256);
+        const source = JSON.parse(fs.readFileSync(path.join(runtimeDirectory, '.source.json'), 'utf8'));
+        assert.equal(source.tag, VULKAN_LLAMA_RELEASE.tag);
+        assert.equal(source.commit, VULKAN_LLAMA_RELEASE.commit);
+        assert.equal(source.sha256, VULKAN_LLAMA_RELEASE.sha256);
+        assert.equal(source.url, VULKAN_LLAMA_RELEASE.url);
     } finally {
         fs.rmSync(tempRoot, { recursive: true, force: true });
     }

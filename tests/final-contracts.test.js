@@ -164,22 +164,35 @@ test('SSE limits accumulated multiline event data rather than only each individu
     await assert.rejects(async () => { for await (const _item of readSseJson(stream)) {} }, /too large/);
 });
 
-test('model discovery follows pagination and supports F16/F32 projectors without guessing model files', async () => {
+test('model discovery resolves an immutable revision, follows pagination and supports F16/F32 projectors', async () => {
     const calls = [];
+    const revision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const hub = loadMain('src/utils/hubMetadata.js', {}, { fetch: async url => {
         calls.push(url);
-        return calls.length === 1 ? new Response('[]', { headers: { link: '<https://huggingface.co/api/models/test/model/tree/main?cursor=2>; rel="next"' } })
+        if (calls.length === 1) return new Response(JSON.stringify({ id: 'test/model', sha: revision }));
+        return calls.length === 2
+            ? new Response('[]', { headers: { link: `<https://huggingface.co/api/models/test/model/tree/${revision}?cursor=2>; rel="next"` } })
             : new Response(JSON.stringify([{ type: 'file', path: 'mmproj-F32.gguf' }]));
     } });
-    const files = await hub.listModelFiles('test/model');
-    assert.equal(calls.length, 2); assert.equal(hub.selectProjector(files).path, 'mmproj-F32.gguf');
+    const snapshot = await hub.getModelSnapshot('test/model');
+    assert.equal(snapshot.revision, revision);
+    assert.equal(calls.length, 3);
+    assert.ok(calls.slice(1).every(url => url.includes(`/tree/${revision}`)));
+    assert.equal(hub.selectProjector(snapshot.files).path, 'mmproj-F32.gguf');
 });
 
-test('Hub metadata cannot redirect pagination to an arbitrary host', async () => {
-    const hub = loadMain('src/utils/hubMetadata.js', {}, { fetch: async () => new Response('[]', {
-        headers: { link: '<https://untrusted.example/tree/main>; rel="next"' },
-    }) });
-    await assert.rejects(hub.listModelFiles('test/model'), /Invalid model pagination/);
+test('Hub metadata rejects missing revisions and cross-origin pagination', async () => {
+    const revision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const missing = loadMain('src/utils/hubMetadata.js', {}, { fetch: async () => new Response(JSON.stringify({ id: 'test/model' })) });
+    await assert.rejects(missing.getModelSnapshot('test/model'), /immutable model revision/);
+
+    let calls = 0;
+    const redirected = loadMain('src/utils/hubMetadata.js', {}, { fetch: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ id: 'test/model', sha: revision }));
+        return new Response('[]', { headers: { link: '<https://untrusted.example/tree/revision>; rel="next"' } });
+    } });
+    await assert.rejects(redirected.getModelSnapshot('test/model'), /Invalid model pagination/);
 });
 
 test('native readiness observes cancellation and reports launch errors immediately', async () => {

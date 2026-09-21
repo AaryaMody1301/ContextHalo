@@ -45,7 +45,9 @@ test('Windows-only cleanup removes retired platform and compatibility paths', ()
     assert.doesNotMatch(runtimeHardening, /SystemAudioDump|runtimeMacAudio|start-macos-audio|stop-macos-audio/);
     assert.doesNotMatch(runtimeHardening, /desktopCapturer|session\.defaultSession|useSystemPicker: true/);
     const nativeRuntime = read('src/utils/native-ai-runtime.js');
-    assert.doesNotMatch(nativeRuntime, /darwin:|llama-server-macos|whisper-server-macos|chmodSync|executable:/);
+    assert.doesNotMatch(nativeRuntime, /darwin:|llama-server-macos|whisper-server-macos|chmodSync/);
+    assert.match(nativeRuntime, /executable: 'llama-server\.exe'/);
+    assert.match(nativeRuntime, /executable: 'whisper-server\.exe'/);
     const storage = read('src/storage.js');
     assert.doesNotMatch(storage, /advancedMode|getModelForToday/);
     for (const internalOnly of ['setConfig', 'setCredentials', 'setPreferences', 'getLimits', 'setLimits', 'getTodayLimits', 'getCredentials']) {
