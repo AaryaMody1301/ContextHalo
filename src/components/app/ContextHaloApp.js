@@ -3,6 +3,7 @@ import { loadContextState, saveSessionPack, persistPackToCurrentSession } from '
 import { openPanel, closePanel } from '../../utils/phase4Renderer.js';
 import { html, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import { contextHaloAppStyles } from './ContextHaloAppStyles.js';
+import { addResponseState, updateResponseState } from './responseStateRenderer.js';
 import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
 import { HelpView } from '../views/HelpView.js';
@@ -367,31 +368,11 @@ export class ContextHaloApp extends LitElement {
     }
 
     addNewResponse(response, metadata) {
-        if (metadata?.uiEpoch !== undefined && metadata.uiEpoch !== this._uiSessionEpoch) return;
-        const id = metadata?.requestId;
-        if (id && this._responseRequestIndex.has(id)) return this.updateCurrentResponse(response, metadata);
-        const wasOnLatest = this.currentResponseIndex === this.responses.length - 1;
-        const requestedReply = id && ['text', 'screen'].some(kind => this._requestOwners?.[kind]?.requestId === id);
-        const canFollow = requestedReply || this.shadowRoot?.querySelector('assistant-view')?.canFollowResponse?.() !== false;
-        this.responses = [...this.responses, String(response || '')];
-        (this._responseGrounding ||= []).push(metadata?.grounding);
-        this._responseIds.push(id || null);
-        if (id) this._responseRequestIndex.set(id, this.responses.length - 1);
-        if ((wasOnLatest && canFollow) || this.currentResponseIndex === -1) this.currentResponseIndex = this.responses.length - 1;
-        this.requestUpdate();
+        return addResponseState(this, response, metadata);
     }
 
     updateCurrentResponse(response, metadata) {
-        if (metadata?.uiEpoch !== undefined && metadata.uiEpoch !== this._uiSessionEpoch) return;
-        const id = metadata?.requestId;
-        if (id && !this._responseRequestIndex.has(id)) return this.addNewResponse(response, metadata);
-        const index = id ? this._responseRequestIndex.get(id) : this.responses.length - 1;
-        if (index < 0) return this.addNewResponse(response, metadata);
-        if (metadata?.grounding) (this._responseGrounding ||= [])[index] = metadata.grounding;
-        const next = [...this.responses];
-        next[index] = String(response || '');
-        this.responses = next;
-        this.requestUpdate();
+        return updateResponseState(this, response, metadata);
     }
 
     // ── Navigation ──
