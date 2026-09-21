@@ -1,4 +1,4 @@
-import { css } from '../../assets/lit-core-2.7.4.min.js';
+import { css } from '../../assets/lit-core-3.3.3.min.js';
 
 export const unifiedPageStyles = css`
     * {
