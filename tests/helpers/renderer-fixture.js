@@ -103,6 +103,9 @@ function rendererFixture(options = {}) {
             getUserMedia: constraints => { calls.push(['microphone', constraints]); return options.mic ? options.mic(constraints) : Promise.resolve(microphone); },
         } },
     };
+    for (const file of ['src/utils/rendererStorage.js', 'src/utils/rendererTheme.js']) {
+        vm.runInNewContext(fs.readFileSync(file, 'utf8'), scope);
+    }
     vm.runInNewContext(fs.readFileSync('src/utils/renderer.js', 'utf8') + '\nthis.testCapture = { waitForFreshVideoFrame };', scope);
     return { api: window.contextHalo, calls, contexts, workletNodes, variables, events, prefs, media, microphone, window, scope };
 }

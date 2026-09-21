@@ -10,6 +10,7 @@ test('portable package uses an explicit runtime allowlist', () => {
         'src/**/*',
         'preload.js',
         'scripts/renderer-behavior-smoke.js',
+        'scripts/windows-acceptance.js',
         'LICENSE',
         'CREDITS.md',
         'THIRD_PARTY_NOTICES.md',
