@@ -31,6 +31,10 @@ function componentClass(file, name, overrides = {}) {
         contextHalo: { getVersion: async () => '0.8.0', storage: { getConfig: async () => ({onboarded:true}), getPreferences: async () => ({}), getKeybinds: async () => ({}), getShortcutState: async () => ({ success: true, data: {}, conflicts: {} }) } },
         ...overrides,
     };
+    if (file.endsWith('ContextHaloApp.js')) {
+        const responseState = fs.readFileSync('src/components/app/responseStateRenderer.js', 'utf8').replace(/^export /gm, '');
+        vm.runInNewContext(responseState, context, { filename: 'responseStateRenderer.js' });
+    }
     vm.runInNewContext(source + `\nthis.Target = ${name};`, context, { filename: file });
     return { Target: context.Target, context };
 }
