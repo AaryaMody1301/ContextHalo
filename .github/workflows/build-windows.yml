@@ -41,6 +41,9 @@ jobs:
             AGENTS.md
             LICENSE
             CREDITS.md
+            THIRD_PARTY_NOTICES.md
+            docs/PHASE_1_FILE_INVENTORY.json
+            docs/THIRD_PARTY_PROVENANCE.json
           if-no-files-found: error
           retention-days: 7
 

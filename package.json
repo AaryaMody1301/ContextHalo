@@ -74,11 +74,12 @@
             "onlyLoadAppFromAsar": true
         },
         "files": [
-            "**/*",
-            "!qa-results/**",
-            "!tests/**",
-            "!docs/**",
-            "!.github/**"
+            "src/**/*",
+            "preload.js",
+            "scripts/renderer-behavior-smoke.js",
+            "LICENSE",
+            "CREDITS.md",
+            "THIRD_PARTY_NOTICES.md"
         ]
     }
 }

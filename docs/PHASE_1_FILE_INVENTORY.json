@@ -1,0 +1,885 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-09-20",
+  "repository": "AaryaMody1301/ContextHalo",
+  "auditBaseline": "8b7b28e312d33c45ee9e3ca5909804ebb9e3b1ad",
+  "fileCount": 146,
+  "files": [
+    {
+      "path": ".editorconfig",
+      "ownerClass": "development-config",
+      "size": 218,
+      "blobSha": "800254a3220225c9e98398a007dc4b58ca784b16"
+    },
+    {
+      "path": ".env.example",
+      "ownerClass": "development-config",
+      "size": 169,
+      "blobSha": "d5f485046a79138c888b9c1be437036550647418"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "ownerClass": "repository-governance",
+      "size": 1941,
+      "blobSha": "362d2ada90a4309fd70a0d79aa51099f9d7c8ced"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "ownerClass": "repository-governance",
+      "size": 224,
+      "blobSha": "5246f12712585d432f14662f5f7249cf8de35549"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "ownerClass": "repository-governance",
+      "size": 853,
+      "blobSha": "29061f92b4bd7fbe4c469acdaa4970dc0be82be7"
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "ownerClass": "repository-governance",
+      "size": 259,
+      "blobSha": "5043f0c5217f80242d6581ce71b2e662a33974a6"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "ownerClass": "repository-governance",
+      "size": 739,
+      "blobSha": "e24f01108845d4117d3ed58eb4ef35fee1919e7d"
+    },
+    {
+      "path": ".github/workflows/build-windows.yml",
+      "ownerClass": "ci-workflow",
+      "size": 6246,
+      "blobSha": "90ada4138c21bcf0c1ccdd14622a15a29da888ab"
+    },
+    {
+      "path": ".github/workflows/repository-maintenance.yml",
+      "ownerClass": "ci-workflow",
+      "size": 1835,
+      "blobSha": "524d48bfd88679b8831cdc8988ddd4c7bc593e97"
+    },
+    {
+      "path": ".gitignore",
+      "ownerClass": "development-config",
+      "size": 499,
+      "blobSha": "5f010c81e76f4da0e0652dcb5dfc526655049be7"
+    },
+    {
+      "path": ".prettierignore",
+      "ownerClass": "development-config",
+      "size": 24,
+      "blobSha": "1734101ebf0bd02b1ffbe7bd0ac4b95a986de8ad"
+    },
+    {
+      "path": ".prettierrc",
+      "ownerClass": "development-config",
+      "size": 195,
+      "blobSha": "2ef7ebb93b917e35a2f8cde1eef5543938a82fda"
+    },
+    {
+      "path": "AGENTS.md",
+      "ownerClass": "repository-documentation",
+      "size": 2873,
+      "blobSha": "b7fdd08fb029df155048b167c00d9a107ce0029d"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "ownerClass": "repository-documentation",
+      "size": 1185,
+      "blobSha": "8dee8ba7941afa298bf0ec17a69717b36afd7819"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "ownerClass": "repository-documentation",
+      "size": 1607,
+      "blobSha": "5a518b0af9ac24cb9fbd802713b46063eb42467d"
+    },
+    {
+      "path": "CREDITS.md",
+      "ownerClass": "license-provenance",
+      "size": 782,
+      "blobSha": "1f84f12481c5d2f9f019dbc76dfeb70e564eb98f"
+    },
+    {
+      "path": "LICENSE",
+      "ownerClass": "license-provenance",
+      "size": 35149,
+      "blobSha": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7"
+    },
+    {
+      "path": "README.md",
+      "ownerClass": "repository-documentation",
+      "size": 5613,
+      "blobSha": "0c386dd762730f855ab64d4538576e61763e7cb1"
+    },
+    {
+      "path": "SECURITY.md",
+      "ownerClass": "repository-documentation",
+      "size": 880,
+      "blobSha": "188c5fb65d65e58905e3326b1eef7dda82c868b9"
+    },
+    {
+      "path": "SUPPORT.md",
+      "ownerClass": "repository-documentation",
+      "size": 794,
+      "blobSha": "19bc7426cea26578afb06fc53da97f5bbf0a9b16"
+    },
+    {
+      "path": "docs/API_COMPATIBILITY_AUDIT.md",
+      "ownerClass": "audit-documentation",
+      "size": 9906,
+      "blobSha": "3fb6881ee24a517078466c094c63d1a9fe36b337"
+    },
+    {
+      "path": "docs/INTERVIEW_RELIABILITY_ACCEPTANCE.md",
+      "ownerClass": "audit-documentation",
+      "size": 4315,
+      "blobSha": "0fbc3b2cb438f28aa12bcd2662584451713830f8"
+    },
+    {
+      "path": "docs/PERFORMANCE_MODEL_TRANSPARENCY_AUDIT_2026-09-19.md",
+      "ownerClass": "audit-documentation",
+      "size": 3037,
+      "blobSha": "be9f20c4bae3e9e121590e0e8f2da821b1bfc89a"
+    },
+    {
+      "path": "docs/PHASE_0_BASELINE_FREEZE_2026-09-20.md",
+      "ownerClass": "audit-documentation",
+      "size": 15293,
+      "blobSha": "d7bcd93175eb6002115447a9dde54245699fbc78"
+    },
+    {
+      "path": "docs/PROVIDER_RECOVERY_AUDIT_2026-09-19.md",
+      "ownerClass": "audit-documentation",
+      "size": 6132,
+      "blobSha": "e89fd23d34ebd0c8ecc539f935d66514a68d2d1b"
+    },
+    {
+      "path": "docs/RELIABILITY_AUDIT.md",
+      "ownerClass": "audit-documentation",
+      "size": 3743,
+      "blobSha": "e18bd0530e9eaee2eabfcbbf97f1b377af941422"
+    },
+    {
+      "path": "docs/TEST_MIGRATION.json",
+      "ownerClass": "audit-documentation",
+      "size": 5564,
+      "blobSha": "8714edc97706fb39920f23b35dcfcd8f8a731ad3"
+    },
+    {
+      "path": "docs/UI_UX_ACCEPTANCE.md",
+      "ownerClass": "audit-documentation",
+      "size": 8753,
+      "blobSha": "9418944706891ece9e6a98f2a3bcba31488ba981"
+    },
+    {
+      "path": "docs/WINDOWS_REPAIR_VALIDATION.md",
+      "ownerClass": "audit-documentation",
+      "size": 10137,
+      "blobSha": "d455a216a8c3ac18f8bdd743ce2284fa0ce8de54"
+    },
+    {
+      "path": "package-lock.json",
+      "ownerClass": "build/dependency-metadata",
+      "size": 183047,
+      "blobSha": "a101a41f1c0063f269cc4944ffc0a78ab78cb4cb"
+    },
+    {
+      "path": "package.json",
+      "ownerClass": "build/dependency-metadata",
+      "size": 2426,
+      "blobSha": "814cc8f4cd49e3750f93def5f4629d354b9d4c05"
+    },
+    {
+      "path": "preload.js",
+      "ownerClass": "runtime-preload",
+      "size": 4836,
+      "blobSha": "fcbf059b7f2f42684c84d5585a02902e7e590a42"
+    },
+    {
+      "path": "scripts/check-source.js",
+      "ownerClass": "development-maintenance",
+      "size": 615,
+      "blobSha": "e7746dae57509c951e6f64aae04ed08bb1829f52"
+    },
+    {
+      "path": "scripts/renderer-behavior-smoke.js",
+      "ownerClass": "runtime-validation-helper",
+      "size": 54437,
+      "blobSha": "47c0daadda88c4946e5155b9537d3faf5528415b"
+    },
+    {
+      "path": "scripts/repository-maintenance.js",
+      "ownerClass": "development-maintenance",
+      "size": 8302,
+      "blobSha": "99c54413f14678fd2254d8bfc2d28968c7dd3cdb"
+    },
+    {
+      "path": "src/assets/highlight-11.9.0.min.js",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 121727,
+      "blobSha": "5d699ae6a4cfc9544a22a9ac394b01db2e5abd4f"
+    },
+    {
+      "path": "src/assets/highlight-vscode-dark.min.css",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 1315,
+      "blobSha": "03b6da8bf4301dbc9853f46f9fe3362236f61a82"
+    },
+    {
+      "path": "src/assets/lit-core-2.7.4.min.js",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 16523,
+      "blobSha": "9cc53cdb55e8bea37b5c0a274f7180958591e6be"
+    },
+    {
+      "path": "src/assets/logo.ico",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 180723,
+      "blobSha": "639961720c581d50a098c9bda709ee2508adb490"
+    },
+    {
+      "path": "src/assets/marked-4.3.0.min.js",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 49718,
+      "blobSha": "9402998aaec170dea82e49ed62ac5a92a81ed482"
+    },
+    {
+      "path": "src/assets/onboarding/context.svg",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 686,
+      "blobSha": "7b734f02cabbc827c2b75fc492241c47dea7ac09"
+    },
+    {
+      "path": "src/assets/onboarding/customize.svg",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 875,
+      "blobSha": "3c10cddb687dedcf03468d357c714b44d95a3d6b"
+    },
+    {
+      "path": "src/assets/onboarding/ready.svg",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 662,
+      "blobSha": "1886ab3f2390818aa69601a7af35236b04e2a44c"
+    },
+    {
+      "path": "src/assets/onboarding/security.svg",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 668,
+      "blobSha": "5749c3cf810a0209fee2b29481435a2e7d462e15"
+    },
+    {
+      "path": "src/assets/onboarding/welcome.svg",
+      "ownerClass": "runtime-vendored-or-brand-asset",
+      "size": 1693,
+      "blobSha": "0bee5ee3526c52bf257c2ec6c0187e9eabca8ab3"
+    },
+    {
+      "path": "src/components/GroundingSources.js",
+      "ownerClass": "runtime-source",
+      "size": 4505,
+      "blobSha": "11e9511148198306e1dab02bb0c057329dcfc4b1"
+    },
+    {
+      "path": "src/components/app/ContextHaloApp.js",
+      "ownerClass": "runtime-source",
+      "size": 77863,
+      "blobSha": "af1e02502c5891772f8729155330e4b46c10c3ee"
+    },
+    {
+      "path": "src/components/views/AICustomizeView.js",
+      "ownerClass": "runtime-source",
+      "size": 4587,
+      "blobSha": "3590e2a17c792edd0448d3714e6c6f1e51787b7f"
+    },
+    {
+      "path": "src/components/views/AssistantView.js",
+      "ownerClass": "runtime-source",
+      "size": 36271,
+      "blobSha": "9996a5d5689e856271318e00169a5e0d139a7bc8"
+    },
+    {
+      "path": "src/components/views/CustomizeView.js",
+      "ownerClass": "runtime-source",
+      "size": 36228,
+      "blobSha": "5a3d96a38c7ef57508921da3d68e03f8439a94c6"
+    },
+    {
+      "path": "src/components/views/FeedbackView.js",
+      "ownerClass": "runtime-source",
+      "size": 2230,
+      "blobSha": "b528cd9b652a3ab7e7668da34950a7ba9c66de1f"
+    },
+    {
+      "path": "src/components/views/HelpView.js",
+      "ownerClass": "runtime-source",
+      "size": 6711,
+      "blobSha": "60afe836530fa18a0f899afe8b5619f063cb720c"
+    },
+    {
+      "path": "src/components/views/HistoryView.js",
+      "ownerClass": "runtime-source",
+      "size": 21527,
+      "blobSha": "6857f185949cdf6aaaaa6d88818410784b01d1e6"
+    },
+    {
+      "path": "src/components/views/MainView.js",
+      "ownerClass": "runtime-source",
+      "size": 58914,
+      "blobSha": "70c3eb7a7effdbf771db84d066b825809d752093"
+    },
+    {
+      "path": "src/components/views/OnboardingView.js",
+      "ownerClass": "runtime-source",
+      "size": 5546,
+      "blobSha": "a30da613ef0487ea7384cbed4e1e2256533b51b0"
+    },
+    {
+      "path": "src/components/views/sharedPageStyles.js",
+      "ownerClass": "runtime-source",
+      "size": 5312,
+      "blobSha": "41955d00db281c62a9520412b653d675a6537165"
+    },
+    {
+      "path": "src/index.html",
+      "ownerClass": "runtime-source",
+      "size": 4038,
+      "blobSha": "a8f42e5b0ae4047b5c1f2ee0c6f4d8eb8fab24e9"
+    },
+    {
+      "path": "src/index.js",
+      "ownerClass": "runtime-source",
+      "size": 8511,
+      "blobSha": "8112a28ebe177cfb981ad6dc1e016cccc16b443c"
+    },
+    {
+      "path": "src/region-selector.html",
+      "ownerClass": "runtime-source",
+      "size": 2576,
+      "blobSha": "46f399cb3e6243f093f82504be186b4a7a3b60ff"
+    },
+    {
+      "path": "src/storage.js",
+      "ownerClass": "runtime-source",
+      "size": 19657,
+      "blobSha": "d5ab05e6dfafbe4757afdf9ef05fe26728fefdb4"
+    },
+    {
+      "path": "src/utils/audioCaptureWorklet.js",
+      "ownerClass": "runtime-source",
+      "size": 1970,
+      "blobSha": "96bfe0369e7f3c07f2dca38ae533cc466e28f95c"
+    },
+    {
+      "path": "src/utils/contextCaptureMain.js",
+      "ownerClass": "runtime-source",
+      "size": 13113,
+      "blobSha": "fcee012199441245fa3656f6668799b3711ae78f"
+    },
+    {
+      "path": "src/utils/contextCaptureRenderer.js",
+      "ownerClass": "runtime-source",
+      "size": 6982,
+      "blobSha": "b06bbe40a51ddf4dd91cf4b369575f49a60538d2"
+    },
+    {
+      "path": "src/utils/dynamicModelRegistryRenderer.js",
+      "ownerClass": "runtime-source",
+      "size": 3005,
+      "blobSha": "f33dbe893f650bdb398e033b8eb5574d8b8c90a1"
+    },
+    {
+      "path": "src/utils/gemini.js",
+      "ownerClass": "runtime-source",
+      "size": 86489,
+      "blobSha": "19786415fb0a1f666fbe7b933e00980e2ba7ccc4"
+    },
+    {
+      "path": "src/utils/geminiLiveReliability.js",
+      "ownerClass": "runtime-source",
+      "size": 3092,
+      "blobSha": "7cfaa23a11d0c5c356a40a3d7c3fc47b74d48bb6"
+    },
+    {
+      "path": "src/utils/geminiLiveRuntime.js",
+      "ownerClass": "runtime-source",
+      "size": 7459,
+      "blobSha": "fdd27fec9beebedae570680700f031e04f87325f"
+    },
+    {
+      "path": "src/utils/geminiLiveSupervisor.js",
+      "ownerClass": "runtime-source",
+      "size": 3474,
+      "blobSha": "5bf5cae761bb1fd08d0eacac16d2b32faf26f655"
+    },
+    {
+      "path": "src/utils/geminiScreenReliability.js",
+      "ownerClass": "runtime-source",
+      "size": 1002,
+      "blobSha": "d87b62814e94b9e1f49f738c318afb56ead75bb4"
+    },
+    {
+      "path": "src/utils/groqRequestPolicy.js",
+      "ownerClass": "runtime-source",
+      "size": 2231,
+      "blobSha": "a9542b9738fb894d7a8bf326ad8248590321c6e1"
+    },
+    {
+      "path": "src/utils/hubMetadata.js",
+      "ownerClass": "runtime-source",
+      "size": 1820,
+      "blobSha": "04863af18fe4a31dd71cdf3d743792e993618e47"
+    },
+    {
+      "path": "src/utils/knowledgeCore.js",
+      "ownerClass": "runtime-source",
+      "size": 8037,
+      "blobSha": "f9f04f83b2812bdde9ffe26998ed84a67a1ef3e8"
+    },
+    {
+      "path": "src/utils/knowledgeRagMain.js",
+      "ownerClass": "runtime-source",
+      "size": 6326,
+      "blobSha": "2db763ba6e7dcc69e3364bcb5cc4bd31fa2e29ad"
+    },
+    {
+      "path": "src/utils/knowledgeStore.js",
+      "ownerClass": "runtime-source",
+      "size": 10276,
+      "blobSha": "96ac3784e8f5630e55034d40673ffc89ce2fb527"
+    },
+    {
+      "path": "src/utils/localai.js",
+      "ownerClass": "runtime-source",
+      "size": 22360,
+      "blobSha": "74ec7b27683ebfd259f9379cebd0390b52907899"
+    },
+    {
+      "path": "src/utils/native-ai-runtime.js",
+      "ownerClass": "runtime-source",
+      "size": 12098,
+      "blobSha": "6759e97e53fc4eb15f4914d8cee3ceaec87e7920"
+    },
+    {
+      "path": "src/utils/phase4Main.js",
+      "ownerClass": "runtime-source",
+      "size": 7785,
+      "blobSha": "c653e6d8f2403f7e92e920188b8a1348f31fef5d"
+    },
+    {
+      "path": "src/utils/phase4Renderer.js",
+      "ownerClass": "runtime-source",
+      "size": 20621,
+      "blobSha": "4a8ace94ca441fbe2834dbcb32c6d59445e4f917"
+    },
+    {
+      "path": "src/utils/practiceCore.js",
+      "ownerClass": "runtime-source",
+      "size": 7028,
+      "blobSha": "3e9688872fab93c97debeab888e32dee007dffad"
+    },
+    {
+      "path": "src/utils/prompts.js",
+      "ownerClass": "runtime-source",
+      "size": 16358,
+      "blobSha": "b7160b467db9ceff5231f433a4527649a0ee1ebd"
+    },
+    {
+      "path": "src/utils/providerModelRegistry.js",
+      "ownerClass": "runtime-source",
+      "size": 8688,
+      "blobSha": "261a15944dbc5c6ded0b8fb29776e339782d4e88"
+    },
+    {
+      "path": "src/utils/realtimeContextCore.js",
+      "ownerClass": "runtime-source",
+      "size": 3797,
+      "blobSha": "5628ff2c0cef7a76aac0ec60efeabb62aa5e9e01"
+    },
+    {
+      "path": "src/utils/realtimeContextMain.js",
+      "ownerClass": "runtime-source",
+      "size": 4587,
+      "blobSha": "c8c9cfc683c62527c7428d62006d968dfc0094e9"
+    },
+    {
+      "path": "src/utils/realtimeContextRenderer.js",
+      "ownerClass": "runtime-source",
+      "size": 5960,
+      "blobSha": "a5919e820e665cb4aa072918b5d9082e3d82efbc"
+    },
+    {
+      "path": "src/utils/regionSelectorPreload.js",
+      "ownerClass": "runtime-source",
+      "size": 283,
+      "blobSha": "399c802a6a1a5e463a4642ca004068f1ac0ce593"
+    },
+    {
+      "path": "src/utils/regionSelectorRenderer.js",
+      "ownerClass": "runtime-source",
+      "size": 2384,
+      "blobSha": "18e583d76bdd337f5bc3d8e69190bf438222f7a6"
+    },
+    {
+      "path": "src/utils/renderer.js",
+      "ownerClass": "runtime-source",
+      "size": 42122,
+      "blobSha": "42ca87e8780c89d3234b97ce8e46dd270c4adcf8"
+    },
+    {
+      "path": "src/utils/requestDeadline.js",
+      "ownerClass": "runtime-source",
+      "size": 1093,
+      "blobSha": "f8a4675e05b501cbb6a5080f058568b03cb1bc0c"
+    },
+    {
+      "path": "src/utils/responseSanitizerRenderer.js",
+      "ownerClass": "runtime-source",
+      "size": 2337,
+      "blobSha": "82dc28500a8d56686ae8112d10b9f236da0c4307"
+    },
+    {
+      "path": "src/utils/runtimeHardeningMain.js",
+      "ownerClass": "runtime-source",
+      "size": 9835,
+      "blobSha": "d8d119ee2a7e061e9c1bc28cb1842a1a928e4298"
+    },
+    {
+      "path": "src/utils/sessionData.js",
+      "ownerClass": "runtime-source",
+      "size": 1080,
+      "blobSha": "a53b50416d6d4be5f22b6c00c2e4c6fe2e5378d7"
+    },
+    {
+      "path": "src/utils/sessionPackMain.js",
+      "ownerClass": "runtime-source",
+      "size": 3072,
+      "blobSha": "953756aeca6474cd705080a14a9722c6898fcff9"
+    },
+    {
+      "path": "src/utils/sessionRequests.js",
+      "ownerClass": "runtime-source",
+      "size": 3908,
+      "blobSha": "b811e5d9dc0ea2c4d53000a8fd7e3e78b03968bf"
+    },
+    {
+      "path": "src/utils/sse.js",
+      "ownerClass": "runtime-source",
+      "size": 2371,
+      "blobSha": "b88cf6801481bab8fc6ca2a77f6d772d7f29e891"
+    },
+    {
+      "path": "src/utils/transportLogger.js",
+      "ownerClass": "runtime-source",
+      "size": 1871,
+      "blobSha": "d116d8317c303be117797894657dc52fc253a2d2"
+    },
+    {
+      "path": "src/utils/window.js",
+      "ownerClass": "runtime-source",
+      "size": 16106,
+      "blobSha": "981652300562f0fc620e98ec8119e31af28eaf07"
+    },
+    {
+      "path": "src/utils/windowModeController.js",
+      "ownerClass": "runtime-source",
+      "size": 7466,
+      "blobSha": "973f540111908ec1e6c0d53778c9f464a701924c"
+    },
+    {
+      "path": "src/utils/windowsLocalAiRuntime.js",
+      "ownerClass": "runtime-source",
+      "size": 12088,
+      "blobSha": "589aeaed7a5144609d41e972c313e91bfc60b3b3"
+    },
+    {
+      "path": "src/utils/windowsProviderTransport.js",
+      "ownerClass": "runtime-source",
+      "size": 13625,
+      "blobSha": "f2a7f824a13fc52253402b53dfe481396201969c"
+    },
+    {
+      "path": "src/utils/windowsRuntimeMain.js",
+      "ownerClass": "runtime-source",
+      "size": 10077,
+      "blobSha": "7036da7f0a3d5e8e87de03d3a3e5d90e5103cb20"
+    },
+    {
+      "path": "tests/appearance.test.js",
+      "ownerClass": "test",
+      "size": 3666,
+      "blobSha": "60baeb8088e83edde979d2c475bd10bde37ddc00"
+    },
+    {
+      "path": "tests/brand.test.js",
+      "ownerClass": "test",
+      "size": 2525,
+      "blobSha": "8679ae421a7dc0eb9f20289bc21a3c2cfbf32820"
+    },
+    {
+      "path": "tests/capture-lifecycle.test.js",
+      "ownerClass": "test",
+      "size": 9126,
+      "blobSha": "5cb4fe82fbff906039888e925b4e04ed973cdf21"
+    },
+    {
+      "path": "tests/composer-behavior.test.js",
+      "ownerClass": "test",
+      "size": 3566,
+      "blobSha": "14d4b05568409ada501845d7142030c972650ad0"
+    },
+    {
+      "path": "tests/context-behavior.test.js",
+      "ownerClass": "test",
+      "size": 7874,
+      "blobSha": "dd0df47fde44df019f98159a90219fb5c44304c5"
+    },
+    {
+      "path": "tests/context-capture.test.js",
+      "ownerClass": "test",
+      "size": 5290,
+      "blobSha": "8de847aa1d48aa1320dc1e7de595830cb6ff0289"
+    },
+    {
+      "path": "tests/final-contracts.test.js",
+      "ownerClass": "test",
+      "size": 17314,
+      "blobSha": "ef0f479e1e1e4520cd53f1ed93750df9205b2d4f"
+    },
+    {
+      "path": "tests/gemini-audio-reliability.test.js",
+      "ownerClass": "test",
+      "size": 1762,
+      "blobSha": "4fab5bc20cf75f69f51b6e73d5be94031e654256"
+    },
+    {
+      "path": "tests/gemini-live-production-wiring.test.js",
+      "ownerClass": "test",
+      "size": 3221,
+      "blobSha": "a8d49b3670b48273c26d2160065d0ca57635dac4"
+    },
+    {
+      "path": "tests/gemini-live-reliability.test.js",
+      "ownerClass": "test",
+      "size": 2520,
+      "blobSha": "68d35de25e6f134f444bb21d81898cc37075e07f"
+    },
+    {
+      "path": "tests/gemini-live-runtime.test.js",
+      "ownerClass": "test",
+      "size": 9404,
+      "blobSha": "6be612e06457af8689bb13c579c1bd9715885b42"
+    },
+    {
+      "path": "tests/gemini-live-soak.test.js",
+      "ownerClass": "test",
+      "size": 2984,
+      "blobSha": "ed0daccc281032897c0cee8034b9ac8339d56a69"
+    },
+    {
+      "path": "tests/gemini-live-supervisor.test.js",
+      "ownerClass": "test",
+      "size": 3548,
+      "blobSha": "939497c2e216b62d9747c289695e022e6e881c94"
+    },
+    {
+      "path": "tests/gemini-recovery.test.js",
+      "ownerClass": "test",
+      "size": 12093,
+      "blobSha": "fed3e232dc5e309e7b79c4e36a35b7ea12c3558c"
+    },
+    {
+      "path": "tests/gemini-screen-reliability.test.js",
+      "ownerClass": "test",
+      "size": 6048,
+      "blobSha": "c31c4d6e9dac27b564b3c83bfc227cb540f7f732"
+    },
+    {
+      "path": "tests/gemini-service-recovery.test.js",
+      "ownerClass": "test",
+      "size": 7830,
+      "blobSha": "f435a1c8aee61e4fc68e243ef4afbe00334b9a38"
+    },
+    {
+      "path": "tests/groq-request-policy.test.js",
+      "ownerClass": "test",
+      "size": 2997,
+      "blobSha": "3312f824d76aebc0682aacaabe7f06253da77634"
+    },
+    {
+      "path": "tests/helpers/component-fixture.js",
+      "ownerClass": "test",
+      "size": 3786,
+      "blobSha": "679dc48aa2c2c3db72241388a7646492fd481f8c"
+    },
+    {
+      "path": "tests/helpers/gemini-fixture.js",
+      "ownerClass": "test",
+      "size": 7140,
+      "blobSha": "fbcba5b2eadc3bfb1f5ba64148a5e4e4e26518ad"
+    },
+    {
+      "path": "tests/helpers/native-boundary.js",
+      "ownerClass": "test",
+      "size": 1254,
+      "blobSha": "0c0a096d09c4d8df1bd4a14c5511c3471ef071d6"
+    },
+    {
+      "path": "tests/helpers/renderer-fixture.js",
+      "ownerClass": "test",
+      "size": 6034,
+      "blobSha": "25621a509de8d1e6e5b042589c2d920743a389b1"
+    },
+    {
+      "path": "tests/live-sdk-wire.test.js",
+      "ownerClass": "test",
+      "size": 5577,
+      "blobSha": "ebd877b674979f546028faf7592b716b53d3e685"
+    },
+    {
+      "path": "tests/local-provider-behavior.test.js",
+      "ownerClass": "test",
+      "size": 6404,
+      "blobSha": "3b834726ad451db0a185a68a6752430fdbf5e3c7"
+    },
+    {
+      "path": "tests/phase4-knowledge.test.js",
+      "ownerClass": "test",
+      "size": 5542,
+      "blobSha": "51e0b66e7ee56556c98a8c3b3c45ba2dab6c66ea"
+    },
+    {
+      "path": "tests/preload-boundary.test.js",
+      "ownerClass": "test",
+      "size": 1642,
+      "blobSha": "51e96fb94fd86c8b844ceb1a35f5097a16b7cc64"
+    },
+    {
+      "path": "tests/provider-model-registry.test.js",
+      "ownerClass": "test",
+      "size": 5259,
+      "blobSha": "7fe390d28ef5d2dd6145a3d47ec0aeb7b9bab7a3"
+    },
+    {
+      "path": "tests/realtime-context.test.js",
+      "ownerClass": "test",
+      "size": 2040,
+      "blobSha": "a548fc8a79605e9f62841b0692e3f868e0969fda"
+    },
+    {
+      "path": "tests/release-readiness.test.js",
+      "ownerClass": "test",
+      "size": 6369,
+      "blobSha": "1a0e7b6b38446d9820c1594704f23fcd6b91069d"
+    },
+    {
+      "path": "tests/repository-maintenance.test.js",
+      "ownerClass": "test",
+      "size": 2536,
+      "blobSha": "6bf13dc103ad0bb7a9df087ad93b74c6ac83c296"
+    },
+    {
+      "path": "tests/response-sanitizer.test.js",
+      "ownerClass": "test",
+      "size": 731,
+      "blobSha": "fb752864f0c222824df876033679717bde6f97d9"
+    },
+    {
+      "path": "tests/runtime-hardening.test.js",
+      "ownerClass": "test",
+      "size": 1391,
+      "blobSha": "9307cb28770c92f79436415cffa7e4dec3713f64"
+    },
+    {
+      "path": "tests/scroll-settings-gemini-live.test.js",
+      "ownerClass": "test",
+      "size": 1271,
+      "blobSha": "fbba4988f10b372ec54450f2b2de3e386d62d4c4"
+    },
+    {
+      "path": "tests/sdk-wire-contract.test.js",
+      "ownerClass": "test",
+      "size": 6350,
+      "blobSha": "c59f4876c906e2b12a8a5d4538b1ade2994cb798"
+    },
+    {
+      "path": "tests/session-lifecycle.test.js",
+      "ownerClass": "test",
+      "size": 7026,
+      "blobSha": "c7092fd157d391bc0c85086b0f71834dbb68833d"
+    },
+    {
+      "path": "tests/session-persistence.test.js",
+      "ownerClass": "test",
+      "size": 1823,
+      "blobSha": "4391f210bae1513e214b027c24f668b4897aacbd"
+    },
+    {
+      "path": "tests/session-requests.test.js",
+      "ownerClass": "test",
+      "size": 3376,
+      "blobSha": "5117ed79445c9d68c42dad47253a15796278c55c"
+    },
+    {
+      "path": "tests/sse.test.js",
+      "ownerClass": "test",
+      "size": 1134,
+      "blobSha": "0d784d1ab7760e15e67530575b95480ea67b8f6f"
+    },
+    {
+      "path": "tests/startup-regressions.test.js",
+      "ownerClass": "test",
+      "size": 10653,
+      "blobSha": "e229c979683d2fd27d4fca716f9b75e048da6115"
+    },
+    {
+      "path": "tests/storage.test.js",
+      "ownerClass": "test",
+      "size": 7063,
+      "blobSha": "11f97ae5c9a146391de8d5fda6f6d239834558f7"
+    },
+    {
+      "path": "tests/typed-gemini-history.test.js",
+      "ownerClass": "test",
+      "size": 3613,
+      "blobSha": "9ed301d7815906832c26ec28041c19eab5f74fc4"
+    },
+    {
+      "path": "tests/ui-history.test.js",
+      "ownerClass": "test",
+      "size": 6650,
+      "blobSha": "02ec19ddaf1e31f2d2c0026c19cbc8766cd5cb40"
+    },
+    {
+      "path": "tests/ui-request-recovery.test.js",
+      "ownerClass": "test",
+      "size": 7604,
+      "blobSha": "d51ea79a82292bbe07ad99e143b92f292fc1667b"
+    },
+    {
+      "path": "tests/ui-save-feedback.test.js",
+      "ownerClass": "test",
+      "size": 10560,
+      "blobSha": "277564e560deb93bf891211982a67be109a71e43"
+    },
+    {
+      "path": "tests/ui-shortcuts.test.js",
+      "ownerClass": "test",
+      "size": 6673,
+      "blobSha": "b9b3d03c029390ff22625ab8afe3e1b5ab2fbae2"
+    },
+    {
+      "path": "tests/windows-live-hud.test.js",
+      "ownerClass": "test",
+      "size": 2723,
+      "blobSha": "b0276ab5126fab05fd35f79efaf85b0a70134263"
+    },
+    {
+      "path": "tests/windows-runtime-final.test.js",
+      "ownerClass": "test",
+      "size": 10016,
+      "blobSha": "4899e9deb34aea86b4e5a5cbeb4d5760bf3de14e"
+    }
+  ]
+}
