@@ -2,10 +2,14 @@ const { execFileSync } = require('node:child_process');
 const { readdirSync, statSync } = require('node:fs');
 const { join } = require('node:path');
 
+const sourceFiles = directory => readdirSync(directory, { recursive: true })
+    .filter(file => file.endsWith('.js'))
+    .map(file => join(directory, file));
+
 const files = [
-    ...readdirSync('src', { recursive: true })
-        .filter(file => file.endsWith('.js'))
-        .map(file => join('src', file)),
+    ...sourceFiles('src'),
+    ...sourceFiles('tests'),
+    ...sourceFiles('scripts'),
     'preload.js',
 ];
 
