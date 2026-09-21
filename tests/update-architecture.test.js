@@ -211,8 +211,11 @@ test('Phase 7 portable updates remain notification-only and build provenance is 
     assert.doesNotMatch(updateMain, /child_process|spawn\(|execFile\(|writeFile|createWriteStream|shell\.openExternal/);
     assert.doesNotMatch(index + renderer, /autoUpdater|electron-updater/);
     assert.deepEqual(pkg.build.win.target, [{ target: 'portable', arch: ['x64'] }]);
+    assert.match(workflow, /id: release_metadata/);
+    assert.match(workflow, /node -p "require\('\.\/package\.json'\)\.version"/);
     assert.match(workflow, /extraMetadata\.releaseBuild=\$\{\{ github\.run_number \}\}/);
-    assert.match(workflow, /extraMetadata\.releaseTag=v0\.8\.0-portable\.\$\{\{ github\.run_number \}\}/);
+    assert.match(workflow, /extraMetadata\.releaseTag=\$\{\{ steps\.release_metadata\.outputs\.tag \}\}/);
     assert.match(workflow, /extraMetadata\.releaseCommit=\$\{\{ github\.sha \}\}/);
-    assert.match(workflow, /releaseTag -ne "v0\.8\.0-portable\.\$\{\{ github\.run_number \}\}"/);
+    assert.match(workflow, /tag_name: \$\{\{ needs\.build\.outputs\.release_tag \}\}/);
+    assert.match(workflow, /releaseTag -ne "\$\{\{ steps\.release_metadata\.outputs\.tag \}\}"/);
 });
