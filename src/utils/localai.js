@@ -406,9 +406,8 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
         '--mmproj',
         projectorPath,
     ];
-    // The pinned official Vulkan runner supports cache-reuse. Keep the old CPU
-    // fallback's conservative CLI untouched because its flag surface predates it.
-    if (/vulkan/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
+    // Both audited b10964 Windows runners share the same llama.cpp CLI contract.
+    if (/llama-b10964/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
 
     llamaBaseUrl = `http://127.0.0.1:${port}`;
     llamaProcess = startNativeServer({
