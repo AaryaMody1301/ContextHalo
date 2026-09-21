@@ -1,0 +1,2 @@
+# Preserve byte-for-byte identity for vendored upstream assets verified by Git blob SHA.
+src/assets/lit-core-3.3.3.min.js text eol=lf
