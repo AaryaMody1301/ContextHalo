@@ -99,7 +99,7 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.match(storage, /geminiLiveModel: 'gemini-3\.8-live'/);
     assert.match(storage, /geminiHttpModel: 'gemini-3\.8-flash'/);
     assert.match(storage, /groqModel: 'openai\/gpt-oss-120b'/);
-    assert.match(storage, /groqImageModel: 'qwen\/qwen3\.6-27b'/);
+    assert.match(storage, /groqImageModel: 'qwen\\/qwen3\\.8-27b'/);
     assert.match(storage, /groqTranscriptionModel: 'whisper-large-v3-turbo'/);
     assert.match(storage, /RETIRED_GEMINI_HTTP_MODELS[\s\S]{0,300}'gemini-2\.5-flash'/);
     assert.match(storage, /localLlmModel: 'unsloth\/Qwen3\.5-2B-GGUF:Q4_K_M'/);
