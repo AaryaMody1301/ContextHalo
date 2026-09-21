@@ -61,7 +61,13 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          if ($version -notmatch '^\d+\.\d+\.\d+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "package.json version must be numeric semantic version" }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=v$version-portable.${{ github.run_number }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Verify lockfile is in sync
+        shell: pwsh
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
 
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
@@ -172,129 +178,6 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
-          name: ContextHalo Windows Portable Build ${{ github.run_number }}
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          files: |
-            release/ContextHalo-Windows-x64.exe
-            release/SHA256SUMS.txt
-) { throw "package.json version must be numeric semantic version" }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=v$version-portable.${{ github.run_number }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Verify lockfile is in sync
-        shell: pwsh
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
-
-      - name: Install locked dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Audit production dependencies
-        shell: pwsh
-        run: |
-          $env:npm_config_fetch_timeout = "60000"
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            npm audit --omit=dev --audit-level=high
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
-          }
-          throw "Production dependency audit failed after 3 attempts."
-
-      - name: Run source validation
-        run: npm run check
-
-      - name: Run all regression tests
-        run: npm test
-
-      - name: Run Electron behavior and layout smoke test
-        shell: pwsh
-        run: |
-          & ".\node_modules\.bin\electron.cmd" . --ci-smoke-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Electron behavior smoke test failed with exit code $LASTEXITCODE"
-          }
-
-      - name: Build portable Windows EXE
-        run: npm run build:portable -- --publish never -c.extraMetadata.releaseBuild=${{ github.run_number }} -c.extraMetadata.releaseTag=v0.8.0-portable.${{ github.run_number }} -c.extraMetadata.releaseCommit=${{ github.sha }}
-
-      - name: Verify portable EXE and record checksum
-        shell: pwsh
-        run: |
-          $exe = Get-Item "dist/ContextHalo-Windows-x64.exe"
-          if ($exe.Length -lt 1MB) { throw "Portable EXE is unexpectedly small." }
-          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  ContextHalo-Windows-x64.exe" | Set-Content -Encoding utf8 "dist/SHA256SUMS.txt"
-          Write-Host "Portable EXE SHA-256: $hash"
-
-      - name: Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale
-        shell: pwsh
-        run: |
-          $exe = (Get-Item "dist/ContextHalo-Windows-x64.exe").FullName
-          try {
-            foreach ($scale in @('1', '1.25', '1.5', '2')) {
-              $directory = Join-Path $env:GITHUB_WORKSPACE "qa-results/portable-$scale"
-              New-Item -ItemType Directory -Force -Path $directory | Out-Null
-              $env:CONTEXTHALO_QA_DIR = $directory
-              $process = Start-Process -FilePath $exe -ArgumentList @('--ci-smoke-test', "--force-device-scale-factor=$scale") -PassThru
-              $outcomePath = Join-Path $directory 'outcome.json'
-              $deadline = (Get-Date).AddSeconds(150)
-              while (!(Test-Path $outcomePath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-              if (!(Test-Path $outcomePath)) {
-                if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
-                throw "Packaged smoke timed out at Chromium scale $scale"
-              }
-              $outcome = Get-Content -Raw $outcomePath | ConvertFrom-Json
-              $outcome | ConvertTo-Json -Depth 8 | Write-Host
-              if (!$outcome.success -or !$outcome.packaged -or $outcome.platform -ne 'win32' -or $outcome.arch -ne 'x64') {
-                throw "Packaged smoke failed at Chromium scale $scale"
-              }
-              if ($outcome.releaseTag -ne "v0.8.0-portable.${{ github.run_number }}" -or $outcome.releaseCommit -ne "${{ github.sha }}") {
-                throw "Packaged release provenance does not match this workflow run"
-              }
-              if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
-            }
-          } finally {
-            Remove-Item Env:CONTEXTHALO_QA_DIR -ErrorAction SilentlyContinue
-          }
-
-      - name: Upload behavior evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ContextHalo-Behavior-Evidence
-          path: qa-results/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload portable EXE artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ContextHalo-Windows-x64-Portable
-          path: |
-            dist/ContextHalo-Windows-x64.exe
-            dist/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 90
-
-  publish-release:
-    name: Publish ContextHalo GitHub Release
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: windows-2022
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Download portable EXE
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ContextHalo-Windows-x64-Portable
-          path: release
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: v0.8.0-portable.${{ github.run_number }}
           name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
