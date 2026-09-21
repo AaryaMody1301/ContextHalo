@@ -167,6 +167,11 @@ function normalizeRegion(region) {
     return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+function isTrustedSelectorEvent(event, selector) {
+    return Boolean(event?.senderFrame && selector && !selector.isDestroyed()
+        && event.senderFrame === selector.webContents.mainFrame);
+}
+
 function selectRegion(mainWindow) {
     const selection = getStoredSelection();
     if (selection.kind === 'window') {
@@ -213,7 +218,7 @@ function selectRegion(mainWindow) {
         };
 
         selector.webContents.on('ipc-message', (event, channel, payload) => {
-            if (event.senderFrame !== selector.webContents.mainFrame) return;
+            if (!isTrustedSelectorEvent(event, selector)) return;
             if (channel === 'region-selector-cancel') {
                 finish({ success: false, cancelled: true });
                 return;
@@ -328,6 +333,7 @@ module.exports = {
     DEFAULT_SELECTION,
     sanitizeSelection,
     normalizeRegion,
+    isTrustedSelectorEvent,
     listCaptureSources,
     setupContextCaptureMain,
 };
