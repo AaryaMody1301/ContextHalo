@@ -19,8 +19,10 @@ test('portable package uses an explicit runtime allowlist', () => {
     }
 });
 
-test('Phase 1 baseline inventory is complete and all baseline paths still exist', () => {
+test('Phase 1 baseline inventory remains accounted for by current files or explicit retirement decisions', () => {
     const inventory = JSON.parse(read('docs/PHASE_1_FILE_INVENTORY.json'));
+    const phase5 = JSON.parse(read('docs/PHASE_5_RENDERER_DEPENDENCIES.json'));
+    const retired = new Set(phase5.retiredBaselinePaths);
     assert.equal(inventory.schemaVersion, 1);
     assert.equal(inventory.auditBaseline, '8b7b28e312d33c45ee9e3ca5909804ebb9e3b1ad');
     assert.equal(inventory.fileCount, 146);
@@ -29,7 +31,7 @@ test('Phase 1 baseline inventory is complete and all baseline paths still exist'
     for (const item of inventory.files) {
         assert.equal(typeof item.ownerClass, 'string');
         assert.ok(item.ownerClass.length > 0);
-        assert.equal(fs.existsSync(item.path), true, item.path + ' disappeared without a Phase 1 deletion decision');
+        assert.equal(fs.existsSync(item.path) || retired.has(item.path), true, item.path + ' disappeared without an explicit retirement decision');
     }
 });
 
@@ -80,9 +82,9 @@ test('vendored and native provenance records point to owned artifacts', () => {
     }
 
     assert.match(notices, /GPL-3\.0/);
-    assert.match(notices, /Lit 2\.7\.4/);
-    assert.match(notices, /Marked 4\.3\.0/);
-    assert.match(notices, /highlight\.js 11\.9\.0/);
+    assert.match(notices, /Lit 3\.3\.3/);
+    assert.match(notices, /Marked[^\n]*18\.0\.13/);
+    assert.match(notices, /highlight\.js 11\.9\.0[^\n]*removed/i);
     assert.match(notices, /b10964/);
     assert.match(notices, /b5130/);
     assert.doesNotMatch(nativeRuntime, /resolve\/main|sohzm|llama-server-windows-x86_64|whisper-server-windows-x86_64/);

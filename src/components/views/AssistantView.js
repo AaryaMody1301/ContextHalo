@@ -2,7 +2,7 @@ import { MARKER_TYPES, getRealtimeState, addMarker } from '../../utils/realtimeC
 import { getContextState, expandQuickCommand, selectAndAnalyzeRegion } from '../../utils/contextCaptureRenderer.js';
 import '../GroundingSources.js';
 import { sanitizeAssistantHtml } from '../../utils/responseSanitizerRenderer.js';
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 
 export class AssistantView extends LitElement {
     static styles = css`

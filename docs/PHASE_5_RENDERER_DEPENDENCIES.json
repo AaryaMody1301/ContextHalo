@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-09-21",
+  "repository": "AaryaMody1301/ContextHalo",
+  "auditBaseline": "1ad6a40decbfb329d6155e9804fbcb3c81db71d2",
+  "rendererDependencies": [
+    {
+      "component": "Lit",
+      "version": "3.3.3",
+      "ownership": "vendored official single-file bundle",
+      "path": "src/assets/lit-core-3.3.3.min.js",
+      "license": "BSD-3-Clause",
+      "sourceRepository": "https://github.com/lit/dist",
+      "sourceRef": "v3.3.3",
+      "sourcePath": "core/lit-core.min.js",
+      "sourceBlobSha": "30071d620d392394d56721f05fc4808e02e038e3",
+      "decision": "upgrade 2.7.4 -> 3.3.3; keep bundle deployment because renderer has no bundler/import map"
+    },
+    {
+      "component": "Marked",
+      "version": "18.0.13",
+      "ownership": "locked production npm dependency",
+      "runtimePath": "node_modules/marked/lib/marked.umd.js",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/marked/-/marked-18.0.13.tgz",
+      "integrity": "sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==",
+      "decision": "upgrade 4.3.0 -> 18.0.13 and move maintenance to lockfile/Dependabot; keep sanitizer after parse"
+    },
+    {
+      "component": "highlight.js",
+      "latestReviewedRelease": "11.12.0",
+      "ownership": "removed",
+      "decision": "do not upgrade; runtime never invokes hljs, and AssistantView already owns readable code/pre styling"
+    }
+  ],
+  "retiredBaselinePaths": [
+    "src/assets/lit-core-2.7.4.min.js",
+    "src/assets/marked-4.3.0.min.js",
+    "src/assets/highlight-11.9.0.min.js",
+    "src/assets/highlight-vscode-dark.min.css"
+  ],
+  "securityBoundary": {
+    "markdownParser": "Marked output is untrusted HTML",
+    "sanitizer": "src/utils/responseSanitizerRenderer.js allowlist runs after marked.parse and before renderer insertion",
+    "links": "sanitizer permits only credential-free HTTP(S) href values and adds noopener noreferrer",
+    "droppedContent": [
+      "SCRIPT",
+      "STYLE",
+      "IFRAME",
+      "OBJECT",
+      "EMBED",
+      "FORM",
+      "INPUT",
+      "BUTTON",
+      "TEXTAREA",
+      "SELECT",
+      "OPTION",
+      "META",
+      "LINK",
+      "BASE",
+      "SVG",
+      "MATH",
+      "TEMPLATE"
+    ]
+  }
+}

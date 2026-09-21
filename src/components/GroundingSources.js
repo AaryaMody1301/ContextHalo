@@ -1,4 +1,4 @@
-import { LitElement, html, css } from '../assets/lit-core-2.7.4.min.js';
+import { LitElement, html, css } from '../assets/lit-core-3.3.3.min.js';
 
 function safeSourceUrl(value) {
     try {

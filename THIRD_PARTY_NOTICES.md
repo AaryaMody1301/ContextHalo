@@ -8,6 +8,7 @@ ContextHalo is GPL-3.0 licensed. This file records third-party components that a
 | --- | --- | --- | --- | --- |
 | Electron | 44.3.0 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
 | @google/genai | 2.22.0 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
+| Marked | 18.0.13 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
 
 Transitive production npm packages are recorded with exact version, registry URL, integrity and declared license in `docs/THIRD_PARTY_PROVENANCE.json`.
 
@@ -15,12 +16,11 @@ Transitive production npm packages are recorded with exact version, registry URL
 
 | Tracked asset | Version | License | Upstream |
 | --- | --- | --- | --- |
-| `src/assets/lit-core-2.7.4.min.js` | Lit 2.7.4 | BSD-3-Clause | https://github.com/lit/lit |
-| `src/assets/marked-4.3.0.min.js` | Marked 4.3.0 | MIT | https://github.com/markedjs/marked |
-| `src/assets/highlight-11.9.0.min.js` | highlight.js 11.9.0 | BSD-3-Clause | https://github.com/highlightjs/highlight.js |
-| `src/assets/highlight-vscode-dark.min.css` | highlight.js theme bundled with the 11.9.0 renderer asset set | BSD-3-Clause | https://github.com/highlightjs/highlight.js |
+| `src/assets/lit-core-3.3.3.min.js` | Lit 3.3.3 | BSD-3-Clause | https://github.com/lit/dist/tree/v3.3.3/core |
 
-The vendored JavaScript assets retain upstream copyright/license headers. ContextHalo sanitizes Marked output before rendering; Marked itself does not provide HTML sanitization.
+Lit remains a single-file local bundle because the renderer does not use a bundler or import map. Marked is no longer a hand-copied asset: the exact npm package is locked in `package-lock.json`, and the browser UMD file is loaded locally from packaged `node_modules`.
+
+ContextHalo sanitizes Marked output with its own allowlist before rendering; Marked itself does not sanitize output. The unused highlight.js 11.9.0 script and theme were removed in Phase 5 rather than upgraded because runtime code never invoked highlight.js.
 
 ## Native Local AI runtime
 

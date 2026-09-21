@@ -1,4 +1,4 @@
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import { unifiedPageStyles } from './sharedPageStyles.js';
 
 const PROJECT_ISSUES_URL = 'https://github.com/AaryaMody1301/ContextHalo/issues';

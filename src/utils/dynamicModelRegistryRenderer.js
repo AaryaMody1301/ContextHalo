@@ -1,4 +1,4 @@
-import { html } from '../assets/lit-core-2.7.4.min.js';
+import { html } from '../assets/lit-core-3.3.3.min.js';
 
 const GEMINI_DEFAULTS = {
     live: 'gemini-3.8-live',

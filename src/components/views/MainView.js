@@ -1,7 +1,7 @@
 import { RESPONSE_MODES, getRealtimeState, setResponseMode } from '../../utils/realtimeContextRenderer.js';
 import { loadContextState, getContextState, selectionKey, refreshCaptureSources, setCaptureSource, setPackField, captureClipboardText, clearClipboardContext } from '../../utils/contextCaptureRenderer.js';
 import { GEMINI_DEFAULTS, GROQ_DEFAULTS, renderModelPicker } from '../../utils/dynamicModelRegistryRenderer.js';
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 
 const LOCAL_LLM_PRESETS = [
     { value: 'unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M', label: 'Qwen 3.5 0.8B Q4 — 0.74 GB · Fastest' },

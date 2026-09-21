@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "auditedAt": "2026-09-20",
+  "auditedAt": "2026-09-21",
   "repository": "AaryaMody1301/ContextHalo",
-  "auditBaseline": "8b7b28e312d33c45ee9e3ca5909804ebb9e3b1ad",
+  "auditBaseline": "1ad6a40decbfb329d6155e9804fbcb3c81db71d2",
   "productionNpm": [
     {
       "package": "@google/genai",
@@ -269,6 +269,14 @@
       "optional": false
     },
     {
+      "package": "marked",
+      "version": "18.0.13",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/marked/-/marked-18.0.13.tgz",
+      "integrity": "sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==",
+      "optional": false
+    },
+    {
       "package": "node-domexception",
       "version": "1.0.0",
       "license": "MIT",
@@ -335,36 +343,14 @@
   ],
   "vendoredRenderer": [
     {
-      "path": "src/assets/lit-core-2.7.4.min.js",
+      "path": "src/assets/lit-core-3.3.3.min.js",
       "component": "Lit",
-      "version": "2.7.4",
+      "version": "3.3.3",
       "license": "BSD-3-Clause",
-      "upstream": "https://github.com/lit/lit",
-      "trackedBlobSha": "9cc53cdb55e8bea37b5c0a274f7180958591e6be"
-    },
-    {
-      "path": "src/assets/marked-4.3.0.min.js",
-      "component": "Marked",
-      "version": "4.3.0",
-      "license": "MIT",
-      "upstream": "https://github.com/markedjs/marked",
-      "trackedBlobSha": "9402998aaec170dea82e49ed62ac5a92a81ed482"
-    },
-    {
-      "path": "src/assets/highlight-11.9.0.min.js",
-      "component": "highlight.js",
-      "version": "11.9.0",
-      "license": "BSD-3-Clause",
-      "upstream": "https://github.com/highlightjs/highlight.js",
-      "trackedBlobSha": "5d699ae6a4cfc9544a22a9ac394b01db2e5abd4f"
-    },
-    {
-      "path": "src/assets/highlight-vscode-dark.min.css",
-      "component": "highlight.js theme",
-      "version": "11.9.0 asset set",
-      "license": "BSD-3-Clause",
-      "upstream": "https://github.com/highlightjs/highlight.js",
-      "trackedBlobSha": "03b6da8bf4301dbc9853f46f9fe3362236f61a82"
+      "upstream": "https://github.com/lit/dist",
+      "upstreamRef": "v3.3.3",
+      "upstreamBlobSha": "30071d620d392394d56721f05fc4808e02e038e3",
+      "trackedBlobSha": "30071d620d392394d56721f05fc4808e02e038e3"
     }
   ],
   "nativeRuntime": [

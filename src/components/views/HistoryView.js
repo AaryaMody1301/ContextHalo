@@ -1,5 +1,5 @@
 import '../GroundingSources.js';
-import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import { unifiedPageStyles } from './sharedPageStyles.js';
 
 export class HistoryView extends LitElement {
