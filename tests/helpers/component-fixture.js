@@ -7,6 +7,7 @@ function componentClass(file, name, overrides = {}) {
     const events = new EventTarget();
     const source = fs.readFileSync(file, 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class ', 'class ');
     const context = {
+        contextHaloAppStyles: '',
         LitElement: class {
             constructor() { this.updateComplete = Promise.resolve(); this.isConnected = true; }
             requestUpdate() {} connectedCallback() {} disconnectedCallback() {} toggleAttribute() {}
