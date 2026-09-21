@@ -93,7 +93,7 @@ test('Local AI HTTP and CLI fields match the audited server contracts where prov
 
     assert.match(local, /\/v1\/chat\/completions/);
     assert.match(local, /\/inference/);
-    assert.match(local, /chat_template_kwargs:\s*\{ enable_thinking: false \}/);
+    assert.match(local, /chat_template_kwargs:\s*\{\s*enable_thinking:\s*false,?\s*\}/);
     assert.match(local, /cache_prompt:\s*true/);
     assert.match(local, /argumentsList\.push\('--cache-reuse', '256'\)/);
     assert.match(local, /'--host', '127\.0\.0\.1'/);
