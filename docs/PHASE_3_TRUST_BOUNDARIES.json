@@ -32,10 +32,11 @@
       "channels": [
         "provider-models:list",
         "get-app-version",
+        "updates:check",
         "quit-application",
         "open-external"
       ],
-      "boundary": "main-window WebContents + exact main frame; provider enum validation; external URL scheme/credential validation"
+      "boundary": "main-window WebContents + exact main frame; provider enum validation; update check uses a fixed GitHub API endpoint and returns validated/sanitized release metadata only; external URL scheme/credential validation"
     },
     {
       "transport": "invoke",
@@ -196,6 +197,12 @@
       "purpose": "Local model metadata and checksum-verified model/projector downloads",
       "scheme": "HTTPS",
       "owner": "hubMetadata.js / native-ai-runtime.js / windowsLocalAiRuntime.js"
+    },
+    {
+      "destination": "api.github.com",
+      "purpose": "read-only latest ContextHalo release metadata for the portable update notification",
+      "scheme": "HTTPS",
+      "owner": "updateMain.js"
     },
     {
       "destination": "github.com",
