@@ -27,8 +27,8 @@ The vendored JavaScript assets retain upstream copyright/license headers. Contex
 ContextHalo downloads native runtimes on demand; they are not committed to this repository.
 
 - Preferred Windows x64 Vulkan llama.cpp runtime: upstream `ggml-org/llama.cpp` release `b10964`, archive `llama-b10964-bin-win-vulkan-x64.zip`, SHA-256 `1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642`. llama.cpp is MIT licensed.
-- CPU llama fallback: legacy upstream release `sohzm/cheating-daddy v0.7.0`, file `llama-server-windows-x86_64.exe`, SHA-256 `7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862`.
-- Whisper runtime fallback: legacy upstream release `sohzm/cheating-daddy v0.7.0`, file `whisper-server-windows-x86_64.exe`, SHA-256 `654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435`.
+- CPU llama fallback: legacy upstream [v0.7.0 release](https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0), file `llama-server-windows-x86_64.exe`, SHA-256 `7dcdb6ae66c8a03f43d412f2fac00382b927a8d2d817d22b231c14a326cdc862`.
+- Whisper runtime fallback: legacy upstream [v0.7.0 release](https://github.com/sohzm/cheating%2Ddaddy/releases/tag/v0.7.0), file `whisper-server-windows-x86_64.exe`, SHA-256 `654e4531ad7cebe772c08485a742be770d6848b0cda2f540b179f426a6105435`.
 
 The checksum pins establish byte identity for the legacy fallback executables; they do not by themselves establish a complete reproducible build chain. Replacing or independently reproducing those legacy binaries remains a dedicated Local AI supply-chain task.
 
