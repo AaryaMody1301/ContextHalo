@@ -52,6 +52,7 @@ export class ContextHaloApp extends LitElement {
         shouldAnimateResponse: { type: Boolean },
         _storageLoaded: { state: true },
         _updateAvailable: { state: true },
+        _updateState: { state: true },
         _whisperDownloading: { state: true },
         _localAiDownloadProgress: { state: true },
     };
@@ -108,6 +109,7 @@ export class ContextHaloApp extends LitElement {
         this._timerInterval = null;
         this._ipcSubscriptions = [];
         this._updateAvailable = false;
+        this._updateState = { status: 'checking' };
         this._whisperDownloading = false;
         this._localAiDownloadProgress = { active: false, label: '', percentage: null };
         this._localVersion = '';
@@ -118,14 +120,17 @@ export class ContextHaloApp extends LitElement {
 
     async _checkForUpdates() {
         try {
-            this._localVersion = await contextHalo.getVersion();
-            // This fork's portable releases are identified by GitHub release tags,
-            // while the app package version is currently static. Do not compare
-            // against the original upstream repository and generate false updates.
+            const state = await contextHalo.checkForUpdates();
+            this._updateState = state || { status: 'error' };
+            const fallback = state?.currentVersion || await contextHalo.getVersion();
+            this._localVersion = String(state?.currentTag || fallback || '').replace(/^v/, '');
+            this._updateAvailable = state?.status === 'update-available';
+            this.requestUpdate();
+        } catch {
+            this._updateState = { status: 'error' };
+            try { this._localVersion = await contextHalo.getVersion(); } catch {}
             this._updateAvailable = false;
             this.requestUpdate();
-        } catch (e) {
-            // Keep the UI usable if version retrieval fails.
         }
     }
 
@@ -887,7 +892,7 @@ export class ContextHaloApp extends LitElement {
                     ${
                         this._updateAvailable
                             ? html`
-                                  <button class="update-btn" @click=${() => this.handleExternalLinkClick('https://github.com/AaryaMody1301/ContextHalo/releases/latest')}>
+                                  <button class="update-btn" title=${`Open official release ${this._updateState?.latestTag || ''}`} @click=${() => this.handleExternalLinkClick(this._updateState?.releasePageUrl || 'https://github.com/AaryaMody1301/ContextHalo/releases/latest')}>
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                                           <path
                                               fill="none"
