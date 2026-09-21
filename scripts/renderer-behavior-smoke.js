@@ -266,6 +266,7 @@ async function rendererBehaviorSmoke() {
 
 function installWindowsSmokeCheck(window) {
     const { app } = require('electron');
+    const { readCurrentRelease } = require('../src/utils/updateMain');
 
     const fs = require('node:fs');
     const path = require('node:path');
@@ -281,7 +282,7 @@ function installWindowsSmokeCheck(window) {
         if (finished) return;
         finished = true;
         clearTimeout(timeout);
-        fs.writeFileSync(path.join(directory, 'outcome.json'), JSON.stringify({ success, detail, packaged: app.isPackaged, version: app.getVersion(), platform: process.platform, arch: process.arch, windowsRelease: require('node:os').release(), electron: process.versions.electron, commit: process.env.GITHUB_SHA || null, completedAt: new Date().toISOString() }, null, 2));
+        const release = readCurrentRelease(app);\n        fs.writeFileSync(path.join(directory, 'outcome.json'), JSON.stringify({ success, detail, packaged: app.isPackaged, version: app.getVersion(), releaseTag: release.tag, releaseCommit: release.commit, platform: process.platform, arch: process.arch, windowsRelease: require('node:os').release(), electron: process.versions.electron, commit: process.env.GITHUB_SHA || null, completedAt: new Date().toISOString() }, null, 2));
         console.log(success ? `[Windows smoke] PASS: ${detail}` : `[Windows smoke] FAIL: ${detail}`);
         setTimeout(() => app.exit(success ? 0 : 1), 50);
     };
