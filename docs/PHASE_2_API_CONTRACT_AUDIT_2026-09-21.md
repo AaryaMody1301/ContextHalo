@@ -19,7 +19,7 @@ The rule for this audit is request-by-request verification. A model name appeari
 | Response modality | `AUDIO` | real installed-SDK loopback wire test | https://ai.google.dev/gemini-api/docs/live-api/capabilities |
 | Thinking setup | No `thinkingConfig` / `thinkingLevel` for `gemini-3.8-live` | real installed-SDK loopback wire test | https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live |
 | Input/output transcription | Both enabled with empty configuration objects | real installed-SDK loopback wire test | https://ai.google.dev/gemini-api/docs/live-api/capabilities |
-| Search grounding | `tools: [{ googleSearch: {} }]` when the saved Search preference is effective | recovery + SDK wire tests | https://ai.google.dev/gemini-api/docs/live-api/tools |
+| Search grounding | `tools: [{ googleSearch: {} }]` when the saved Search preference is effective | recovery + SDK wire tests | https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live |
 | Session resumption | `sessionResumption: {}`; safe server handles are reused only after a resumable update | production wiring + reconnect tests | https://ai.google.dev/gemini-api/docs/live-api/session-management |
 | Context compression | trigger 25,000 tokens; sliding-window target 8,000 | real installed-SDK loopback wire test | https://ai.google.dev/gemini-api/docs/live-api/session-management |
 | GoAway | schedules bounded replacement connection; fatal failures supersede GoAway | soak/final contract tests | https://ai.google.dev/gemini-api/docs/live-api/session-management |
@@ -60,7 +60,7 @@ Official release record: https://github.com/googleapis/js-genai/releases/tag/v2.
 
 Google recommends the Interactions API for new agentic work, but the existing Generate Content API remains supported. Interactions also changes state/privacy semantics because stored interactions are the default unless storage is disabled. ContextHalo already owns local history, request cancellation, response routing, and retry epochs. Phase 2 therefore does not migrate API architecture merely because a newer API exists.
 
-Official overview: https://ai.google.dev/gemini-api/docs/interactions
+Official overview: https://ai.google.dev/gemini-api/docs/interactions-overview
 
 ## Groq API
 
@@ -81,8 +81,8 @@ Official deprecation record: https://console.groq.com/docs/deprecations
 
 | Request | ContextHalo contract | Verification | Official source |
 | --- | --- | --- | --- |
-| Model discovery | `GET https://api.groq.com/openai/v1/models` with bearer auth | provider model registry tests | https://console.groq.com/docs/api-reference/models |
-| Text | `POST /openai/v1/chat/completions`, `openai/gpt-oss-120b`, streaming SSE | provider wire + transport tests | https://console.groq.com/docs/api-reference/chat |
+| Model discovery | `GET https://api.groq.com/openai/v1/models` with bearer auth | provider model registry tests | https://console.groq.com/docs/api-reference |
+| Text | `POST /openai/v1/chat/completions`, `openai/gpt-oss-120b`, streaming SSE | provider wire + transport tests | https://console.groq.com/docs/api-reference |
 | Text reasoning | GPT-OSS uses `reasoning_effort: low` and `include_reasoning:false`; no `reasoning_format` | reasoning + provider wire tests | https://console.groq.com/docs/reasoning |
 | Vision | `POST /openai/v1/chat/completions`, `qwen/qwen3.8-27b`, user content contains `text` plus `image_url.url = data:image/jpeg;base64,...` | provider wire test | https://console.groq.com/docs/vision |
 | Qwen reasoning | `reasoning_format:hidden`; `reasoning_effort:none` when thinking is disabled, otherwise `default`; never mixes `include_reasoning` | reasoning + provider wire tests | https://console.groq.com/docs/reasoning |
