@@ -38,8 +38,10 @@ const { createWindow, getShortcutState, saveGlobalShortcuts } = require('./utils
 const { setupGeminiIpcHandlers, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
 const { listProviderModels } = require('./utils/providerModelRegistry');
+const { createPortableUpdateController } = require('./utils/updateMain');
 
 const geminiSessionRef = { current: null };
+const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE });
 let mainWindow = null;
 
 
@@ -164,6 +166,11 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('get-app-version', event => {
         if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
         return { success: true, data: app.getVersion() };
+    });
+
+    ipcMain.handle('updates:check', async event => {
+        if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        return { success: true, data: await updateController.check() };
     });
 
     ipcMain.handle('quit-application', event => {
