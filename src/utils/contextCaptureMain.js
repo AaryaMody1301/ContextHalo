@@ -133,13 +133,18 @@ async function resolveVideoSource(mainWindow) {
     return { source, selection };
 }
 
+function isTrustedDisplayMediaRequest(request, mainWindow) {
+    return Boolean(request?.frame && mainWindow && !mainWindow.isDestroyed()
+        && request.frame === mainWindow.webContents.mainFrame);
+}
+
 function installDisplayCaptureHandler(mainWindow) {
     session.defaultSession.setDisplayMediaRequestHandler(
         async (request, callback) => {
-            if (!request?.frame || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
+            if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
             try {
                 const { source } = await resolveVideoSource(mainWindow);
-                if (mainWindow.isDestroyed() || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
+                if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
                 callback(source ? { video: source, ...(request.audioRequested ? { audio: 'loopback' } : {}) } : {});
             } catch (error) {
                 console.warn('Context capture source selection unavailable; capture denied.');
@@ -165,6 +170,11 @@ function normalizeRegion(region) {
     const bottom = Math.max(0, Math.min(1, y + height));
     if (right - left < 0.01 || bottom - top < 0.01) return null;
     return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function isTrustedSelectorEvent(event, selector) {
+    return Boolean(event?.senderFrame && selector && !selector.isDestroyed()
+        && event.senderFrame === selector.webContents.mainFrame);
 }
 
 function selectRegion(mainWindow) {
@@ -212,7 +222,8 @@ function selectRegion(mainWindow) {
             resolve(result);
         };
 
-        selector.webContents.on('ipc-message', (_event, channel, payload) => {
+        selector.webContents.on('ipc-message', (event, channel, payload) => {
+            if (!isTrustedSelectorEvent(event, selector)) return;
             if (channel === 'region-selector-cancel') {
                 finish({ success: false, cancelled: true });
                 return;
@@ -327,6 +338,8 @@ module.exports = {
     DEFAULT_SELECTION,
     sanitizeSelection,
     normalizeRegion,
+    isTrustedSelectorEvent,
+    isTrustedDisplayMediaRequest,
     listCaptureSources,
     setupContextCaptureMain,
 };

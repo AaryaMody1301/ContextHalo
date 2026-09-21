@@ -228,14 +228,20 @@ async function resolveHuggingFaceGguf(modelReference, signal) {
 
 async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProgress, signal) {
     if (path.isAbsolute(modelReference)) {
-        if (!fs.existsSync(modelReference)) {
-            throw new Error(`Language model does not exist: ${modelReference}`);
+        if (path.extname(modelReference).toLowerCase() !== '.gguf') {
+            throw new Error('Custom language models must be regular .gguf files.');
+        }
+        if (!fs.existsSync(modelReference) || !fs.statSync(modelReference).isFile()) {
+            throw new Error(`Language model does not exist or is not a regular file: ${modelReference}`);
         }
 
-        const projectorName = ['mmproj-BF16.gguf', 'mmproj-F16.gguf', 'mmproj-F32.gguf'].find(name => fs.existsSync(path.join(path.dirname(modelReference), name)));
+        const projectorName = ['mmproj-BF16.gguf', 'mmproj-F16.gguf', 'mmproj-F32.gguf'].find(name => {
+            const candidate = path.join(path.dirname(modelReference), name);
+            return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+        });
         const projectorPath = path.join(path.dirname(modelReference), projectorName || 'mmproj-BF16.gguf');
-        if (!fs.existsSync(projectorPath)) {
-            throw new Error(`Multimodal projector does not exist: ${projectorPath}`);
+        if (!projectorName) {
+            throw new Error(`Multimodal GGUF projector does not exist beside the selected model: ${projectorPath}`);
         }
 
         return {

@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-09-21",
+  "repository": "AaryaMody1301/ContextHalo",
+  "auditBaseline": "8c145a768a0c460893d42e7d4fa153f7294c5f0c",
+  "rendererToMain": [
+    {
+      "transport": "invoke",
+      "owner": "src/index.js#setupStorageIpcHandlers",
+      "channels": [
+        "storage:get-config",
+        "storage:update-config",
+        "storage:credential-status",
+        "storage:set-api-key",
+        "storage:set-groq-api-key",
+        "storage:get-preferences",
+        "storage:update-preference",
+        "storage:get-keybinds",
+        "storage:set-keybinds",
+        "storage:get-all-sessions",
+        "storage:get-session",
+        "storage:save-session",
+        "storage:delete-session",
+        "storage:delete-all-sessions",
+        "storage:clear-all"
+      ],
+      "boundary": "main-window WebContents + exact main frame; per-field validation; credential setters await main-process async safeStorage"
+    },
+    {
+      "transport": "invoke",
+      "owner": "src/index.js#setupGeneralIpcHandlers",
+      "channels": [
+        "provider-models:list",
+        "get-app-version",
+        "quit-application",
+        "open-external"
+      ],
+      "boundary": "main-window WebContents + exact main frame; provider enum validation; external URL scheme/credential validation"
+    },
+    {
+      "transport": "invoke",
+      "owner": "src/utils/contextCaptureMain.js",
+      "channels": [
+        "context-capture:list-sources",
+        "context-capture:get-state",
+        "context-capture:set-source",
+        "context-capture:read-clipboard",
+        "context-capture:select-region"
+      ],
+      "boundary": "main-window WebContents + exact main frame; selection normalization; clipboard main-process read bounded to plain text"
+    },
+    {
+      "transport": "invoke",
+      "owner": "src/utils/phase4Main.js",
+      "channels": [
+        "knowledge:list",
+        "knowledge:import",
+        "knowledge:add-text",
+        "knowledge:set-enabled",
+        "knowledge:delete",
+        "knowledge:search",
+        "practice:generate",
+        "practice:grade",
+        "practice:history",
+        "review:list",
+        "review:get"
+      ],
+      "boundary": "main-window WebContents + exact main frame; import paths originate from main-process file picker; IDs/text are bounded"
+    },
+    {
+      "transport": "invoke",
+      "owner": "src/utils/window.js + src/utils/runtimeHardeningMain.js",
+      "channels": [
+        "window-minimize",
+        "window-toggle-maximize",
+        "toggle-window-visibility"
+      ],
+      "boundary": "main-window WebContents + exact main frame; no renderer-owned BrowserWindow object is accepted"
+    },
+    {
+      "transport": "invoke",
+      "owner": "src/utils/gemini.js with Windows/runtime wrappers",
+      "channels": [
+        "initialize-gemini",
+        "initialize-local",
+        "cancel-local-initialization",
+        "send-audio-content",
+        "send-mic-audio-content",
+        "audio-stream-end",
+        "send-image-content",
+        "cancel-screen-analysis",
+        "retry-session-connection",
+        "send-text-message",
+        "close-session",
+        "get-current-session",
+        "start-new-session"
+      ],
+      "boundary": "main-window WebContents + exact main frame; typed payload bounds, UI/session epochs, cancellation and provider-specific validation"
+    },
+    {
+      "transport": "send",
+      "owner": "src/utils/window.js",
+      "channels": [
+        "view-changed"
+      ],
+      "boundary": "main-window WebContents + exact main frame; string-only view value; no return channel"
+    }
+  ],
+  "mainToRenderer": {
+    "transport": "on",
+    "channels": [
+      "update-status",
+      "provider-state",
+      "search-state",
+      "provider-request-error",
+      "new-response",
+      "update-response",
+      "session-initializing",
+      "save-session-context",
+      "save-conversation-turn",
+      "save-screen-analysis",
+      "screen-analysis-started",
+      "screen-analysis-complete",
+      "reconnect-failed",
+      "clear-sensitive-data",
+      "click-through-toggled",
+      "navigate-previous-response",
+      "navigate-next-response",
+      "scroll-response-up",
+      "scroll-response-down",
+      "shortcut",
+      "whisper-downloading",
+      "local-ai-download-progress",
+      "groq-rate-limit",
+      "live-transcript",
+      "capture-source-invalidated"
+    ],
+    "boundary": "preload exposes subscription wrappers only and strips the Electron event object before renderer callbacks"
+  },
+  "auxiliaryWindowIpc": [
+    {
+      "window": "region-selector",
+      "channels": [
+        "region-selector-complete",
+        "region-selector-cancel"
+      ],
+      "owner": "src/utils/contextCaptureMain.js",
+      "boundary": "sandboxed selector preload; raw webContents IPC is accepted only from selector.webContents.mainFrame"
+    }
+  ],
+  "browserWindows": [
+    {
+      "window": "main",
+      "owner": "src/utils/window.js",
+      "nodeIntegration": false,
+      "contextIsolation": true,
+      "sandbox": true,
+      "webSecurity": true,
+      "allowRunningInsecureContent": false,
+      "navigation": "denied",
+      "popups": "denied",
+      "permissions": [
+        "media",
+        "display-capture"
+      ],
+      "csp": "self-only scripts and frames; data images only; no objects/forms/base"
+    },
+    {
+      "window": "region-selector",
+      "owner": "src/utils/contextCaptureMain.js",
+      "nodeIntegration": false,
+      "contextIsolation": true,
+      "sandbox": true,
+      "webSecurity": true,
+      "navigation": "denied",
+      "popups": "denied",
+      "contentProtection": true,
+      "csp": "self-only scripts/styles; no images/objects/forms/base"
+    }
+  ],
+  "networkDestinations": [
+    {
+      "destination": "generativelanguage.googleapis.com",
+      "purpose": "Gemini model discovery, Generate Content and SDK-owned Live transport",
+      "scheme": "HTTPS/WSS",
+      "owner": "providerModelRegistry.js / @google/genai"
+    },
+    {
+      "destination": "api.groq.com",
+      "purpose": "Groq models, chat/vision and transcription",
+      "scheme": "HTTPS",
+      "owner": "gemini.js / runtimeHardeningMain.js"
+    },
+    {
+      "destination": "huggingface.co",
+      "purpose": "Local model metadata and checksum-verified model/projector downloads",
+      "scheme": "HTTPS",
+      "owner": "hubMetadata.js / native-ai-runtime.js / windowsLocalAiRuntime.js"
+    },
+    {
+      "destination": "github.com",
+      "purpose": "checksum-pinned native runtime release downloads",
+      "scheme": "HTTPS",
+      "owner": "native-ai-runtime.js / windowsLocalAiRuntime.js"
+    },
+    {
+      "destination": "127.0.0.1:<ephemeral>",
+      "purpose": "local llama.cpp and whisper.cpp servers",
+      "scheme": "HTTP loopback only",
+      "owner": "localai.js"
+    },
+    {
+      "destination": "user/provider-selected web link",
+      "purpose": "citations, help and issue links opened by the OS browser only",
+      "scheme": "HTTP/HTTPS only; no URL credentials",
+      "owner": "electronSecurity.js + index.js shell.openExternal"
+    }
+  ],
+  "secretTransitions": [
+    {
+      "secret": "Gemini API key",
+      "flow": "renderer replacement input -> trusted IPC -> main cache -> async Windows safeStorage DPAPI ciphertext -> Gemini SDK",
+      "rendererReadback": "boolean status only"
+    },
+    {
+      "secret": "Groq API key",
+      "flow": "renderer replacement input -> trusted IPC -> main cache -> async Windows safeStorage DPAPI ciphertext -> Bearer header",
+      "rendererReadback": "boolean status only"
+    },
+    {
+      "secret": "existing windows-safe-storage-v1 ciphertext",
+      "flow": "decryptStringAsync -> main-only cache; re-encrypt with encryptStringAsync when key rotation is requested",
+      "rendererReadback": "never"
+    },
+    {
+      "secret": "temporary safeStorage outage",
+      "flow": "existing encrypted file remains untouched and setter is locked until decryption becomes available",
+      "rendererReadback": "generic storage error only"
+    }
+  ],
+  "filesystemBoundaries": [
+    {
+      "capability": "knowledge import",
+      "boundary": "main-process showOpenDialog selects absolute paths; supported extension/size/binary checks before import"
+    },
+    {
+      "capability": "custom Local AI model",
+      "boundary": "absolute path must be a regular .gguf file and a regular recognized mmproj-*.gguf must exist beside it"
+    },
+    {
+      "capability": "application storage",
+      "boundary": "fixed ContextHalo config/history directories with validated numeric session IDs and atomic JSON writes"
+    },
+    {
+      "capability": "downloaded runtimes/models",
+      "boundary": "fixed application directories, temporary files, checksum verification and atomic rename"
+    }
+  ],
+  "fileProtocolResearch": {
+    "current": "main and region-selector still use BrowserWindow.loadFile/file://",
+    "decision": "do not migrate in Phase 3",
+    "reason": "the plan requires proving asset resolution, CSP, srcdoc attribution, permission origin semantics and packaged behavior before changing the scheme",
+    "candidate": "register an app:// scheme as standard+secure+supportFetchAPI before ready, serve only files under the packaged src root via protocol.handle with path.resolve/path.relative containment, then disable grantFileProtocolExtraPrivileges",
+    "fuse": "grantFileProtocolExtraPrivileges must not be disabled while file:// remains in use"
+  }
+}

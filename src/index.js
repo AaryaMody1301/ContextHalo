@@ -13,6 +13,7 @@ const { installSessionPackMain } = require('./utils/sessionPackMain');
 const { installKnowledgeRagMain } = require('./utils/knowledgeRagMain');
 const { setupContextCaptureMain } = require('./utils/contextCaptureMain');
 const { setupPhase4Main } = require('./utils/phase4Main');
+const { normalizeExternalUrl } = require('./utils/electronSecurity');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
 if (WINDOWS_SMOKE_MODE) {
@@ -65,6 +66,7 @@ function validateObject(value) {
 
 app.whenReady().then(async () => {
     storage.initializeStorage();
+    await storage.initializeCredentialStorage();
     createMainWindow();
 
     // Install the Windows wrapper first, then the shared runtime wrapper. The
@@ -107,13 +109,13 @@ function setupStorageIpcHandlers() {
     handle('storage:credential-status', () => ({ success: true, data: {
         gemini: Boolean(storage.getApiKey()), groq: Boolean(storage.getGroqApiKey()),
     } }));
-    handle('storage:set-api-key', apiKey => {
+    handle('storage:set-api-key', async apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
-        saved(storage.setApiKey(apiKey)); return { success: true };
+        saved(await storage.setApiKey(apiKey)); return { success: true };
     });
-    handle('storage:set-groq-api-key', groqApiKey => {
+    handle('storage:set-groq-api-key', async groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
-        saved(storage.setGroqApiKey(groqApiKey)); return { success: true };
+        saved(await storage.setGroqApiKey(groqApiKey)); return { success: true };
     });
 
     handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
@@ -170,11 +172,10 @@ function setupGeneralIpcHandlers() {
     });
 
     ipcMain.handle('open-external', async (event, rawUrl) => {
-        if (!isTrustedEvent(event) || !validateString(rawUrl, 4096)) return { success: false, error: 'Invalid URL' };
-        let parsed;
-        try { parsed = new URL(rawUrl); } catch { return { success: false, error: 'Invalid URL' }; }
-        if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) return { success: false, error: 'Unsupported URL protocol' };
-        await shell.openExternal(parsed.toString());
+        if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        const externalUrl = normalizeExternalUrl(rawUrl);
+        if (!externalUrl) return { success: false, error: 'Unsupported external URL' };
+        await shell.openExternal(externalUrl);
         return { success: true };
     });
 }
