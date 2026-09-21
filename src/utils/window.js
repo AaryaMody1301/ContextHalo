@@ -1,5 +1,6 @@
 const { BrowserWindow, globalShortcut, ipcMain, screen, session, Tray, Menu, app } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const storage = require('../storage');
 const { createWindowModeController } = require('./windowModeController');
 
@@ -81,10 +82,25 @@ function installRecovery(mainWindow, controller) {
 
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 1100, height: 800 };
 const MIN_WINDOW_SIZE = { width: 700, height: 320 };
-const WINDOWS_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' https://forms.gle https://docs.google.com; object-src 'none'; base-uri 'none'; form-action 'none'";
+const WINDOWS_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+const MAIN_PAGE_PATH = path.join(__dirname, '../index.html');
+const MAIN_PAGE_URL = pathToFileURL(MAIN_PAGE_PATH).toString();
 
 function isTrustedEvent(event, mainWindow) {
-    return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id);
+    return Boolean(event?.sender && mainWindow && !mainWindow.isDestroyed()
+        && event.sender.id === mainWindow.webContents.id
+        && event.senderFrame === mainWindow.webContents.mainFrame);
+}
+
+function isTrustedMainFramePermission(webContents, mainWindow, permission, details = {}, requestingOrigin = '') {
+    if (!webContents || !mainWindow || mainWindow.isDestroyed() || webContents.id !== mainWindow.webContents.id) return false;
+    if (!['media', 'display-capture'].includes(permission) || details.isMainFrame === false) return false;
+    const requestingUrl = typeof details.requestingUrl === 'string' && details.requestingUrl ? details.requestingUrl : webContents.getURL?.();
+    if (webContents.getURL?.() !== MAIN_PAGE_URL || requestingUrl !== MAIN_PAGE_URL) return false;
+    // file:// has an opaque origin in web standards. Until the planned app://
+    // migration, Chromium may serialize it as either "null" or "file://".
+    if (requestingOrigin && requestingOrigin !== 'null' && requestingOrigin !== 'file://') return false;
+    return true;
 }
 
 function createWindow(sendToRenderer, geminiSessionRef) {
@@ -129,17 +145,11 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         callback({ responseHeaders });
     });
 
-    const isTrustedMainFramePermission = (webContents, permission, details = {}) => {
-        if (!webContents || webContents.id !== mainWindow.webContents.id) return false;
-        if (details.isMainFrame === false) return false;
-        return permission === 'media' || permission === 'display-capture';
-    };
-
     appSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-        callback(isTrustedMainFramePermission(webContents, permission, details));
+        callback(isTrustedMainFramePermission(webContents, mainWindow, permission, details));
     });
     appSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-        return isTrustedMainFramePermission(webContents, permission, details);
+        return isTrustedMainFramePermission(webContents, mainWindow, permission, details, requestingOrigin);
     });
 
     let boundsTimer;
@@ -181,7 +191,7 @@ function createWindow(sendToRenderer, geminiSessionRef) {
 
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('will-navigate', event => event.preventDefault());
-    mainWindow.loadFile(path.join(__dirname, '../index.html'));
+    mainWindow.loadFile(MAIN_PAGE_PATH);
 
     installRecovery(mainWindow, windowModeController);
     updateGlobalShortcuts({ ...getDefaultKeybinds(), ...storage.getKeybinds() }, mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
@@ -333,4 +343,5 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, wi
     });
 }
 
-module.exports = { createWindow, getDefaultKeybinds, updateGlobalShortcuts, setupWindowIpcHandlers, getShortcutState, saveGlobalShortcuts, normalizeAccelerator };
+module.exports = { createWindow, getDefaultKeybinds, updateGlobalShortcuts, setupWindowIpcHandlers, getShortcutState, saveGlobalShortcuts, normalizeAccelerator,
+    _test: { isTrustedEvent, isTrustedMainFramePermission, MAIN_PAGE_URL, WINDOWS_CSP } };
