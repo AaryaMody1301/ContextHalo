@@ -249,3 +249,31 @@ test('custom Local AI absolute paths are limited to regular GGUF model/projector
     fs.writeFileSync(projector, 'projector fixture');
     assert.deepEqual(await native.ensureLlamaModel(model), { modelPath: model, projectorPath: projector });
 });
+
+
+test('credential initialization completes before the first BrowserWindow and key writes are awaited', () => {
+    const index = read('src/index.js');
+    assert.match(index, /storage\.initializeStorage\(\);\s*await storage\.initializeCredentialStorage\(\);\s*createMainWindow\(\);/);
+    assert.match(index, /saved\(await storage\.setApiKey\(apiKey\)\)/);
+    assert.match(index, /saved\(await storage\.setGroqApiKey\(groqApiKey\)\)/);
+});
+
+test('every BrowserWindow in runtime source is represented by the Phase 3 window inventory', () => {
+    const inventory = JSON.parse(read('docs/PHASE_3_TRUST_BOUNDARIES.json'));
+    const stack = [path.join(process.cwd(), 'src')];
+    const files = [];
+    while (stack.length) {
+        const current = stack.pop();
+        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+            const target = path.join(current, entry.name);
+            if (entry.isDirectory()) stack.push(target);
+            else if (entry.isFile() && entry.name.endsWith('.js')) files.push(target);
+        }
+    }
+    const creations = files.flatMap(file => {
+        const source = fs.readFileSync(file, 'utf8');
+        return Array.from({ length: (source.match(/new BrowserWindow\s*\(/g) || []).length }, () => path.relative(process.cwd(), file));
+    });
+    assert.deepEqual(creations.sort(), ['src/utils/contextCaptureMain.js', 'src/utils/window.js']);
+    assert.equal(inventory.browserWindows.length, 2);
+});
