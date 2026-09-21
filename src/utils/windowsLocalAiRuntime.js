@@ -1,4 +1,4 @@
-const { listModelFiles, selectProjector } = require('./hubMetadata');
+const { getModelSnapshot, selectProjector } = require('./hubMetadata');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,6 +9,7 @@ const runFile = require('node:util').promisify(execFile);
 
 const VULKAN_LLAMA_RELEASE = Object.freeze({
     tag: 'b10964',
+    commit: 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4',
     archive: 'llama-b10964-bin-win-vulkan-x64.zip',
     sha256: '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642',
     executable: 'llama-server.exe',
@@ -48,8 +49,9 @@ function normalizeEtag(value) {
     return /^[a-f0-9]{64}$/i.test(normalized) ? normalized.toLowerCase() : null;
 }
 
-async function getHuggingFaceFileSha256(repository, filePath, signal) {
-    const url = `https://huggingface.co/${encodePathParts(repository)}/resolve/main/${encodePathParts(filePath)}`;
+async function getHuggingFaceFileSha256(repository, revision, filePath, signal) {
+    if (!/^[a-f0-9]{40}$/i.test(String(revision || ''))) throw new Error('Invalid immutable Hugging Face revision');
+    const url = `https://huggingface.co/${encodePathParts(repository)}/resolve/${revision}/${encodePathParts(filePath)}`;
     const response = await fetch(url, {
         method: 'HEAD',
         redirect: 'manual',
@@ -158,7 +160,13 @@ async function extractVulkanRuntime(archivePath, runtimeDirectory, run = runFile
         signal?.throwIfAborted();
         const executable = extractedVulkanRuntime(stagingDirectory);
         if (!executable) throw new Error('The verified llama.cpp Vulkan package is missing its server or Vulkan backend');
-        fs.writeFileSync(path.join(stagingDirectory, '.archive-sha256'), VULKAN_LLAMA_RELEASE.sha256, 'utf8');
+        fs.writeFileSync(path.join(stagingDirectory, '.source.json'), JSON.stringify({
+            tag: VULKAN_LLAMA_RELEASE.tag,
+            commit: VULKAN_LLAMA_RELEASE.commit,
+            archive: VULKAN_LLAMA_RELEASE.archive,
+            sha256: VULKAN_LLAMA_RELEASE.sha256,
+            url: VULKAN_LLAMA_RELEASE.url,
+        }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
         fs.rmSync(runtimeDirectory, { recursive: true, force: true });
         fs.renameSync(stagingDirectory, runtimeDirectory);
         return extractedVulkanRuntime(runtimeDirectory);
@@ -172,11 +180,18 @@ async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
     const binariesDirectory = path.join(path.dirname(runtime.getModelsDirectory()), 'binaries');
     const runtimeDirectory = path.join(binariesDirectory, `llama-${VULKAN_LLAMA_RELEASE.tag}-vulkan`);
     const archivePath = path.join(binariesDirectory, VULKAN_LLAMA_RELEASE.archive);
-    const markerPath = path.join(runtimeDirectory, '.archive-sha256');
+    const sourcePath = path.join(runtimeDirectory, '.source.json');
     const existing = extractedVulkanRuntime(runtimeDirectory);
-    if (existing && fs.existsSync(markerPath)
-        && fs.readFileSync(markerPath, 'utf8').trim() === VULKAN_LLAMA_RELEASE.sha256
-        && await matchesChecksum(archivePath, VULKAN_LLAMA_RELEASE.sha256)) return existing;
+    let sourceMatches = false;
+    try {
+        const source = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
+        sourceMatches = source.tag === VULKAN_LLAMA_RELEASE.tag
+            && source.commit === VULKAN_LLAMA_RELEASE.commit
+            && source.archive === VULKAN_LLAMA_RELEASE.archive
+            && source.sha256 === VULKAN_LLAMA_RELEASE.sha256
+            && source.url === VULKAN_LLAMA_RELEASE.url;
+    } catch {}
+    if (existing && sourceMatches && await matchesChecksum(archivePath, VULKAN_LLAMA_RELEASE.sha256)) return existing;
 
     const acceleratorTimeout = AbortSignal.timeout(120000);
     const acceleratorSignal = signal ? AbortSignal.any([signal, acceleratorTimeout]) : acceleratorTimeout;
@@ -187,7 +202,7 @@ async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
 
 async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onProjectorProgress, signal) {
     const { repository, quant } = parseModelReference(modelReference);
-    const files = await listModelFiles(repository, signal);
+    const { revision, files } = await getModelSnapshot(repository, signal);
     const normalizedQuant = quant.toUpperCase();
     const matches = files.filter(file => (
         file.type === 'file' &&
@@ -204,26 +219,34 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
     if (!projectorFile) throw new Error(`Hugging Face model ${repository} does not provide a supported multimodal projector`);
 
     const [modelSha256, projectorSha256] = await Promise.all([
-        getHuggingFaceFileSha256(repository, modelFile.path, signal),
-        getHuggingFaceFileSha256(repository, projectorFile.path, signal),
+        getHuggingFaceFileSha256(repository, revision, modelFile.path, signal),
+        getHuggingFaceFileSha256(repository, revision, projectorFile.path, signal),
     ]);
 
     const repositoryDirectory = path.join(runtime.getModelsDirectory(), 'llama', repository);
     const modelPath = await downloadVerifiedFile(
-        `https://huggingface.co/${encodePathParts(repository)}/resolve/main/${encodePathParts(modelFile.path)}`,
+        `https://huggingface.co/${encodePathParts(repository)}/resolve/${revision}/${encodePathParts(modelFile.path)}`,
         path.join(repositoryDirectory, path.basename(modelFile.path)),
         modelSha256,
         onModelProgress,
         signal
     );
     const projectorPath = await downloadVerifiedFile(
-        `https://huggingface.co/${encodePathParts(repository)}/resolve/main/${encodePathParts(projectorFile.path)}`,
+        `https://huggingface.co/${encodePathParts(repository)}/resolve/${revision}/${encodePathParts(projectorFile.path)}`,
         path.join(repositoryDirectory, path.basename(projectorFile.path)),
         projectorSha256,
         onProjectorProgress,
         signal
     );
 
+    runtime.persistModelProvenance(repositoryDirectory, {
+        schemaVersion: 1,
+        repository,
+        revision,
+        quant,
+        model: { path: modelFile.path, sha256: modelSha256 },
+        projector: { path: projectorFile.path, sha256: projectorSha256 },
+    });
     return { modelPath, projectorPath };
 }
 
