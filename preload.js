@@ -35,6 +35,7 @@ const allowedChannels = {
         'review:list',
         'review:get',
         'get-app-version',
+        'updates:check',
         'quit-application',
         'open-external',
         'window-minimize',
