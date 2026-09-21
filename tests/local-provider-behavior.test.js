@@ -64,12 +64,12 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
     assert.equal(await api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US'), true);
     assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/llama-vulkan/server.exe', '/cpu/server.exe']);
-    assert.deepEqual(started[0].args, ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
-    assert.ok(started[1].args.includes('--alias') && started[1].args.includes('local'));
-    assert.ok(started[1].args.includes('-m') && started[1].args.includes('/model'));
-    assert.ok(started[1].args.includes('--mmproj') && started[1].args.includes('/projector'));
-    assert.ok(started[1].args.includes('--cache-reuse') && started[1].args.includes('256'));
-    assert.equal(started[2].args.includes('--cache-reuse'), false, 'legacy CPU fallback keeps conservative CLI');
+    assert.deepEqual(started[0].arguments, ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
+    assert.ok(started[1].arguments.includes('--alias') && started[1].arguments.includes('local'));
+    assert.ok(started[1].arguments.includes('-m') && started[1].arguments.includes('/model'));
+    assert.ok(started[1].arguments.includes('--mmproj') && started[1].arguments.includes('/projector'));
+    assert.ok(started[1].arguments.includes('--cache-reuse') && started[1].arguments.includes('256'));
+    assert.equal(started[2].arguments.includes('--cache-reuse'), false, 'legacy CPU fallback keeps conservative CLI');
     assert.equal(stopped[0], started[1]);
     assert.equal(binaries[2][1].cpuOnly, true);
     const question = 'Preserve my leading instructions. ' + 'x'.repeat(10000);
