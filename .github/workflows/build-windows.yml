@@ -86,7 +86,7 @@ jobs:
           }
 
       - name: Build portable Windows EXE
-        run: npm run build:portable -- --publish never
+        run: npm run build:portable -- --publish never -c.extraMetadata.releaseBuild=${{ github.run_number }} -c.extraMetadata.releaseTag=v0.8.0-portable.${{ github.run_number }} -c.extraMetadata.releaseCommit=${{ github.sha }}
 
       - name: Verify portable EXE and record checksum
         shell: pwsh
@@ -118,6 +118,9 @@ jobs:
               $outcome | ConvertTo-Json -Depth 8 | Write-Host
               if (!$outcome.success -or !$outcome.packaged -or $outcome.platform -ne 'win32' -or $outcome.arch -ne 'x64') {
                 throw "Packaged smoke failed at Chromium scale $scale"
+              }
+              if ($outcome.releaseTag -ne "v0.8.0-portable.${{ github.run_number }}" -or $outcome.releaseCommit -ne "${{ github.sha }}") {
+                throw "Packaged release provenance does not match this workflow run"
               }
               if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
             }
