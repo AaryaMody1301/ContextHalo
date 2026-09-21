@@ -133,13 +133,18 @@ async function resolveVideoSource(mainWindow) {
     return { source, selection };
 }
 
+function isTrustedDisplayMediaRequest(request, mainWindow) {
+    return Boolean(request?.frame && mainWindow && !mainWindow.isDestroyed()
+        && request.frame === mainWindow.webContents.mainFrame);
+}
+
 function installDisplayCaptureHandler(mainWindow) {
     session.defaultSession.setDisplayMediaRequestHandler(
         async (request, callback) => {
-            if (!request?.frame || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
+            if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
             try {
                 const { source } = await resolveVideoSource(mainWindow);
-                if (mainWindow.isDestroyed() || request.frame !== mainWindow.webContents.mainFrame) { callback({}); return; }
+                if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
                 callback(source ? { video: source, ...(request.audioRequested ? { audio: 'loopback' } : {}) } : {});
             } catch (error) {
                 console.warn('Context capture source selection unavailable; capture denied.');
@@ -334,6 +339,7 @@ module.exports = {
     sanitizeSelection,
     normalizeRegion,
     isTrustedSelectorEvent,
+    isTrustedDisplayMediaRequest,
     listCaptureSources,
     setupContextCaptureMain,
 };
