@@ -19,7 +19,8 @@ function parsePortableReleaseTag(value) {
     if (!match) return null;
     const [major, minor, patch, build] = match.slice(1).map(Number);
     if (![major, minor, patch, build].every(Number.isSafeInteger)) return null;
-    return { tag: match[0], version: `${major}.${minor}.${patch}`, major, minor, patch, build };
+    const version = `${major}.${minor}.${patch}`;
+    return { tag: match[0], version, appVersion: `${version}-portable.${build}`, major, minor, patch, build };
 }
 
 function comparePortableReleases(left, right) {
@@ -36,8 +37,9 @@ function readCurrentRelease(appLike, packageMetadata = PACKAGE_METADATA) {
     const releaseBuild = Number(packageMetadata?.releaseBuild);
     const releaseCommit = String(packageMetadata?.releaseCommit || '').trim().toLowerCase();
     const parsed = parsePortableReleaseTag(releaseTag);
+    const versionMatches = Boolean(parsed && (version === parsed.version || version === parsed.appVersion));
     const valid = Boolean(parsed
-        && parsed.version === version
+        && versionMatches
         && Number.isSafeInteger(releaseBuild)
         && releaseBuild >= 0
         && parsed.build === releaseBuild
