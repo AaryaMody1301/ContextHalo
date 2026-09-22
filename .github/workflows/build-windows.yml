@@ -114,6 +114,26 @@ jobs:
           "$hash  ContextHalo-Windows-x64.exe" | Set-Content -Encoding utf8 "dist/SHA256SUMS.txt"
           Write-Host "Portable EXE SHA-256: $hash"
 
+      - name: Record portable EXE Authenticode state
+        shell: pwsh
+        run: |
+          $exe = (Get-Item "dist/ContextHalo-Windows-x64.exe").FullName
+          $signature = Get-AuthenticodeSignature -LiteralPath $exe
+          $status = [string]$signature.Status
+          $subject = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Subject } else { $null }
+          New-Item -ItemType Directory -Force -Path "qa-results/release" | Out-Null
+          [ordered]@{
+            status = $status
+            signerSubject = $subject
+            appVersion = "${{ steps.release_metadata.outputs.app_version }}"
+            releaseTag = "${{ steps.release_metadata.outputs.tag }}"
+            releaseCommit = "${{ github.sha }}"
+          } | ConvertTo-Json | Set-Content -Encoding utf8 "qa-results/release/authenticode.json"
+          Write-Host "Portable EXE Authenticode status: $status"
+          if ($status -notin @('Valid', 'NotSigned')) {
+            throw "Portable EXE has an invalid Authenticode state: $status"
+          }
+
       - name: Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale
         shell: pwsh
         run: |
