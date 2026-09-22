@@ -5,7 +5,7 @@ const { samePolicy, governanceStatus, readPolicy } = require('../scripts/reposit
 
 const read = path => fs.readFileSync(path, 'utf8');
 
-test('Phase 8 policy protects main without making a solo repository require an outside reviewer', () => {
+test('Phase 8 policy protects main without making a solo repository require an outside reviewer or signed feature commits', () => {
     const policy = readPolicy();
     assert.equal(policy.repository, 'AaryaMody1301/ContextHalo');
     assert.equal(policy.immutableReleases, true);
@@ -15,9 +15,12 @@ test('Phase 8 policy protects main without making a solo repository require an o
     assert.equal(policy.mainRuleset.bypass_actors, undefined);
 
     const byType = Object.fromEntries(policy.mainRuleset.rules.map(rule => [rule.type, rule]));
-    for (const type of ['deletion', 'non_fast_forward', 'required_signatures', 'pull_request', 'required_status_checks']) {
+    for (const type of ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks']) {
         assert.ok(byType[type], type);
     }
+    assert.equal(byType.required_signatures, undefined);
+    assert.equal(policy.signingPolicy.requiredSignatures, false);
+    assert.match(policy.signingPolicy.decision, /head commits.*verified signatures/i);
     assert.deepEqual(byType.pull_request.parameters.allowed_merge_methods, ['merge', 'squash']);
     assert.equal(byType.pull_request.parameters.required_approving_review_count, 0);
     assert.equal(byType.pull_request.parameters.required_review_thread_resolution, true);
