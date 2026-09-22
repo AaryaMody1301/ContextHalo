@@ -36,7 +36,7 @@ Grounded answer text is excluded from later Gemini HTTP context and Live reconne
 
 The Search settings UI now discloses Google's documented 30-day storage of prompts, contextual information and generated output when Grounding with Google Search is used.
 
-Search Suggestions are rendered exactly as returned in `searchEntryPoint.renderedContent`. ContextHalo does not parse, sanitize, rewrite, persist, or attach click monitoring to that provider fragment. It is isolated in an opaque sandboxed iframe. Normal web source links remain validated as HTTP(S) before being handed directly to the OS external-link boundary.
+Search Suggestions are rendered exactly as returned in `searchEntryPoint.renderedContent`. ContextHalo does not parse, sanitize, rewrite, persist, frame, or attach click tracking to that provider fragment. It is inserted into a dedicated nested Shadow DOM so provider CSS cannot restyle the privileged ContextHalo UI. `innerHTML`-created scripts remain inert and the application CSP forbids inline/provider scripts. Search Suggestion clicks are routed directly to their HTTP(S) destination without logging or persistence. Normal web source links remain validated as HTTP(S) before being handed directly to the OS external-link boundary.
 
 ## Gemini thought signatures
 
