@@ -18,7 +18,8 @@
         "build:portable": "electron-builder --win portable --x64",
         "check": "node scripts/check-source.js",
         "lint": "npm run check",
-        "test": "node --test --test-concurrency=1 tests/*.test.js"
+        "test": "node --test --test-concurrency=1 tests/*.test.js",
+        "audit:readiness": "node scripts/final-readiness-audit.js"
     },
     "engines": {
         "node": ">=22.16.0",

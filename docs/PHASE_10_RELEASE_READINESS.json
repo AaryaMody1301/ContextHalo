@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-09-22",
+  "repository": "AaryaMody1301/ContextHalo",
+  "phase": 10,
+  "baseline": {
+    "mainSha": "2914c8873666603aaaf1f4791019258693219ce6",
+    "phase9Pr": 66,
+    "releaseTag": "v0.8.0-portable.381",
+    "releaseTarget": "2914c8873666603aaaf1f4791019258693219ce6",
+    "releaseExeSha256": "b1753e15aab1b72ab0412f5ef6c31c83ef76c0f48099e522dba8808c42f793c7",
+    "mainWorkflowRun": 35694058453,
+    "mainWorkflowConclusion": "success",
+    "attestationJobConclusion": "success",
+    "releasePublishJobConclusion": "success",
+    "repositoryRulesetCount": 0,
+    "latestReleaseImmutable": false
+  },
+  "auditedStack": {
+    "electron": {
+      "configured": "^44.3.0",
+      "auditedRelease": "44.3.0",
+      "decision": "retain; current audited Electron line already satisfies the security/runtime baseline"
+    },
+    "googleGenAi": {
+      "configured": "2.22.0",
+      "upstreamLatestObserved": "2.23.0",
+      "decision": "retain 2.22.0; Phase 2 evaluated 2.23.0 and found no ContextHalo wire fix requiring a mixed final-audit dependency bump"
+    },
+    "gemini": {
+      "live": "gemini-3.8-live",
+      "http": "gemini-3.8-flash",
+      "decision": "retain; current documented stable defaults"
+    },
+    "groq": {
+      "chat": "openai/gpt-oss-120b",
+      "transcription": "whisper-large-v3-turbo",
+      "vision": "qwen/qwen3.8-27b",
+      "visionLifecycle": "preview",
+      "decision": "retain dynamic catalog plus explicit preview lifecycle handling; no stable Groq vision replacement was established in this audit"
+    },
+    "lit": {
+      "vendored": "3.3.3",
+      "decision": "retain; provenance hash/license/source are tracked"
+    },
+    "whisperCpp": {
+      "runtime": "v1.9.4 / b5130",
+      "decision": "retain; official checksum-pinned upstream release at the v1.9.4 commit"
+    },
+    "llamaCpp": {
+      "runtime": "b10964",
+      "newerPreReleaseObserved": "b10982",
+      "decision": "retain pinned b10964 for this final audit; later llama.cpp builds are fast-moving pre-releases and no required compatibility/security fix was established"
+    },
+    "electronBuilder": {
+      "configured": "^26.15.3",
+      "evaluatedMajor": "27",
+      "decision": "retain v26 for release readiness; v27 changes default toolsets to moving latest bundles and remains a separate reproducibility-focused migration"
+    }
+  },
+  "releasePosture": {
+    "channel": "portable/manual",
+    "automaticInstallerUpdates": false,
+    "updateNotification": "verified GitHub release notification",
+    "artifactAttestation": true,
+    "authenticode": {
+      "baselineState": "Phase 10 PR artifact measured NotSigned on workflow run 382",
+      "phase10Change": "Windows CI records Get-AuthenticodeSignature output for the exact packaged EXE",
+      "acceptedStates": [
+        "Valid",
+        "NotSigned"
+      ],
+      "rejectedStates": "any other Authenticode status",
+      "rationale": "portable/manual releases may remain unsigned today; invalid/tampered signature states must fail. A managed installer/update channel still requires signing."
+    }
+  },
+  "staticReadinessCriteria": [
+    "all tracked repository files fit an explicit runtime/test/build/documentation/repository category",
+    "all phase 0-9 evidence documents exist",
+    "direct production dependencies match lockfile and provenance inventory",
+    "vendored renderer JavaScript matches recorded git blob/source/version/license provenance",
+    "native runtimes and Whisper models use immutable revisions and SHA-256 verification",
+    "production npm audit remains in Windows CI",
+    "release artifact attestation remains main-only and required before publication",
+    "actual Authenticode state is recorded from the produced EXE",
+    "packaged Windows scale matrix remains enforced"
+  ],
+  "externalBlockers": [
+    {
+      "id": "main-ruleset",
+      "type": "repository-admin",
+      "status": "open",
+      "observed": "GET /repos/AaryaMody1301/ContextHalo/rulesets returned []",
+      "requiredResolution": "apply the Phase 8 main ruleset requiring PRs and the Build ContextHalo Windows x64 EXE status check"
+    },
+    {
+      "id": "immutable-releases",
+      "type": "repository-admin",
+      "status": "open",
+      "observed": "v0.8.0-portable.381 reports immutable=false",
+      "requiredResolution": "enable immutable releases and verify a subsequent published release reports immutable=true"
+    },
+    {
+      "id": "physical-phase9-acceptance",
+      "type": "physical-device-provider",
+      "status": "open",
+      "observed": "all scenarios in docs/PHASE_9_ACCEPTANCE_MATRIX_TEMPLATE.json remain not-run",
+      "requiredResolution": "execute and record required physical/provider scenarios, including 1h/4h/8h evidence where specified"
+    }
+  ],
+  "deferredNonBlockers": [
+    {
+      "id": "signed-feature-commits",
+      "decision": "deferred",
+      "reason": "current PR-head authoring path creates unsigned commits; enabling required_signatures would block the normal merge path"
+    },
+    {
+      "id": "electron-builder-27",
+      "decision": "deferred",
+      "reason": "major build-system migration changes reproducibility defaults and is not required to certify the current release path"
+    },
+    {
+      "id": "gemini-interactions-api",
+      "decision": "deferred",
+      "reason": "generateContent remains fully supported; Interactions stores state by default and requires a separate privacy/latency benchmark before migration"
+    }
+  ],
+  "designation": {
+    "staticRepositoryReadiness": "passed on Phase 10 PR workflow run 382",
+    "finalCleanDesignation": false,
+    "reason": "repository-admin protections and physical Phase 9 acceptance are still open"
+  },
+  "phase10Validation": {
+    "workflowRun": 35695226484,
+    "workflowRunNumber": 382,
+    "conclusion": "success",
+    "sourceFilesValidated": 128,
+    "tests": {
+      "passed": 325,
+      "failed": 0
+    },
+    "packagedAppVersion": "0.8.0-portable.382",
+    "packagedReleaseTag": "v0.8.0-portable.382",
+    "exeSha256": "f3f582ef177875ac4884ed3a2ead4093dfd566dcce0e9e6d9e837374d8a2b384",
+    "authenticodeStatus": "NotSigned",
+    "packagedScaleFactors": [
+      1,
+      1.25,
+      1.5,
+      2
+    ],
+    "note": "PR validation artifact only; the post-merge main release will receive its own version/tag/hash."
+  }
+}
