@@ -65,22 +65,30 @@ async function run({ apply = false, fetchImpl = globalThis.fetch } = {}) {
         return response.status === 204 ? null : response.json();
     };
 
-    let rulesets = await request('/rulesets');
-    let immutable = Boolean(await request('/immutable-releases', { allow404: true }));
+    const loadGovernance = async () => {
+        const summaries = await request('/rulesets');
+        const details = [];
+        for (const summary of summaries) {
+            details.push(await request(`/rulesets/${summary.id}`));
+        }
+        const immutableState = await request('/immutable-releases', { allow404: true });
+        return { rulesets: details, immutable: immutableState?.enabled === true };
+    };
+
+    let state = await loadGovernance();
 
     if (apply) {
-        const current = rulesets.find(item => item.name === policy.mainRuleset.name);
+        const current = state.rulesets.find(item => item.name === policy.mainRuleset.name);
         if (!current) {
             await request('/rulesets', { method: 'POST', body: policy.mainRuleset });
         } else if (!samePolicy(current, policy.mainRuleset)) {
             await request(`/rulesets/${current.id}`, { method: 'PUT', body: policy.mainRuleset });
         }
-        if (!immutable) await request('/immutable-releases', { method: 'PUT' });
-        rulesets = await request('/rulesets');
-        immutable = Boolean(await request('/immutable-releases', { allow404: true }));
+        if (!state.immutable) await request('/immutable-releases', { method: 'PUT' });
+        state = await loadGovernance();
     }
 
-    const status = governanceStatus({ rulesets, immutable });
+    const status = governanceStatus(state);
     const report = {
         repository,
         apply,
