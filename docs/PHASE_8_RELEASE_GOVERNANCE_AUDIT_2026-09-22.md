@@ -43,15 +43,26 @@ The desired active ruleset is `Protect main`, targeting the default branch with:
 
 - deletion protection;
 - non-fast-forward protection (no force pushes);
-- verified commit signatures;
 - pull requests required before changes enter `main`;
 - no mandatory external approval count, because this is currently a solo-maintainer repository;
 - review-thread resolution required;
-- only GitHub merge/squash methods allowed by the ruleset; rebase is excluded because it can place unsigned contributor commits directly on `main`;
+- only GitHub merge/squash methods allowed by the ruleset; rebase is excluded to keep the main history on GitHub-created merge/squash commits;
 - required status check: `Build ContextHalo Windows x64 EXE`;
 - strict status-check policy so the tested commit must include current `main`.
 
 No bypass actor is encoded in the desired ruleset.
+
+### Signed-commit enforcement decision
+
+The Phase 7 `main` merge commit is GitHub-signed and verified, but the ordinary feature-branch commits produced by the repository tooling are currently unsigned. GitHub checks commits introduced from the PR head when a signed-commit protection applies; its documentation explicitly notes that unsigned head commits can block even a squash merge although GitHub would sign the final squash commit.
+
+Therefore Phase 8 does **not** activate `required_signatures` yet. Doing so now would make the current PR workflow self-blocking.
+
+Signed-commit enforcement becomes eligible only after every supported PR authoring path produces verified head commits (or a deliberately reviewed bypass model exists). At that point it can be introduced in its own governance change with a live test PR.
+
+Reference:
+
+- https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-signed-commits
 
 ## Administrative application
 
@@ -180,6 +191,7 @@ References:
 Repository-side Phase 8 code is ready when:
 
 - the governance manifest and tests pass;
+- signed-commit enforcement remains disabled until PR head commits are verifiably signed;
 - the Windows required-check name is stable and matches the desired ruleset;
 - packaged version/tag/commit are identical representations of one release identity;
 - release artifacts receive GitHub provenance attestations on `main`;
