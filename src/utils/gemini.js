@@ -168,7 +168,7 @@ function saveConversationTurn(transcription, aiResponse, grounding, modelParts) 
 
     conversationHistory.push(conversationTurn);
     if (Array.isArray(modelParts) && modelParts.length) {
-        geminiTurnModelParts.set(conversationTurn, modelParts.map(part => structuredClone(part)));
+        geminiTurnModelParts.set(conversationTurn, modelPartsForHistory(modelParts));
     }
 
     // Persist only displayed answer text and a grounded marker. Search
