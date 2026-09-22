@@ -9,7 +9,8 @@ let micAudioProcessor = null;
 let micAudioContext = null;
 let micMediaStream = null;
 const SAMPLE_RATE = 24000;
-const AUDIO_CHUNK_DURATION = 0.1; // seconds
+const AUDIO_CHUNK_DURATION = 0.1; // seconds for Groq/Local VAD
+const GEMINI_AUDIO_CHUNK_DURATION = 0.04; // Google recommends 20-40 ms for Live latency
 const AUDIO_WORKLET_MODULE = './utils/audioCaptureWorklet.js';
 const MAX_AUDIO_DISPATCH_CHUNKS = 6;
 const MAX_AUDIO_DISPATCH_AGE_MS = 900;
@@ -249,6 +250,10 @@ function preferredCaptureSampleRate() {
     return getPreferencesCache()?.providerMode === 'byok' ? 16000 : SAMPLE_RATE;
 }
 
+function preferredAudioChunkDuration() {
+    return getPreferencesCache()?.providerMode === 'byok' ? GEMINI_AUDIO_CHUNK_DURATION : AUDIO_CHUNK_DURATION;
+}
+
 function convertFloat32ToInt16(float32Array) {
     const int16Array = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
@@ -400,7 +405,7 @@ async function createCaptureAudioProcessor(stream, channel, epoch, signal) {
             numberOfInputs: 1,
             numberOfOutputs: 1,
             outputChannelCount: [1],
-            processorOptions: { samplesPerChunk: Math.round(context.sampleRate * AUDIO_CHUNK_DURATION) },
+            processorOptions: { samplesPerChunk: Math.round(context.sampleRate * preferredAudioChunkDuration()) },
         });
         processor.port.onmessage = event => {
             if (epoch !== captureEpoch) return;
