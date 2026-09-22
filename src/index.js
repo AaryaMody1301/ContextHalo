@@ -16,7 +16,7 @@ const { setupPhase4Main } = require('./utils/phase4Main');
 const { normalizeExternalUrl } = require('./utils/electronSecurity');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
-const RELIABILITY_ACCEPTANCE_MODE = acceptanceRequested(process.argv);
+const RELIABILITY_ACCEPTANCE_MODE = process.argv.includes('--reliability-acceptance');
 if (WINDOWS_SMOKE_MODE) {
     const fs = require('node:fs');
     const os = require('node:os');
@@ -40,7 +40,6 @@ const { setupGeminiIpcHandlers, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
 const { listProviderModels } = require('./utils/providerModelRegistry');
 const { createPortableUpdateController } = require('./utils/updateMain');
-const { acceptanceRequested, createReliabilityAcceptance } = require('./utils/reliabilityAcceptanceMain');
 
 const geminiSessionRef = { current: null };
 const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE });
@@ -76,6 +75,7 @@ app.whenReady().then(async () => {
 
     if (RELIABILITY_ACCEPTANCE_MODE) {
         const { powerMonitor, screen } = require('electron');
+        const { createReliabilityAcceptance } = require('./utils/reliabilityAcceptanceMain');
         const path = require('node:path');
         const outputDir = path.resolve(process.env.CONTEXTHALO_ACCEPTANCE_DIR || path.join(process.cwd(), 'reliability-acceptance'));
         const rendererState = async () => {
