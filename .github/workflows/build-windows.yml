@@ -211,6 +211,8 @@ jobs:
           name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          overwrite_files: false
+          fail_on_unmatched_files: true
           files: |
             release/ContextHalo-Windows-x64.exe
             release/SHA256SUMS.txt
