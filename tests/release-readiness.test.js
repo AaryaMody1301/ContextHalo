@@ -83,11 +83,15 @@ test('Windows release workflow pins the current audited action releases by commi
         '820762786026740c76f36085b0efc47a31fe5020', // actions/setup-node v7.0.0
         '3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c', // actions/download-artifact v8.0.1
         'efb35369e0ad2afab669f228072c1b0d510eae64', // softprops/action-gh-release v3.0.3
+        '1e69f48acb82d1966a394da916b4c1698aa569d6', // actions/attest v4.2.2
     ]) assert.match(workflow, new RegExp(sha));
 
     assert.doesNotMatch(workflow, /actions\/upload-artifact@v4/);
     assert.doesNotMatch(workflow, /actions\/download-artifact@v5/);
     assert.doesNotMatch(workflow, /softprops\/action-gh-release@v2/);
+    assert.doesNotMatch(workflow, /actions\/attest@v4/);
+    assert.match(workflow, /attestations:\s*write/);
+    assert.match(workflow, /artifact-metadata:\s*write/);
 });
 
 test('provider package and defaults match the audited 2026 contracts', () => {
@@ -95,6 +99,7 @@ test('provider package and defaults match the audited 2026 contracts', () => {
     assert.equal(pkg.dependencies['@google/genai'], '2.22.0');
     assert.equal(pkg.dependencies.ws, undefined, 'ws is supplied transitively by the Gemini SDK and is not an app dependency');
     assert.equal(pkg.devDependencies.electron, '^44.3.0');
+    assert.equal(pkg.devDependencies['electron-builder'], '^26.15.3');
     assert.equal(pkg.scripts.make, undefined);
 
     const storage = read('src/storage.js');

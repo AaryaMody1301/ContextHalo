@@ -19,9 +19,12 @@ jobs:
     name: Build ContextHalo Windows x64 EXE
     runs-on: windows-2022
     timeout-minutes: 20
+    permissions:
+      contents: read
     outputs:
       release_tag: ${{ steps.release_metadata.outputs.tag }}
       release_version: ${{ steps.release_metadata.outputs.version }}
+      app_version: ${{ steps.release_metadata.outputs.app_version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,8 +65,10 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "package.json version must be numeric semantic version" }
+          $appVersion = "$version-portable.${{ github.run_number }}"
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=v$version-portable.${{ github.run_number }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=v$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Verify lockfile is in sync
         shell: pwsh
@@ -98,7 +103,7 @@ jobs:
           }
 
       - name: Build portable Windows EXE
-        run: npm run build:portable -- --publish never "-c.extraMetadata.releaseBuild=${{ github.run_number }}" "-c.extraMetadata.releaseTag=${{ steps.release_metadata.outputs.tag }}" "-c.extraMetadata.releaseCommit=${{ github.sha }}"
+        run: npm run build:portable -- --publish never "-c.extraMetadata.version=${{ steps.release_metadata.outputs.app_version }}" "-c.extraMetadata.releaseBuild=${{ github.run_number }}" "-c.extraMetadata.releaseTag=${{ steps.release_metadata.outputs.tag }}" "-c.extraMetadata.releaseCommit=${{ github.sha }}"
 
       - name: Verify portable EXE and record checksum
         shell: pwsh
@@ -131,7 +136,7 @@ jobs:
               if (!$outcome.success -or !$outcome.packaged -or $outcome.platform -ne 'win32' -or $outcome.arch -ne 'x64') {
                 throw "Packaged smoke failed at Chromium scale $scale"
               }
-              if ($outcome.releaseTag -ne "${{ steps.release_metadata.outputs.tag }}" -or $outcome.releaseCommit -ne "${{ github.sha }}") {
+              if ($outcome.version -ne "${{ steps.release_metadata.outputs.app_version }}" -or $outcome.releaseTag -ne "${{ steps.release_metadata.outputs.tag }}" -or $outcome.releaseCommit -ne "${{ github.sha }}") {
                 throw "Packaged release provenance does not match this workflow run"
               }
               if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
@@ -159,9 +164,34 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  attest-release:
+    name: Attest ContextHalo Windows release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download validated portable EXE
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ContextHalo-Windows-x64-Portable
+          path: release
+
+      - name: Attest validated release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/ContextHalo-Windows-x64.exe
+            release/SHA256SUMS.txt
+
   publish-release:
     name: Publish ContextHalo GitHub Release
-    needs: build
+    needs: [build, attest-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-2022
     timeout-minutes: 10
@@ -178,9 +208,29 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
-          name: ContextHalo Windows Portable Build ${{ github.run_number }}
+          name: ContextHalo Windows Portable ${{ needs.build.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          overwrite_files: false
+          fail_on_unmatched_files: true
           files: |
             release/ContextHalo-Windows-x64.exe
             release/SHA256SUMS.txt
+
+      - name: Verify published release identity
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($release.target_commitish -ne "${{ github.sha }}") { throw "Published release target does not match workflow commit" }
+          foreach ($name in @('ContextHalo-Windows-x64.exe', 'SHA256SUMS.txt')) {
+            $asset = @($release.assets | Where-Object { $_.name -eq $name })
+            if ($asset.Count -ne 1 -or $asset[0].state -ne 'uploaded' -or $asset[0].digest -notmatch '^sha256:[a-f0-9]{64}$') {
+              throw "Published release asset metadata is incomplete for $name"
+            }
+          }
+          if (!$release.immutable) {
+            Write-Warning "Repository immutable releases are not enabled yet; apply docs/PHASE_8_REPOSITORY_GOVERNANCE.json with an Administration token."
+          }
