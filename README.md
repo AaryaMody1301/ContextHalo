@@ -21,7 +21,7 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 - Session Review for topics, decisions, actions, questions, markers, and follow-up practice
 - Conversation and screen-analysis history stored locally
 - Windows DPAPI-backed API-key protection through Electron safeStorage
-- Production portable builds use electron-builder with hardened Electron fuses and ASAR integrity validation
+- Production portable builds use electron-builder with hardened Electron fuses, ASAR integrity validation, embedded release provenance, and a notification-only official-release update check
 
 ## Requirements
 
@@ -42,6 +42,12 @@ Build the portable Windows executable:
 ```bash
 npm run build:portable
 ```
+
+## Updates
+
+ContextHalo currently ships as a portable Windows executable. Packaged releases check the fixed official GitHub Releases feed and show **Update available** only after the release tag, immutable commit, expected executable/checksum assets, sizes, and SHA-256 metadata pass validation. Selecting the notice opens the official release page in the system browser.
+
+The portable app does not silently download, replace, or execute an update. Replace the executable manually after verifying the release/checksum. A future installer-based auto-update channel requires a signed Windows distribution identity and separate validation before it can replace this portable/manual path.
 
 ## Validation
 

@@ -658,6 +658,10 @@ const contextHalo = {
         const result = await ipcRenderer.invoke('get-app-version');
         return result?.success ? result.data : '';
     },
+    checkForUpdates: async () => {
+        const result = await ipcRenderer.invoke('updates:check');
+        return result?.success ? result.data : { status: 'error', message: 'Update check is unavailable.' };
+    },
 
     // Core functionality
     initializeGemini,

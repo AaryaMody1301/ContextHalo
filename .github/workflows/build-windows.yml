@@ -19,6 +19,9 @@ jobs:
     name: Build ContextHalo Windows x64 EXE
     runs-on: windows-2022
     timeout-minutes: 20
+    outputs:
+      release_tag: ${{ steps.release_metadata.outputs.tag }}
+      release_version: ${{ steps.release_metadata.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,6 +56,15 @@ jobs:
           node-version: '24'
           cache: npm
 
+      - name: Resolve release metadata
+        id: release_metadata
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "package.json version must be numeric semantic version" }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=v$version-portable.${{ github.run_number }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Verify lockfile is in sync
         shell: pwsh
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund --dry-run
@@ -86,7 +98,7 @@ jobs:
           }
 
       - name: Build portable Windows EXE
-        run: npm run build:portable -- --publish never
+        run: npm run build:portable -- --publish never "-c.extraMetadata.releaseBuild=${{ github.run_number }}" "-c.extraMetadata.releaseTag=${{ steps.release_metadata.outputs.tag }}" "-c.extraMetadata.releaseCommit=${{ github.sha }}"
 
       - name: Verify portable EXE and record checksum
         shell: pwsh
@@ -118,6 +130,9 @@ jobs:
               $outcome | ConvertTo-Json -Depth 8 | Write-Host
               if (!$outcome.success -or !$outcome.packaged -or $outcome.platform -ne 'win32' -or $outcome.arch -ne 'x64') {
                 throw "Packaged smoke failed at Chromium scale $scale"
+              }
+              if ($outcome.releaseTag -ne "${{ steps.release_metadata.outputs.tag }}" -or $outcome.releaseCommit -ne "${{ github.sha }}") {
+                throw "Packaged release provenance does not match this workflow run"
               }
               if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
             }
@@ -162,7 +177,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: v0.8.0-portable.${{ github.run_number }}
+          tag_name: ${{ needs.build.outputs.release_tag }}
           name: ContextHalo Windows Portable Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
