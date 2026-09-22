@@ -142,6 +142,8 @@ gh attestation verify ContextHalo-Windows-x64.exe --repo AaryaMody1301/ContextHa
 
 The pinned `softprops/action-gh-release` v3.0.3 implementation already creates normal releases as drafts, uploads assets, and only then finalizes the release. This is compatible with GitHub's immutable-release best practice because published immutable releases reject later asset mutation.
 
+The release publisher also sets `overwrite_files: false` and `fail_on_unmatched_files: true`. This makes a successful-run retry safe once releases are immutable: existing published assets are not deleted/replaced, while missing local release inputs fail the job.
+
 After publishing, the workflow verifies:
 
 - target commit equals the workflow commit;
@@ -152,7 +154,7 @@ After publishing, the workflow verifies:
 
 Until the repository-level immutable release setting is applied, the workflow emits a warning rather than claiming immutability.
 
-Repository maintenance already excludes `release.immutable === true` releases from automatic obsolete-release deletion. Future immutable releases therefore remain retained.
+Repository maintenance keeps the existing bounded release history even after immutability is enabled. It never mutates or deletes individual immutable assets/tags; instead, once three complete successors exist, it may delete an obsolete automated release as a whole. GitHub explicitly allows deleting an immutable release; ContextHalo leaves the associated historical tag untouched and never reuses release tag names. The latest release and the explicit rollback tag remain protected by the retention policy.
 
 ## electron-builder 27 evaluation
 
