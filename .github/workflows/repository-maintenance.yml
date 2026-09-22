@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       apply:
-        description: Delete only merged branches and obsolete automated build releases
+        description: Delete merged/audited-superseded branches and obsolete automated build releases
         type: boolean
         default: false
 
