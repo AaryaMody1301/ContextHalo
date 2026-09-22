@@ -76,7 +76,7 @@ test('portable release tags compare semantic version and CI build number', () =>
     const current = parsePortableReleaseTag('v0.8.0-portable.367');
     const newerBuild = parsePortableReleaseTag('v0.8.0-portable.368');
     const newerVersion = parsePortableReleaseTag('v0.9.0-portable.1');
-    assert.deepEqual(current, { tag: 'v0.8.0-portable.367', version: '0.8.0', major: 0, minor: 8, patch: 0, build: 367 });
+    assert.deepEqual(current, { tag: 'v0.8.0-portable.367', version: '0.8.0', appVersion: '0.8.0-portable.367', major: 0, minor: 8, patch: 0, build: 367 });
     assert.equal(comparePortableReleases(newerBuild, current), 1);
     assert.equal(comparePortableReleases(newerVersion, newerBuild), 1);
     assert.equal(comparePortableReleases(current, current), 0);
@@ -90,6 +90,13 @@ test('installed portable provenance is accepted only when version, tag, build an
     assert.equal(current.tag, 'v0.8.0-portable.367');
     assert.equal(current.build, 367);
     assert.equal(current.commit, COMMIT_A);
+
+    const exact = readCurrentRelease(packagedApp('0.8.0-portable.367'), {
+        ...metadata(367),
+        version: '0.8.0-portable.367',
+    });
+    assert.equal(exact.tag, 'v0.8.0-portable.367');
+    assert.equal(exact.version, '0.8.0-portable.367');
 
     for (const bad of [
         { ...metadata(367), releaseBuild: 366 },
@@ -213,9 +220,11 @@ test('Phase 7 portable updates remain notification-only and build provenance is 
     assert.deepEqual(pkg.build.win.target, [{ target: 'portable', arch: ['x64'] }]);
     assert.match(workflow, /id: release_metadata/);
     assert.match(workflow, /node -p "require\('\.\/package\.json'\)\.version"/);
+    assert.match(workflow, /extraMetadata\.version=\$\{\{ steps\.release_metadata\.outputs\.app_version \}\}/);
     assert.match(workflow, /extraMetadata\.releaseBuild=\$\{\{ github\.run_number \}\}/);
     assert.match(workflow, /extraMetadata\.releaseTag=\$\{\{ steps\.release_metadata\.outputs\.tag \}\}/);
     assert.match(workflow, /extraMetadata\.releaseCommit=\$\{\{ github\.sha \}\}/);
     assert.match(workflow, /tag_name: \$\{\{ needs\.build\.outputs\.release_tag \}\}/);
+    assert.match(workflow, /outcome\.version -ne "\$\{\{ steps\.release_metadata\.outputs\.app_version \}\}"/);
     assert.match(workflow, /releaseTag -ne "\$\{\{ steps\.release_metadata\.outputs\.tag \}\}"/);
 });
