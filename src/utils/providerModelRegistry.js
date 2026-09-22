@@ -45,7 +45,7 @@ function normalizeGeminiModel(raw) {
         methods,
         inputTokenLimit: Number(raw?.inputTokenLimit) || policy?.inputTokenLimit || null,
         outputTokenLimit: Number(raw?.outputTokenLimit) || policy?.outputTokenLimit || null,
-        thinking: raw?.thinking === true || Boolean(policy?.thinkingLevels?.length),
+        thinking: raw?.thinking === true || Boolean(policy?.thinkingLevels?.length) || policy?.defaultThinking === 'interleaved-fixed',
         preview: policy ? policy.lifecycle === 'preview' : isPreviewModel(id, raw?.displayName),
         lifecycle: policy?.lifecycle || (isPreviewModel(id, raw?.displayName) ? 'preview' : 'provider'),
         capabilityLabel: geminiCapabilityLabel(id),
