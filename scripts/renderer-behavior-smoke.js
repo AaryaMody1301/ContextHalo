@@ -19,7 +19,7 @@ async function rendererBehaviorSmoke() {
     try {
         await audio.audioWorklet.addModule('./utils/audioCaptureWorklet.js');
         processor = new AudioWorkletNode(audio, 'context-halo-audio-capture', {
-            processorOptions: { samplesPerChunk: 1600 },
+            processorOptions: { samplesPerChunk: 640 },
             channelCount: 1, channelCountMode: 'explicit',
         });
         let messages = 0;
@@ -32,7 +32,7 @@ async function rendererBehaviorSmoke() {
         oscillator.connect(processor); processor.connect(audio.destination);
         oscillator.start(); await audio.resume();
         await waitUntil(() => messages >= 2, 8000);
-        verify(bytes === 3200, 'Real AudioWorklet emits acknowledged 100 ms / 16 kHz PCM chunks');
+        verify(bytes === 1280, 'Real AudioWorklet emits acknowledged 40 ms / 16 kHz Gemini PCM chunks');
     } finally {
         try { oscillator?.stop(); oscillator?.disconnect(); processor?.disconnect(); } catch {}
         processor?.port.close(); await audio.close();
