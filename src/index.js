@@ -16,6 +16,7 @@ const { setupPhase4Main } = require('./utils/phase4Main');
 const { normalizeExternalUrl } = require('./utils/electronSecurity');
 
 const WINDOWS_SMOKE_MODE = process.argv.includes('--ci-smoke-test');
+const RELIABILITY_ACCEPTANCE_MODE = process.argv.includes('--reliability-acceptance');
 if (WINDOWS_SMOKE_MODE) {
     const fs = require('node:fs');
     const os = require('node:os');
@@ -43,6 +44,7 @@ const { createPortableUpdateController } = require('./utils/updateMain');
 const geminiSessionRef = { current: null };
 const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE });
 let mainWindow = null;
+let reliabilityAcceptance = null;
 
 
 function createMainWindow() {
@@ -71,6 +73,44 @@ app.whenReady().then(async () => {
     await storage.initializeCredentialStorage();
     createMainWindow();
 
+    if (RELIABILITY_ACCEPTANCE_MODE) {
+        const { powerMonitor, screen } = require('electron');
+        const { createReliabilityAcceptance } = require('./utils/reliabilityAcceptanceMain');
+        const path = require('node:path');
+        const outputDir = path.resolve(process.env.CONTEXTHALO_ACCEPTANCE_DIR || path.join(process.cwd(), 'reliability-acceptance'));
+        const rendererState = async () => {
+            if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return { available: false };
+            return mainWindow.webContents.executeJavaScript(`(() => {
+                const app = document.querySelector('context-halo-app');
+                const capture = window.contextHalo?.getCaptureState?.() || app?.captureState || {};
+                return {
+                    available: Boolean(app),
+                    sessionActive: Boolean(app?._sessionStarted),
+                    lifecycleState: String(app?.lifecycleState || ''),
+                    providerState: String(app?.providerState || ''),
+                    captureState: String(capture?.state || ''),
+                    audioReady: capture?.audioReady === true,
+                    screen: capture?.screen === true,
+                    microphone: capture?.microphone === true,
+                    system: capture?.system === true,
+                };
+            })()`, true);
+        };
+        reliabilityAcceptance = createReliabilityAcceptance({
+            app,
+            powerMonitor,
+            mainWindow,
+            configDir: storage.getConfigDir(),
+            outputDir,
+            release: updateController.current(),
+            displayScales: screen.getAllDisplays().map(display => display.scaleFactor),
+            rendererState,
+            getMainMemory: () => process.getProcessMemoryInfo(),
+            sampleMs: process.env.CONTEXTHALO_ACCEPTANCE_SAMPLE_MS,
+        });
+        mainWindow.webContents.once('did-finish-load', () => { void reliabilityAcceptance?.sample(); });
+    }
+
     // Install the Windows wrapper first, then the shared runtime wrapper. The
     // resulting registered handler is Windows -> shared hardening -> provider,
     // which gives the Windows layer authority to impose a single overall request
@@ -91,6 +131,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => app.quit());
 
 app.on('before-quit', () => {
+    reliabilityAcceptance?.stop('before-quit');
     abortProviderSession('Application is closing');
     require('./utils/localai').closeLocalSession();
 });

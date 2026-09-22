@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "phase": 9,
+  "createdAt": "2026-09-22",
+  "baselineCommit": "18696754aaa7451687267119d9b8f6e5020f10a6",
+  "baselineRelease": "v0.8.0-portable.375",
+  "status": "template-not-executed",
+  "recorder": {
+    "flag": "--reliability-acceptance",
+    "sampleIntervalMs": 60000,
+    "checkpointsHours": [
+      1,
+      4,
+      8
+    ],
+    "evidenceFiles": [
+      "metadata.json",
+      "samples.jsonl",
+      "events.jsonl",
+      "summary.json",
+      "report.json",
+      "report.md"
+    ],
+    "privacy": "metadata only; no prompts, transcripts, audio, screenshots, API keys, file paths, or provider response bodies"
+  },
+  "requiredScenarios": [
+    {
+      "id": "win10-launch",
+      "category": "platform",
+      "target": "Windows 10 22H2 x64 physical workstation",
+      "durationMinutes": 15,
+      "actions": [
+        "launch portable EXE",
+        "start/end one session",
+        "verify history save/reopen"
+      ],
+      "evidence": [
+        "recorder evidence",
+        "Windows version",
+        "manual result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "win11-launch",
+      "category": "platform",
+      "target": "Windows 11 x64 physical workstation",
+      "durationMinutes": 15,
+      "actions": [
+        "launch portable EXE",
+        "start/end one session",
+        "verify history save/reopen"
+      ],
+      "evidence": [
+        "recorder evidence",
+        "Windows version",
+        "manual result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "gemini-live-8h",
+      "category": "provider",
+      "target": "Gemini API with current stable Live + HTTP defaults",
+      "durationHours": 8,
+      "checkpointsHours": [
+        1,
+        4,
+        8
+      ],
+      "actions": [
+        "keep a real Live session active",
+        "run typed prompts throughout",
+        "run Analyze Screen before 10m, around reconnects, after 45m, and after 4h",
+        "record provider reconnects and operation-level errors without content"
+      ],
+      "evidence": [
+        "8h recorder report",
+        "provider/model IDs",
+        "manual continuity result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "groq-1h",
+      "category": "provider",
+      "target": "Groq text + transcription + screen provider",
+      "durationHours": 1,
+      "checkpointsHours": [
+        1
+      ],
+      "actions": [
+        "exercise typed prompts",
+        "exercise transcription",
+        "exercise screen analysis",
+        "observe any 429 Retry-After behavior"
+      ],
+      "evidence": [
+        "1h recorder report",
+        "model IDs",
+        "manual continuity result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "local-cpu-1h",
+      "category": "local-ai",
+      "target": "Local AI CPU fallback",
+      "durationHours": 1,
+      "checkpointsHours": [
+        1
+      ],
+      "actions": [
+        "load model",
+        "transcribe",
+        "typed inference",
+        "screen inference",
+        "end session and confirm native processes terminate"
+      ],
+      "evidence": [
+        "1h recorder report",
+        "runtime/model provenance",
+        "manual process-termination result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "local-vulkan-1h",
+      "category": "local-ai",
+      "target": "Local AI Vulkan path",
+      "durationHours": 1,
+      "checkpointsHours": [
+        1
+      ],
+      "actions": [
+        "load model",
+        "transcribe",
+        "typed inference",
+        "screen inference",
+        "end session and confirm native processes terminate"
+      ],
+      "evidence": [
+        "1h recorder report",
+        "GPU/runtime/model provenance",
+        "manual process-termination result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "audio-modes",
+      "category": "capture",
+      "target": "speaker_only, mic_only, both",
+      "durationMinutes": 15,
+      "actions": [
+        "run each mode",
+        "remove and restore active audio device",
+        "verify visible recovering state and reacquisition"
+      ],
+      "evidence": [
+        "recorder events",
+        "manual audio continuity result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "network-interruption",
+      "category": "recovery",
+      "target": "Gemini Live and one HTTP provider path",
+      "actions": [
+        "disconnect network",
+        "wait for visible recovery state",
+        "restore network",
+        "verify same session remains usable",
+        "verify no duplicate answers/history"
+      ],
+      "evidence": [
+        "recorder events",
+        "manual continuity result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "sleep-wake",
+      "category": "recovery",
+      "target": "Windows suspend/resume and lock/unlock",
+      "actions": [
+        "suspend during active session",
+        "resume",
+        "lock/unlock",
+        "verify provider/capture recover or expose actionable recovery"
+      ],
+      "evidence": [
+        "power-suspend/resume/lock/unlock recorder events",
+        "manual continuity result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "multi-monitor",
+      "category": "capture",
+      "target": "two or more physical displays",
+      "actions": [
+        "use Active display capture",
+        "move ContextHalo between displays",
+        "analyze each display",
+        "confirm source invalidation/retargeting"
+      ],
+      "evidence": [
+        "manual source/answer result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "region-dpi",
+      "category": "capture",
+      "target": "physical Windows scaling 100%, 125%, 150%, 200%",
+      "actions": [
+        "select dense text/code region",
+        "analyze region",
+        "verify coordinates match selected pixels"
+      ],
+      "evidence": [
+        "scale factor",
+        "manual capture result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "content-protection",
+      "category": "privacy",
+      "target": "real meeting/screen-sharing application",
+      "actions": [
+        "share/capture screen with ContextHalo visible",
+        "confirm protected HUD is excluded where Windows/app combination supports it"
+      ],
+      "evidence": [
+        "application/version",
+        "manual protection result"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "quota-throttle",
+      "category": "provider-recovery",
+      "target": "Gemini and Groq account limits when safely reproducible",
+      "actions": [
+        "observe real 429/quota condition or use provider-controlled low quota",
+        "verify bounded retry/cooldown",
+        "verify no infinite retry loop"
+      ],
+      "evidence": [
+        "status code/category only",
+        "retry/cooldown observation"
+      ],
+      "status": "not-run"
+    },
+    {
+      "id": "download-interruption",
+      "category": "local-ai",
+      "target": "native runtime/model download",
+      "actions": [
+        "interrupt download/network",
+        "restart/retry download",
+        "verify partial file is not trusted",
+        "verify checksum before install"
+      ],
+      "evidence": [
+        "manual result",
+        "download state without user/model content"
+      ],
+      "status": "not-run"
+    }
+  ],
+  "exitCriteria": {
+    "automated": "all repository tests and packaged recorder smoke pass",
+    "physical": "all required scenarios have recorded pass evidence; unsupported hardware-dependent scenarios are explicitly marked not-applicable with reason",
+    "resources": "1h/4h/8h checkpoints are reviewed for sustained CPU/memory/disk trends; no crash/OOM/unresponsive event remains unexplained",
+    "history": "full saved History remains intact on disk; provider working context stays bounded without deleting user history"
+  }
+}
