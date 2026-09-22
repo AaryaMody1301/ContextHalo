@@ -356,6 +356,7 @@ function createReliabilityAcceptance({
         stop,
         recordEvent,
         getSummary: () => JSON.parse(JSON.stringify(summary)),
+        flush: () => writeQueue,
         paths: {
             metadata: path.join(destination, 'metadata.json'),
             samples: path.join(destination, 'samples.jsonl'),
