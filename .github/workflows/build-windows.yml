@@ -208,7 +208,7 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
-          name: ContextHalo Windows Portable Build ${{ github.run_number }}
+          name: ContextHalo Windows Portable ${{ needs.build.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           overwrite_files: false
