@@ -126,11 +126,12 @@ test('Groq Retry-After is a minimum and cannot disable exponential backoff', () 
     assert.equal(getRetryDelayMs({ headers: new Headers() }, 1, () => 0), 1000);
 });
 
-test('Search suggestions remain verbatim and ephemeral at the renderer boundary', () => {
+test('Search suggestions remain verbatim, non-framed and ephemeral at the renderer boundary', () => {
     const source = fs.readFileSync('src/components/GroundingSources.js', 'utf8');
-    assert.doesNotMatch(source, /DOMParser|groundingDocument|allow-same-origin/);
-    assert.match(source, /\.srcdoc=\$\{suggestions\}/);
-    assert.match(source, /allow-popups allow-popups-to-escape-sandbox/);
+    assert.doesNotMatch(source, /DOMParser|groundingDocument|<iframe|srcdoc/);
+    assert.match(source, /shadowRoot\.innerHTML = next/);
+    assert.match(source, /do not log, persist, count/);
+    assert.match(source, /google-search-suggestions/);
     const settings = fs.readFileSync('src/components/views/CustomizeView.js', 'utf8');
     assert.match(settings, /Google retains the prompt, contextual information and grounded output for 30 days/);
     assert.match(settings, /does not store them in History/);
