@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, powerMonitor, screen } = require('electron');
+const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
 const {
     installWindowsProviderTransport,
@@ -75,6 +75,7 @@ app.whenReady().then(async () => {
     createMainWindow();
 
     if (RELIABILITY_ACCEPTANCE_MODE) {
+        const { powerMonitor, screen } = require('electron');
         const path = require('node:path');
         const outputDir = path.resolve(process.env.CONTEXTHALO_ACCEPTANCE_DIR || path.join(process.cwd(), 'reliability-acceptance'));
         const rendererState = async () => {
