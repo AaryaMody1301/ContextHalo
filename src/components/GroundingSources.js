@@ -2,8 +2,9 @@ import { LitElement, html, css } from '../assets/lit-core-3.3.3.min.js';
 
 function safeSourceUrl(value) {
     try {
-        const url = new URL(value);
-        return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : '';
+        const raw = String(value || '');
+        const url = new URL(raw);
+        return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? raw : '';
     } catch { return ''; }
 }
 
