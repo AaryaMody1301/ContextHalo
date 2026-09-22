@@ -18,6 +18,8 @@ const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSes
 const { createGeminiLiveRuntime } = require('./geminiLiveRuntime');
 const { SCREEN_PROVIDER_BUDGET_MS, SCREEN_SESSION_TIMEOUT_MS, screenThinkingConfig } = require('./geminiScreenReliability');
 const { classifyGeminiFailure } = require('./geminiFailure');
+const { groundingFragmentFromResponse, mergeGrounding, publicGrounding } = require('./geminiGrounding');
+const { appendModelParts, modelPartsForHistory } = require('./geminiWorkingContext');
 let liveGeneration = 0;
 let manualReconnectPromise = null;
 let initializePromise = null;
@@ -48,6 +50,7 @@ let currentSessionId = null;
 let currentTranscription = '';
 let conversationHistory = [];
 let screenAnalysisHistory = [];
+let geminiTurnModelParts = new WeakMap();
 let currentProfile = null;
 let currentCustomPrompt = null;
 let isInitializingSession = false;
@@ -108,6 +111,7 @@ function buildContextMessage() {
     // available. Full history remains persisted locally for History.
     for (let index = conversationHistory.length - 1; index >= 0 && blocks.length < 20; index--) {
         const turn = conversationHistory[index];
+        if (turn?.grounded === true) continue;
         const transcription = String(turn?.transcription || '').trim();
         const answer = String(turn?.ai_response || '').trim();
         if (!transcription || !answer) continue;
@@ -131,6 +135,7 @@ function initializeNewSession(profile = null, customPrompt = null) {
     currentTranscription = '';
     conversationHistory = [];
     screenAnalysisHistory = [];
+    geminiTurnModelParts = new WeakMap();
     groqConversationHistory = [];
     currentProfile = profile;
     currentCustomPrompt = customPrompt;
@@ -146,23 +151,28 @@ function initializeNewSession(profile = null, customPrompt = null) {
     }
 }
 
-function saveConversationTurn(transcription, aiResponse, grounding) {
+function saveConversationTurn(transcription, aiResponse, grounding, modelParts) {
     if (!requestIsCurrent()) return;
     if (!currentSessionId) {
         initializeNewSession();
     }
 
+    const timestamp = Date.now();
+    const grounded = Boolean(grounding);
     const conversationTurn = {
-        timestamp: Date.now(),
+        timestamp,
         transcription: transcription.trim(),
         ai_response: aiResponse.trim(),
-        ...(grounding ? { grounding } : {}),
+        ...(grounded ? { grounded: true, groundedAt: timestamp } : {}),
     };
 
     conversationHistory.push(conversationTurn);
+    if (Array.isArray(modelParts) && modelParts.length) {
+        geminiTurnModelParts.set(conversationTurn, modelParts.map(part => structuredClone(part)));
+    }
 
-
-    // Send to renderer to save in IndexedDB
+    // Persist only displayed answer text and a grounded marker. Search
+    // Suggestions, queries, source Links and citation metadata remain ephemeral.
     sendToRenderer('save-conversation-turn', {
         sessionId: currentSessionId,
         turn: conversationTurn,
@@ -176,18 +186,21 @@ function saveScreenAnalysis(prompt, response, model, grounding) {
         initializeNewSession();
     }
 
+    const timestamp = Date.now();
+    const grounded = Boolean(grounding);
     const analysisEntry = {
-        timestamp: Date.now(),
+        timestamp,
         prompt: prompt,
         response: response.trim(),
         model: model,
-        ...(grounding ? { grounding } : {}),
+        ...(grounded ? { grounded: true, groundedAt: timestamp } : {}),
     };
 
     screenAnalysisHistory.push(analysisEntry);
 
-
-    // Send to renderer to save
+    // Provider Search metadata is active-response-only and is never written to
+    // History. The displayed grounded answer text is governed by the disk
+    // retention policy in storage.js.
     sendToRenderer('save-screen-analysis', {
         sessionId: currentSessionId,
         analysis: analysisEntry,
@@ -318,20 +331,7 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
 }
 
 function groundingFromResponse(response) {
-    const value = response?.candidates?.[0]?.groundingMetadata || response?.serverContent?.groundingMetadata || response?.groundingMetadata;
-    if (!value || typeof value !== 'object') return undefined;
-    // Keep provider attribution, queries and citation offsets in response/history,
-    // not logs. The renderer isolates provider HTML in a scriptless sandbox.
-    const sources = (value.groundingChunks || []).slice(0, 64).map(chunk => {
-        try {
-            const url = new URL(chunk?.web?.uri);
-            if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
-            return { uri: url.href, title: String(chunk.web.title || url.hostname).slice(0, 500) };
-        } catch { return null; }
-    });
-    return { sources, supports: (value.groundingSupports || []).slice(0, 256),
-        queries: (value.webSearchQueries || []).slice(0, 32).map(query => String(query).slice(0, 1000)),
-        renderedContent: String(value.searchEntryPoint?.renderedContent || '').slice(0, 128000) };
+    return publicGrounding(mergeGrounding(undefined, groundingFragmentFromResponse(response)));
 }
 
 function interactiveGeminiThinkingConfig(model, modeId = 'balanced') {
@@ -343,7 +343,8 @@ function interactiveGeminiThinkingConfig(model, modeId = 'balanced') {
 async function generateGeminiStream(ai, params, requestOptions, onText) {
     return runGeminiRequest(async (remaining, _attempt, operationSignal) => {
         let text = '';
-        let grounding;
+        let groundingState;
+        let modelParts = [];
         let emitted = false;
         try {
             const stream = await ai.models.generateContentStream({
@@ -353,14 +354,16 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
             for await (const chunk of stream) {
                 operationSignal.throwIfAborted();
                 const piece = String(chunk?.text || '');
-                grounding = groundingFromResponse(chunk) || grounding;
+                groundingState = mergeGrounding(groundingState, groundingFragmentFromResponse(chunk));
+                modelParts = appendModelParts(modelParts, chunk);
+                const grounding = publicGrounding(groundingState);
                 if (!piece) continue;
                 text += piece;
                 emitted = true;
                 onText?.(text, grounding);
             }
             if (!text.trim()) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
-            return { text: text.trim(), grounding };
+            return { text: text.trim(), grounding: publicGrounding(groundingState), modelParts };
         } catch (error) {
             if (emitted && error && typeof error === 'object') error.noRetryAfterPartial = true;
             throw error;
@@ -916,9 +919,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     emitLiveTranscript({ provider: 'gemini', text: finalText, final: true, timestamp: Date.now() });
                     currentTranscription += message.serverContent?.inputTranscription?.text || finalText;
                 }
-                const grounding = groundingFromResponse(message);
-                if (grounding) {
-                    liveGrounding = grounding;
+                const groundingFragment = groundingFragmentFromResponse(message);
+                if (groundingFragment) {
+                    liveGrounding = mergeGrounding(liveGrounding, groundingFragment);
+                    const grounding = publicGrounding(liveGrounding);
                     if (messageBuffer) sendToRenderer('update-response', messageBuffer, { requestId: liveResponseId, kind: 'voice', grounding });
                 }
                 const content = message.serverContent || {};
@@ -933,13 +937,13 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     const isFirstChunk = messageBuffer === '';
                     messageBuffer = visible;
                     sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer,
-                        { requestId: liveResponseId, kind: 'voice', grounding: liveGrounding });
+                        { requestId: liveResponseId, kind: 'voice', grounding: publicGrounding(liveGrounding) });
                 }
                 // generationComplete can precede the final transcription. Save
                 // once at turnComplete (or interruption), not at generationComplete.
                 if (content.turnComplete || content.interrupted) {
                     if (currentTranscription.trim() && messageBuffer.trim()) {
-                        saveConversationTurn(currentTranscription, messageBuffer, liveGrounding);
+                        saveConversationTurn(currentTranscription, messageBuffer, publicGrounding(liveGrounding));
                     }
                     currentTranscription = '';
                     messageBuffer = '';
@@ -1189,11 +1193,11 @@ async function sendTypedGeminiText(text) {
     const model = getAvailableModel();
     const session = require('../storage').getSession(currentSessionId);
     const transcript = (session?.liveTranscript || []).slice(-12).map(item => item.text).join('\n').slice(-6000);
-    const history = conversationHistory.slice(-6).flatMap(turn => [
+    const history = conversationHistory.filter(turn => turn?.grounded !== true).slice(-6).flatMap(turn => [
         { role: 'user', parts: [{ text: String(turn.transcription || '').slice(-2500) }] },
-        { role: 'model', parts: [{ text: String(turn.ai_response || '').slice(-2500) }] },
+        { role: 'model', parts: modelPartsForHistory(geminiTurnModelParts.get(turn), String(turn.ai_response || '').slice(-2500)) },
     ]);
-    const screenContext = screenAnalysisHistory.slice(-1).map(item => item.response).join('');
+    const screenContext = screenAnalysisHistory.filter(item => item?.grounded !== true).slice(-1).map(item => item.response).join('');
     const instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.'), getPreferences().responseMode)
         + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
         + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-4000) : '');
@@ -1214,9 +1218,9 @@ async function sendTypedGeminiText(text) {
             first = false;
         });
     assertCurrentRequest();
-    const { text: answer, grounding } = response;
+    const { text: answer, grounding, modelParts } = response;
     if (!first && grounding) sendToRenderer('update-response', answer, { ...getRequestMetadata(), grounding, model });
-    saveConversationTurn(text, answer, grounding);
+    saveConversationTurn(text, answer, grounding, modelParts);
     incrementLimitCount(model);
     return { success: true, text: answer, model, grounding };
 }
