@@ -236,6 +236,7 @@ function createReliabilityAcceptance({
             name: String(details?.name || details?.serviceName || '').slice(0, 120),
         });
     });
+    listen(process, 'exit', () => stop('process-exit'));
 
     async function sample() {
         if (stopped || sampleInFlight) return null;
