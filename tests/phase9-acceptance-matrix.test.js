@@ -39,8 +39,9 @@ test('normal runtime does not enable reliability recording implicitly', () => {
     const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
     const workflow = fs.readFileSync('.github/workflows/build-windows.yml', 'utf8');
 
-    assert.match(index, /acceptanceRequested\(process\.argv\)/);
+    assert.match(index, /process\.argv\.includes\('--reliability-acceptance'\)/);
     assert.match(index, /if \(RELIABILITY_ACCEPTANCE_MODE\)/);
+    assert.match(index, /require\('\.\/utils\/reliabilityAcceptanceMain'\)/);
     assert.doesNotMatch(packageJson.scripts.start, /reliability-acceptance/);
     assert.match(workflow, /--reliability-acceptance/);
     assert.match(workflow, /CONTEXTHALO_ACCEPTANCE_DIR/);
