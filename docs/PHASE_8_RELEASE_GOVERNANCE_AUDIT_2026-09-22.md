@@ -115,7 +115,9 @@ The Windows workflow pins `actions/attest` v4.2.2 at commit:
 
 `1e69f48acb82d1966a394da916b4c1698aa569d6`
 
-Attestation is intentionally limited to successful pushes to `main` after the exact portable EXE has:
+Attestation runs in a separate `attest-release` job only on successful pushes to `main`. PR build jobs keep `contents: read` only and do not receive OIDC or attestation write permissions. The attestation job downloads the exact already-validated `ContextHalo-Windows-x64-Portable` artifact and must succeed before release publication.
+
+The exact portable EXE is attested only after the build job has:
 
 - passed all Node regression tests;
 - passed the real Electron smoke;
@@ -123,12 +125,12 @@ Attestation is intentionally limited to successful pushes to `main` after the ex
 - had its SHA-256 checksum recorded;
 - passed all four packaged scale launches and embedded-provenance checks.
 
-Subjects:
+Subjects after downloading the validated Actions artifact:
 
-- `dist/ContextHalo-Windows-x64.exe`
-- `dist/SHA256SUMS.txt`
+- `release/ContextHalo-Windows-x64.exe`
+- `release/SHA256SUMS.txt`
 
-PR/test-only builds are not attested.
+PR/test-only builds are not attested. The attestation job alone receives `id-token: write`, `attestations: write`, and `artifact-metadata: write`; this matches the pinned action's documented v4.2.2 permission requirements.
 
 Consumers can verify a downloaded executable with:
 
