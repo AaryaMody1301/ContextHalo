@@ -13,7 +13,7 @@ function branchRetention(branch, { defaultBranch, currentBranch, openHeads, merg
 }
 function releasePlan(releases, latestId) {
     const automated = releases.filter(release => /^v\d+\.\d+\.\d+-portable\.\d+$/.test(release.tag_name)
-        && release.author?.login === 'github-actions[bot]' && !release.draft && !release.prerelease && !release.immutable)
+        && release.author?.login === 'github-actions[bot]' && !release.draft && !release.prerelease)
         .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)));
     const complete = automated.filter(release => ['ContextHalo-Windows-x64.exe', 'SHA256SUMS.txt']
         .every(name => release.assets?.some(asset => asset.name === name && asset.state === 'uploaded')));
@@ -61,7 +61,7 @@ async function maintain({ apply = false } = {}) {
     const openHeads = new Set(pulls.filter(pr => pr.state === 'open' && pr.head.repo?.full_name === repository).map(pr => pr.head.ref));
     const report = { apply, base: mainSha, startedAt: new Date().toISOString(), before: { branches: branches.length, releases: releases.length },
         branchInventory: branches.map(branch => ({ name: branch.name, sha: branch.commit.sha })),
-        releaseInventory: releases.map(release => ({ id: release.id, tag: release.tag_name, commit: release.target_commitish })),
+        releaseInventory: releases.map(release => ({ id: release.id, tag: release.tag_name, commit: release.target_commitish, immutable: release.immutable === true })),
         deletedBranches: [], keptBranches: [], deletedReleases: [], keptReleases: [], errors: [] };
     try {
         for (const branch of branches) {
@@ -91,7 +91,7 @@ async function maintain({ apply = false } = {}) {
             try {
                 if (apply) {
                     const fresh = await api(`/releases/${release.id}`);
-                    if (fresh.updated_at !== release.updated_at || fresh.immutable || fresh.draft || fresh.prerelease) continue;
+                    if (fresh.updated_at !== release.updated_at || fresh.draft || fresh.prerelease) continue;
                     await api(`/releases/${release.id}`, 'DELETE');
                 }
                 report.deletedReleases.push({ id: release.id, tag: release.tag_name });
