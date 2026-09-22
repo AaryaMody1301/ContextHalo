@@ -10,9 +10,11 @@ exponential backoff with jitter for transient failures. A 503 is not evidence of
 an invalid key or failed user connectivity. Client changes cannot guarantee that
 an unavailable upstream service will respond.
 
-The existing policy exhausted two attempts less than a second apart for fast
-503 responses. HTTP text/screen now get at most four attempts, with approximately
-1, 2 and 4 second delays plus jitter, inside the unchanged total deadline. Live
+The original recovery policy exhausted attempts too close together for fast
+503 responses. HTTP text/screen now get the initial attempt plus up to four
+retries, with approximately 1, 2, 4 and 8 second local delays plus jitter inside
+the unchanged total deadline. Provider Retry-After is treated as a minimum, so a
+zero/short header cannot disable exponential backoff. Live
 retains its separately bounded setup/recovery policy. Model/account/provider
 selection never changes on failure. Authentication, permissions, unknown quota,
 and exhausted daily quota are not retried as transient overload.
