@@ -123,7 +123,9 @@ jobs:
               $directory = Join-Path $env:GITHUB_WORKSPACE "qa-results/portable-$scale"
               New-Item -ItemType Directory -Force -Path $directory | Out-Null
               $env:CONTEXTHALO_QA_DIR = $directory
-              $process = Start-Process -FilePath $exe -ArgumentList @('--ci-smoke-test', "--force-device-scale-factor=$scale") -PassThru
+              $env:CONTEXTHALO_ACCEPTANCE_DIR = Join-Path $directory 'reliability'
+              $env:CONTEXTHALO_ACCEPTANCE_SAMPLE_MS = '10000'
+              $process = Start-Process -FilePath $exe -ArgumentList @('--ci-smoke-test', '--reliability-acceptance', "--force-device-scale-factor=$scale") -PassThru
               $outcomePath = Join-Path $directory 'outcome.json'
               $deadline = (Get-Date).AddSeconds(150)
               while (!(Test-Path $outcomePath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
@@ -140,9 +142,25 @@ jobs:
                 throw "Packaged release provenance does not match this workflow run"
               }
               if (!$process.WaitForExit(15000)) { Stop-Process -Id $process.Id -Force; throw 'Portable launcher did not exit after smoke completion' }
+
+              $reliabilitySummaryPath = Join-Path $env:CONTEXTHALO_ACCEPTANCE_DIR 'summary.json'
+              $reliabilityMetadataPath = Join-Path $env:CONTEXTHALO_ACCEPTANCE_DIR 'metadata.json'
+              if (!(Test-Path $reliabilitySummaryPath) -or !(Test-Path $reliabilityMetadataPath)) {
+                throw "Packaged reliability evidence was not written at Chromium scale $scale"
+              }
+              $reliabilitySummary = Get-Content -Raw $reliabilitySummaryPath | ConvertFrom-Json
+              $reliabilityMetadata = Get-Content -Raw $reliabilityMetadataPath | ConvertFrom-Json
+              if ($reliabilitySummary.sampleCount -lt 1 -or !$reliabilitySummary.endedAt) {
+                throw "Packaged reliability recorder did not finalize at Chromium scale $scale"
+              }
+              if ($reliabilityMetadata.appVersion -ne "${{ steps.release_metadata.outputs.app_version }}" -or $reliabilityMetadata.release.tag -ne "${{ steps.release_metadata.outputs.tag }}") {
+                throw "Reliability evidence provenance does not match the packaged release"
+              }
             }
           } finally {
             Remove-Item Env:CONTEXTHALO_QA_DIR -ErrorAction SilentlyContinue
+            Remove-Item Env:CONTEXTHALO_ACCEPTANCE_DIR -ErrorAction SilentlyContinue
+            Remove-Item Env:CONTEXTHALO_ACCEPTANCE_SAMPLE_MS -ErrorAction SilentlyContinue
           }
 
       - name: Upload behavior evidence
