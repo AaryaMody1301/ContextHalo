@@ -24,8 +24,26 @@ function stable(value) {
     return Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])]));
 }
 
+function selectShape(value, template) {
+    if (Array.isArray(template)) {
+        if (!Array.isArray(value)) return value;
+        if (template.every(item => item && typeof item === 'object' && typeof item.type === 'string')) {
+            return template.map(item => selectShape(value.find(candidate => candidate?.type === item.type), item));
+        }
+        if (template.every(item => item && typeof item === 'object' && typeof item.context === 'string')) {
+            return template.map(item => selectShape(value.find(candidate => candidate?.context === item.context), item));
+        }
+        return template.map((item, index) => selectShape(value[index], item));
+    }
+    if (!template || typeof template !== 'object') return value;
+    const source = value && typeof value === 'object' ? value : {};
+    return Object.fromEntries(Object.keys(template).map(key => [key, selectShape(source[key], template[key])]));
+}
+
 function samePolicy(left, right) {
-    return JSON.stringify(stable(comparableRuleset(left))) === JSON.stringify(stable(comparableRuleset(right)));
+    const desired = comparableRuleset(right);
+    const actual = selectShape(comparableRuleset(left), desired);
+    return JSON.stringify(stable(actual)) === JSON.stringify(stable(desired));
 }
 
 function governanceStatus({ rulesets, immutable }) {
@@ -119,4 +137,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { comparableRuleset, samePolicy, governanceStatus, readPolicy };
+module.exports = { comparableRuleset, selectShape, samePolicy, governanceStatus, readPolicy };
