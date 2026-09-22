@@ -53,7 +53,7 @@ test('storage v9 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 8);
+    assert.equal(config.configVersion, 9);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live');
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
@@ -137,7 +137,7 @@ test('storage preserves a supported explicitly configured Gemini 3.7 model', { c
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 8);
+    assert.equal(config.configVersion, 9);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live', 'legacy Live selections migrate to the current stable low-latency model');
     assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
 });
