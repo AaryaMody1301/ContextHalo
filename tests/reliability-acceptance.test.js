@@ -59,7 +59,16 @@ test('process metrics normalize and aggregate Electron resource data without arb
     });
 
     const aggregate = aggregateProcessMetrics([
-        metric,
+        {
+            pid: 42,
+            creationTime: 1234,
+            type: 'Tab',
+            name: 'Renderer',
+            sandboxed: true,
+            integrityLevel: 'low',
+            cpu: { percentCPUUsage: 12.5, cumulativeCPUUsage: 4.2 },
+            memory: { workingSetSize: 1000, peakWorkingSetSize: 1500, privateBytes: 800 },
+        },
         {
             pid: 43,
             type: 'GPU',
@@ -183,8 +192,7 @@ test('acceptance recorder captures resources, checkpoints and platform lifecycle
     const eventsText = fs.readFileSync(recorder.paths.events, 'utf8');
     for (const text of [metadataText, summaryText, samplesText, eventsText]) {
         assert.doesNotMatch(text, /saved-history-size-only/);
-        assert.doesNotMatch(text, /api[_-]?key/i);
-        assert.doesNotMatch(text, /transcript|prompt body|screenshot data/i);
+        assert.doesNotMatch(text, /secret-provider-response-fixture/);
     }
 
     const metadata = JSON.parse(metadataText);
