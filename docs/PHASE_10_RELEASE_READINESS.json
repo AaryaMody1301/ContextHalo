@@ -64,7 +64,7 @@
     "updateNotification": "verified GitHub release notification",
     "artifactAttestation": true,
     "authenticode": {
-      "baselineState": "not measured by the pre-Phase-10 workflow",
+      "baselineState": "Phase 10 PR artifact measured NotSigned on workflow run 382",
       "phase10Change": "Windows CI records Get-AuthenticodeSignature output for the exact packaged EXE",
       "acceptedStates": [
         "Valid",
@@ -126,8 +126,29 @@
     }
   ],
   "designation": {
-    "staticRepositoryReadiness": "pending Phase 10 PR validation",
+    "staticRepositoryReadiness": "passed on Phase 10 PR workflow run 382",
     "finalCleanDesignation": false,
     "reason": "repository-admin protections and physical Phase 9 acceptance are still open"
+  },
+  "phase10Validation": {
+    "workflowRun": 35695226484,
+    "workflowRunNumber": 382,
+    "conclusion": "success",
+    "sourceFilesValidated": 128,
+    "tests": {
+      "passed": 325,
+      "failed": 0
+    },
+    "packagedAppVersion": "0.8.0-portable.382",
+    "packagedReleaseTag": "v0.8.0-portable.382",
+    "exeSha256": "f3f582ef177875ac4884ed3a2ead4093dfd566dcce0e9e6d9e837374d8a2b384",
+    "authenticodeStatus": "NotSigned",
+    "packagedScaleFactors": [
+      1,
+      1.25,
+      1.5,
+      2
+    ],
+    "note": "PR validation artifact only; the post-merge main release will receive its own version/tag/hash."
   }
 }
