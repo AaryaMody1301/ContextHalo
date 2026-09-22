@@ -125,6 +125,20 @@ Reference:
 
 - https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature
 
+## Phase 10 PR validation evidence
+
+Windows workflow run `35695226484` (run #382) passed the first complete Phase 10 gate:
+
+- 128 JavaScript files validated;
+- 325 tests passed / 0 failed;
+- real sandboxed Electron behavior/layout smoke passed;
+- portable EXE SHA-256: `f3f582ef177875ac4884ed3a2ead4093dfd566dcce0e9e6d9e837374d8a2b384`;
+- measured Authenticode state: `NotSigned`;
+- packaged identity: `0.8.0-portable.382` / `v0.8.0-portable.382`;
+- packaged launches passed at Chromium scale factors 1, 1.25, 1.5 and 2.
+
+The `NotSigned` result is evidence, not an inferred configuration state. It is acceptable for the current manual portable channel; an invalid signature state would fail the workflow. The final post-merge release will have a new run-derived version/hash and will be measured again by the same gate.
+
 ## External blockers still open
 
 ### 1. Main ruleset is not active
