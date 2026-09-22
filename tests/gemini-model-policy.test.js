@@ -61,7 +61,8 @@ test('standard and Extended Thinking Live models remain distinct protocol contra
     assert.equal(extended.asyncFunctionsOnly, true);
     assert.deepEqual(extended.thinkingLevels, ['low', 'medium', 'high']);
     assert.match(extended.compatibilityReason, /interactionStatus/);
-    assert.match(geminiCapabilityLabel(extended === GEMINI_MODEL_POLICY['gemini-3.8-live-extended-thinking'] ? 'gemini-3.8-live-extended-thinking' : ''), /not enabled/);
+    assert.equal(extended, GEMINI_MODEL_POLICY['gemini-3.8-live-extended-thinking']);
+    assert.match(geminiCapabilityLabel('gemini-3.8-live-extended-thinking'), /not enabled/);
 });
 
 test('unknown, preview and specialized models do not inherit screen thinking support', () => {
