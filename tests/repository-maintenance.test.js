@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { branchRetention, releasePlan, ROLLBACK_TAG } = require('../scripts/repository-maintenance');
+const { branchRetention, releasePlan, ROLLBACK_TAG, SUPERSEDED_BRANCHES } = require('../scripts/repository-maintenance');
 
 test('branch cleanup preserves default, protected, active and unmerged branches', () => {
     const context = { defaultBranch: 'main', currentBranch: 'repair', openHeads: new Set(['active']), merged: true };
@@ -8,6 +8,23 @@ test('branch cleanup preserves default, protected, active and unmerged branches'
     assert.ok(branchRetention({ name: 'protected', protected: true }, context));
     assert.ok(branchRetention({ name: 'unmerged' }, { ...context, merged: false }));
     assert.equal(branchRetention({ name: 'merged' }, context), null);
+});
+
+
+
+test('reviewed superseded branches are deleted only at the exact audited SHA', () => {
+    const context = { defaultBranch: 'main', currentBranch: 'main', openHeads: new Set(), merged: false };
+    for (const [name, sha] of SUPERSEDED_BRANCHES) {
+        assert.equal(branchRetention({ name, commit: { sha } }, context), null, name);
+        assert.equal(branchRetention({ name, commit: { sha: 'f'.repeat(40) } }, context), 'superseded branch changed', name);
+    }
+});
+
+test('superseded branch cleanup still preserves active or protected refs', () => {
+    const [name, sha] = SUPERSEDED_BRANCHES.entries().next().value;
+    const base = { defaultBranch: 'main', currentBranch: 'main', openHeads: new Set(), merged: false };
+    assert.equal(branchRetention({ name, commit: { sha }, protected: true }, base), 'protected branch');
+    assert.equal(branchRetention({ name, commit: { sha } }, { ...base, openHeads: new Set([name]) }), 'open pull request');
 });
 
 test('release retention removes obsolete complete automated builds as whole releases and leaves rollback, stable and special releases intact', () => {

@@ -4,11 +4,25 @@ const { execFileSync } = require('node:child_process');
 
 // Retain this pre-cleanup build until an explicitly reviewed replacement exists.
 const ROLLBACK_TAG = 'v0.8.0-portable.306';
+
+// These historical branches were reviewed after Phase 10 and are fully superseded
+// by later main-line work. Deletion is allowed only while the branch still points
+// at the exact audited SHA; any new push automatically preserves the branch.
+const SUPERSEDED_BRANCHES = new Map([
+    ['audit/final-repo-readiness-2026-09-13', 'bc78353799d2e75d427e478e13f835110615731a'],
+    ['cleanup/ponytail-windows-only', '73d0edd50ad6404ada9341494a6fb74e981b1815'],
+    ['final-api-ui-audit-20260913', '763ec5f2ed02f4d23ef4880868e3dae4b79b94d5'],
+    ['fix/final-api-runtime-hardening', '04ebee29fa905107882b68fbb11f2dc0f2d8d020'],
+    ['fix/gemini-screen-reliability', 'a72f2e09224312653e0da01b74c05e8642a07660'],
+    ['fix/ws-8.21.3-security', '09ab0d743069b9f94f46b77b0ab5f39989597c6a'],
+]);
 function branchRetention(branch, { defaultBranch, currentBranch, openHeads, merged }) {
     if (branch.name === 'main' || branch.name === defaultBranch) return 'default branch';
     if (branch.name === currentBranch) return 'current workflow branch';
     if (branch.protected) return 'protected branch';
     if (openHeads.has(branch.name)) return 'open pull request';
+    const supersededSha = SUPERSEDED_BRANCHES.get(branch.name);
+    if (supersededSha) return branch.commit?.sha === supersededSha ? null : 'superseded branch changed';
     return merged ? null : 'unmerged work';
 }
 function releasePlan(releases, latestId) {
@@ -115,4 +129,4 @@ if (require.main === module) {
     if (process.argv.slice(2).some(arg => !['--apply', '--dry-run'].includes(arg))) throw new Error('Use --dry-run or --apply');
     maintain({ apply: process.argv.includes('--apply') }).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
-module.exports = { branchRetention, releasePlan, ROLLBACK_TAG };
+module.exports = { branchRetention, releasePlan, ROLLBACK_TAG, SUPERSEDED_BRANCHES };
