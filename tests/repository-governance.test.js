@@ -72,8 +72,11 @@ test('release workflow attests only validated main artifacts and verifies publis
     assert.match(workflow, /Attest validated release artifacts/);
     assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
     assert.match(workflow, /actions\/attest@1e69f48acb82d1966a394da916b4c1698aa569d6/);
-    assert.match(workflow, /dist\/ContextHalo-Windows-x64\.exe/);
-    assert.match(workflow, /dist\/SHA256SUMS\.txt/);
+    assert.match(workflow, /name: Attest ContextHalo Windows release/);
+    assert.match(workflow, /needs: build/);
+    assert.match(workflow, /release\/ContextHalo-Windows-x64\.exe/);
+    assert.match(workflow, /release\/SHA256SUMS\.txt/);
+    assert.match(workflow, /needs: \[build, attest-release\]/);
     assert.match(workflow, /Published release target does not match workflow commit/);
     assert.match(workflow, /asset\[0\]\.digest -notmatch '\^sha256:/);
 });
