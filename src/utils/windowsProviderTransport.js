@@ -93,10 +93,10 @@ function parseRetryAfterMs(headers) {
     return null;
 }
 
-function getRetryDelayMs(response, attempt) {
+function getRetryDelayMs(response, attempt, random = Math.random) {
+    const localBackoff = 500 * 2 ** attempt + Math.floor(random() * 250);
     const providerDelay = parseRetryAfterMs(response?.headers);
-    if (providerDelay !== null) return providerDelay;
-    return 500 * 2 ** attempt + Math.floor(Math.random() * 250);
+    return providerDelay === null ? localBackoff : Math.max(localBackoff, providerDelay);
 }
 
 function isRetryableFetchError(error) {
@@ -350,6 +350,7 @@ module.exports = {
     resetProviderSession,
     classifyProviderRequest,
     parseRetryAfterMs,
+    getRetryDelayMs,
     tuneProviderRequest,
     boundedFetch,
     setFetchImplementationForTests,

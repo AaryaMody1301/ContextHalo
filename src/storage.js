@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { randomUUID } = require('node:crypto');
+const { sanitizeConversationHistory, sanitizeScreenAnalysisHistory, sanitizeSessionProviderHistory } = require('./utils/providerHistoryPolicy');
 
-const CONFIG_VERSION = 8;
+const CONFIG_VERSION = 9;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
@@ -51,6 +52,10 @@ const RETIRED_GEMINI_HTTP_MODELS = new Set([
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
     'gemini-2.5-pro',
+]);
+const RETIRED_GROQ_MODELS = new Set([
+    'groq/compound',
+    'groq/compound-mini',
 ]);
 const LEGACY_WHISPER_MODELS = {
     'Xenova/whisper-tiny': 'tiny.en',
@@ -275,7 +280,7 @@ function migrateConfig(rawConfig = {}) {
     if (previousVersion < 4 && source.groqModel === 'qwen/qwen3.6-27b') {
         config.groqModel = DEFAULT_CONFIG.groqModel;
     }
-    if (!config.groqModel) config.groqModel = DEFAULT_CONFIG.groqModel;
+    if (!config.groqModel || RETIRED_GROQ_MODELS.has(config.groqModel)) config.groqModel = DEFAULT_CONFIG.groqModel;
     // Groq shut down Qwen 3.6 for Free/Developer on 2026-09-14 and names
     // Qwen 3.8 as its replacement. Migrate the old ContextHalo default once.
     // Enterprise catalogs may still expose 3.6, so the dynamic picker can
@@ -283,7 +288,7 @@ function migrateConfig(rawConfig = {}) {
     if (previousVersion < 8 && source.groqImageModel === 'qwen/qwen3.6-27b') {
         config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
     }
-    if (!config.groqImageModel) config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
+    if (!config.groqImageModel || RETIRED_GROQ_MODELS.has(config.groqImageModel)) config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
     if (!config.groqTranscriptionModel) config.groqTranscriptionModel = DEFAULT_CONFIG.groqTranscriptionModel;
 
     return config;
@@ -337,6 +342,26 @@ function initializeStorage() {
     writeJsonFile(getPreferencesPath(), migratePreferences(readJsonFile(getPreferencesPath(), {})));
     if (!fs.existsSync(getLimitsPath())) writeJsonFile(getLimitsPath(), DEFAULT_LIMITS);
     fs.mkdirSync(getHistoryDir(), { recursive: true });
+    migrateProviderHistoryFiles();
+}
+
+function migrateProviderHistoryFiles(now = Date.now()) {
+    let files = [];
+    try {
+        files = fs.readdirSync(getHistoryDir()).filter(file => /^\d{1,30}\.json$/.test(file));
+    } catch {
+        return;
+    }
+    for (const file of files) {
+        const filePath = path.join(getHistoryDir(), file);
+        try {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            const { session, changed } = sanitizeSessionProviderHistory(data, now);
+            if (changed) writeJsonFile(filePath, session);
+        } catch {
+            // Preserve unreadable files; History already surfaces them explicitly.
+        }
+    }
 }
 
 function getConfig() { return migrateConfig(readJsonFile(getConfigPath(), {})); }
@@ -422,8 +447,8 @@ function saveSession(sessionId, data) {
         ...(Object.hasOwn(data, 'liveTranscript') ? { liveTranscript: require('./utils/sessionData').sanitizeTranscriptHistory(data.liveTranscript) } : {}),
         ...(Object.hasOwn(data, 'markers') ? { markers: require('./utils/sessionData').sanitizeMarkers(data.markers) } : {}),
         ...(Object.hasOwn(data, 'sessionPack') ? { sessionPack: require('./utils/sessionData').sanitizeSessionPack(data.sessionPack) } : {}),
-        conversationHistory: data.conversationHistory || existing?.conversationHistory || [],
-        screenAnalysisHistory: data.screenAnalysisHistory || existing?.screenAnalysisHistory || [],
+        conversationHistory: sanitizeConversationHistory(data.conversationHistory || existing?.conversationHistory || []),
+        screenAnalysisHistory: sanitizeScreenAnalysisHistory(data.screenAnalysisHistory || existing?.screenAnalysisHistory || []),
     });
 }
 // History reads must distinguish missing data from denied or corrupt data. Never
@@ -439,7 +464,9 @@ function getSession(sessionId) {
     try {
         const data = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid session');
-        return data;
+        const { session, changed } = sanitizeSessionProviderHistory(data);
+        if (changed) writeJsonFile(file, session);
+        return session;
     } catch (error) {
         if (error.code === 'ENOENT') return null;
         throw historyReadError('SESSION_UNREADABLE');

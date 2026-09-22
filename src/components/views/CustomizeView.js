@@ -619,6 +619,7 @@ export class CustomizeView extends LitElement {
                         <input class="toggle-input" type="checkbox" .checked=${this.googleSearchEnabled} @change=${this.handleGoogleSearchChange} />
                         <span class="toggle-label">Request Google Search for the next Gemini session (Live, typed and screen)</span>
                     </label>
+                    <div class="form-help">When Search is used, Google retains the prompt, contextual information and grounded output for 30 days. ContextHalo shows Search Suggestions and source links only with the active answer and does not store them in History; displayed grounded answer text may remain in your local History for up to two years.</div>
                     <div class="form-group vertical">
                         <div class="form-help">Edit shared instructions in AI Customization. Saved instructions still apply to new sessions.</div>
                         <button class="control" @click=${() => this.onOpenInstructions()}>Open AI Customization</button>

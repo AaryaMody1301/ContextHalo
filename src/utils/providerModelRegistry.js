@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { GEMINI_SCREEN_MODEL_IDS, GEMINI_LIVE_SELECTABLE_IDS, GEMINI_LIVE_MAPPED_IDS,
     geminiModelPolicy, geminiCapabilityLabel } = require('./geminiModelPolicy');
+const { groqModelPolicy, groqCapabilityLabel } = require('./groqModelPolicy');
 
 const GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
@@ -94,6 +95,13 @@ function buildGeminiCatalog(rawModels) {
 function normalizeGroqModel(raw) {
     const id = modelId(raw?.id);
     if (!id || raw?.active === false) return null;
+    const policy = groqModelPolicy(id);
+    if (policy?.lifecycle === 'retired') return null;
+
+    const inferredPreview = raw?.preview === true || isPreviewModel(id);
+    const preview = policy
+        ? ['preview', 'deprecated-account-dependent'].includes(policy.lifecycle)
+        : inferredPreview;
 
     return {
         id,
@@ -101,7 +109,12 @@ function normalizeGroqModel(raw) {
         owner: String(raw?.owned_by || ''),
         contextWindow: Number(raw?.context_window) || null,
         maxCompletionTokens: Number(raw?.max_completion_tokens) || null,
-        preview: raw?.preview === true || /^qwen\/qwen3\.(?:6|8)-27b$/.test(id) || isPreviewModel(id),
+        preview,
+        lifecycle: policy?.lifecycle || (inferredPreview ? 'preview' : 'unverified'),
+        capabilityLabel: groqCapabilityLabel(id),
+        contextHaloCompatibility: policy?.contextHaloCompatibility || 'advanced-unverified',
+        replacement: policy?.replacement || '',
+        roles: policy?.roles ? [...policy.roles] : [],
     };
 }
 

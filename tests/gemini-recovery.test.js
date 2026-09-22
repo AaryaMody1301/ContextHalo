@@ -177,7 +177,7 @@ test('automatic transient reconnect retains history and invalidates old socket c
     assert.equal(f.events.length, count);
 });
 
-test('grounding metadata survives current response and saved history; unsafe source URLs are excluded', async t => {
+test('grounding metadata stays active-response-only while grounded answer text remains persistable', async t => {
     const metadata = { groundingChunks: [{ web: { uri: 'https://example.org/source', title: 'Source' } }, { web: { uri: 'javascript:alert(1)' } }],
         groundingSupports: [{ segment: { startIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] }],
         searchEntryPoint: { renderedContent: '<div>Provider search suggestions</div>' }, webSearchQueries: ['mock query'] };
@@ -187,8 +187,10 @@ test('grounding metadata survives current response and saved history; unsafe sou
     assert.ok(JSON.stringify(result.grounding).includes('https://example.org/source'));
     assert.doesNotMatch(JSON.stringify(result.grounding), /javascript:/);
     const saved = f.events.find(([channel]) => channel === 'save-conversation-turn');
-    assert.deepEqual(saved[1].turn.grounding, result.grounding);
-    assert.ok(f.events.some(([channel,, meta]) => channel === 'new-response' && meta.grounding === result.grounding));
+    assert.equal(saved[1].turn.grounded, true);
+    assert.equal(typeof saved[1].turn.groundedAt, 'number');
+    assert.equal(Object.hasOwn(saved[1].turn, 'grounding'), false);
+    assert.ok(f.events.some(([channel,, meta]) => channel === 'new-response' && JSON.stringify(meta.grounding).includes('https://example.org/source')));
 });
 
 test('Groq and Local remain explicit providers and never silently open a Gemini connection', async t => {
