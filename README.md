@@ -66,6 +66,8 @@ npm test
 
 CI also launches the real Electron renderer in sandboxed mode before packaging and verifying the portable Windows executable. It exercises sending, draft recovery, mixed response routing, HTML sanitization, navigation, persistence, knowledge retrieval, practice, and review. Provider responses in these UI checks are mocked; live API calls, Windows capture devices and downloaded native-model inference still require the acceptance checks in [the reliability audit](docs/RELIABILITY_AUDIT.md).
 
+For physical long-session validation, start the packaged EXE with `--reliability-acceptance` and set `CONTEXTHALO_ACCEPTANCE_DIR`. This opt-in mode records resource/lifecycle metadata only and creates 1h/4h/8h checkpoints; it does not record prompts, transcripts, audio, screenshots, keys, file paths, or model responses. Summarize a completed run with `node scripts/reliability-acceptance-report.js <evidence-dir> --minimum-hours=1|4|8`. See [the Phase 9 acceptance protocol](docs/PHASE_9_REAL_WORLD_ACCEPTANCE_2026-09-22.md).
+
 ## Provider modes
 
 ### Gemini API
