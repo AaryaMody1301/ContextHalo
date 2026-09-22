@@ -13,6 +13,11 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             supportedGenerationMethods: ['bidiGenerateContent'],
         },
         {
+            name: 'models/gemini-3.8-live-extended-thinking',
+            displayName: 'Gemini 3.8 Live Extended Thinking',
+            supportedGenerationMethods: ['bidiGenerateContent'],
+        },
+        {
             name: 'models/gemini-3.1-flash-live-preview',
             displayName: 'Gemini 3.1 Flash Live Preview',
             supportedGenerationMethods: ['bidiGenerateContent'],
@@ -27,6 +32,16 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             displayName: 'Gemini 3.8 Flash',
             supportedGenerationMethods: ['generateContent', 'countTokens'],
         },
+        {
+            name: 'models/gemini-3.5-flash-lite',
+            displayName: 'Gemini 3.5 Flash-Lite',
+            supportedGenerationMethods: ['generateContent', 'countTokens'],
+        },
+        {
+            name: 'models/gemini-3.1-flash-lite',
+            displayName: 'Gemini 3.1 Flash-Lite',
+            supportedGenerationMethods: ['generateContent', 'countTokens'],
+        },
         { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', supportedGenerationMethods: ['generateContent'] },
         { name: 'models/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro Preview', supportedGenerationMethods: ['generateContent'] },
         {
@@ -37,11 +52,21 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     ]);
 
     assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live']);
-    assert.deepEqual(catalog.screen.map(model => model.id), ['gemini-3.7-flash', 'gemini-3.8-flash']);
+    assert.deepEqual(catalog.liveMapped.map(model => model.id).sort(), ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
+    const extended = catalog.liveMapped.find(model => model.id === 'gemini-3.8-live-extended-thinking');
+    assert.equal(extended.contextHaloCompatibility, 'mapped-not-selectable');
+    assert.match(extended.capabilityLabel, /Extended Thinking mapped, not enabled/);
+    assert.deepEqual(catalog.screen.map(model => model.id).sort(), [
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash-lite',
+        'gemini-3.7-flash',
+        'gemini-3.8-flash',
+    ]);
     assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');
     assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
+    assert.match(catalog.screen.find(model => model.id === 'gemini-3.8-flash').capabilityLabel, /Thinking low\/medium\/high/);
 });
 
 test('Gemini Omni is never offered as an interview Live model', () => {

@@ -266,7 +266,10 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
     now = Date.now, random = Math.random, wait = sleep } = {}) {
     const started = now();
     const httpOperation = operation === 'text' || operation === 'screen';
-    const maxAttempts = httpOperation ? 4 : 2;
+    // Google documents exponential backoff for transient 429/5xx failures and
+    // describes up to four retries in its client guidance. Count the initial
+    // request separately so HTTP operations can make at most five attempts.
+    const maxAttempts = httpOperation ? 5 : 2;
     const key = cooldownKey(apiKey, model || '');
     const cooling = geminiCooldowns.get(key);
     if (cooling?.retryAt > now()) throw failureError(cooling);
@@ -293,9 +296,14 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 // request would duplicate visible output. Pre-response failures keep
                 // the normal bounded retry policy.
                 if (error?.noRetryAfterPartial) throw failureError(failure);
-                const backoff = failure.retryAfterMs ?? Math.round(Math.min(10000, (httpOperation ? 1000 : 600) * 2 ** attempt) + random() * (httpOperation ? 250 : 300));
+                const localBackoff = Math.round(Math.min(10000, (httpOperation ? 1000 : 600) * 2 ** attempt)
+                    + random() * (httpOperation ? 250 : 300));
+                // Retry-After is a provider minimum, not permission to spin.
+                // A zero/short provider delay must not defeat exponential backoff
+                // during a 503 overload burst.
+                const backoff = failure.retryAfterMs === null ? localBackoff : Math.max(localBackoff, failure.retryAfterMs);
                 // A final short-term failure also gates rapid user actions/reconnects.
-                if (failure.retryable && failure.retryAt === null) failure.retryAt = now() + backoff;
+                if (failure.retryable) failure.retryAt = now() + backoff;
                 if (failure.retryAt > now()) geminiCooldowns.set(key, failure);
                 logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
                     status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,

@@ -1,4 +1,6 @@
 const crypto = require('node:crypto');
+const { GEMINI_SCREEN_MODEL_IDS, GEMINI_LIVE_SELECTABLE_IDS, GEMINI_LIVE_MAPPED_IDS,
+    geminiModelPolicy, geminiCapabilityLabel } = require('./geminiModelPolicy');
 
 const GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
@@ -35,35 +37,37 @@ function normalizeGeminiModel(raw) {
             ? raw.supportedActions.map(String)
             : [];
 
+    const policy = geminiModelPolicy(id);
     return {
         id,
         displayName: String(raw?.displayName || id),
         description: String(raw?.description || ''),
         methods,
-        inputTokenLimit: Number(raw?.inputTokenLimit) || null,
-        outputTokenLimit: Number(raw?.outputTokenLimit) || null,
-        thinking: raw?.thinking === true,
-        preview: isPreviewModel(id, raw?.displayName),
+        inputTokenLimit: Number(raw?.inputTokenLimit) || policy?.inputTokenLimit || null,
+        outputTokenLimit: Number(raw?.outputTokenLimit) || policy?.outputTokenLimit || null,
+        thinking: raw?.thinking === true || Boolean(policy?.thinkingLevels?.length) || policy?.defaultThinking === 'interleaved-fixed',
+        preview: policy ? policy.lifecycle === 'preview' : isPreviewModel(id, raw?.displayName),
+        lifecycle: policy?.lifecycle || (isPreviewModel(id, raw?.displayName) ? 'preview' : 'provider'),
+        capabilityLabel: geminiCapabilityLabel(id),
+        contextHaloCompatibility: policy?.contextHaloCompatibility || 'unmapped',
+        compatibilityReason: policy?.compatibilityReason || '',
+        search: policy?.search ?? null,
+        thinkingLevels: policy ? [...policy.thinkingLevels] : [],
     };
 }
 
 function buildGeminiCatalog(rawModels) {
     const all = sortModels(rawModels.map(normalizeGeminiModel).filter(Boolean));
-    // ContextHalo exposes only the documented interactive model families for
-    // interview use. The raw provider catalog can also contain image/video,
-    // Pro, legacy and specialized models that do not belong in these pickers.
-    const liveIds = new Set(['gemini-3.8-live']);
+    // ContextHalo exposes only documented stable interactive model families.
+    // Gemini 3.8 Live Extended Thinking is mapped below for transparency but is
+    // not selectable until ContextHalo owns its interactionStatus lifecycle.
+    const liveIds = new Set(GEMINI_LIVE_SELECTABLE_IDS);
+    const mappedLiveIds = new Set(GEMINI_LIVE_MAPPED_IDS);
     const live = all.filter(model => model.methods.includes('bidiGenerateContent') && liveIds.has(model.id));
+    const liveMapped = all.filter(model => model.methods.includes('bidiGenerateContent') && mappedLiveIds.has(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
-    const screenIds = new Set([
-        'gemini-3.8-flash',
-        'gemini-3.7-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.1-flash-lite',
-    ]);
-    const screen = generate.filter(model => screenIds.has(model.id) && !model.preview);
+    const screenIds = new Set(GEMINI_SCREEN_MODEL_IDS);
+    const screen = generate.filter(model => screenIds.has(model.id) && model.lifecycle === 'stable');
 
     const pick = (list, preferredIds) => {
         for (const id of preferredIds) {
@@ -77,6 +81,7 @@ function buildGeminiCatalog(rawModels) {
         provider: 'gemini',
         all,
         live,
+        liveMapped,
         generate,
         screen,
         recommended: {

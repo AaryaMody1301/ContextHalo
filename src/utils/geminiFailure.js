@@ -91,7 +91,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     const retryAt = retryAfterMs === null ? null : now + retryAfterMs;
     let message = messages[category];
     if (category === 'transient' && httpStatus === 503) {
-        message = 'Gemini is temporarily unavailable or overloaded. Your request could not be completed after bounded retries. Retry this request; your session and draft are retained. No model or account was changed.';
+        message = 'Gemini returned HTTP 503 (service unavailable or overloaded). ContextHalo retried with exponential backoff, but the service did not recover within this request. Retry later; your session and draft are retained. No model, Search setting, or account was changed.';
     } else if (category === 'transient' && ['ENOTFOUND', 'EAI_AGAIN'].includes(networkCode)) {
         message = 'Gemini hostname lookup failed. Check DNS and network connectivity, then retry.';
     } else if (category === 'transient' && operation === 'live' && stage) {

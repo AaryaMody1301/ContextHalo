@@ -37,11 +37,25 @@ test('renderer watchdog does not depend on a page-relative CommonJS require', ()
     assert.equal(Number(match[1]), SCREEN_RENDERER_TIMEOUT_MS);
 });
 
-test('low thinking is enabled only for compatible Gemini Flash models', () => {
-    for (const model of ['gemini-3.8-flash', 'models/gemini-3.7-flash', 'gemini-3.6-flash-preview']) {
+test('low thinking is enabled only for mapped stable Gemini screen models', () => {
+    for (const model of [
+        'gemini-3.8-flash',
+        'models/gemini-3.7-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+    ]) {
         assert.deepEqual(screenThinkingConfig(model), { thinkingConfig: { thinkingLevel: 'low' } });
     }
-    for (const model of ['gemini-2.5-flash', 'gemini-3.1-flash-lite-image', 'custom-model']) {
+    for (const model of [
+        'gemini-3.6-flash-preview',
+        'gemini-2.5-flash',
+        'gemini-3.1-flash-lite-image',
+        'gemini-3.8-live',
+        'gemini-3.8-live-extended-thinking',
+        'custom-model',
+    ]) {
         assert.deepEqual(screenThinkingConfig(model), {});
     }
 });
