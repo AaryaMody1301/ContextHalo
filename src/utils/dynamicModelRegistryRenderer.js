@@ -57,7 +57,7 @@ function renderModelPicker(view, options) {
                     <optgroup label="Compatible / recommended">
                         ${preferredModels.map(model => html`
                             <option value=${model.id}>
-                                ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}
+                                ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}${model.capabilityLabel ? ` · ${model.capabilityLabel}` : ''}
                             </option>
                         `)}
                     </optgroup>
@@ -66,7 +66,7 @@ function renderModelPicker(view, options) {
                     <optgroup label="All provider models (advanced)">
                         ${advancedModels.map(model => html`
                             <option value=${model.id}>
-                                ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}
+                                ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}${model.capabilityLabel ? ` · ${model.capabilityLabel}` : ''}
                             </option>
                         `)}
                     </optgroup>
