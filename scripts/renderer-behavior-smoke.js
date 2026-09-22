@@ -210,13 +210,13 @@ async function rendererBehaviorSmoke() {
     liveView.grounding={sources:[{uri:'https://ai.google.dev/',title:'Fixture source'}],renderedContent:'<style>p{margin:4px}</style><p><a href="https://www.google.com/search?q=fixture">Google Search suggestion</a></p><script>window.__unsafe=true</script>'};
     await settle(liveView);const attribution=liveView.shadowRoot.querySelector('grounding-sources');await settle(attribution);
     verify(attribution.shadowRoot.querySelector('a')?.href==='https://ai.google.dev/','Grounding source links are usable HTTP(S) URLs');
-    const frame=attribution.shadowRoot.querySelector('iframe');
-    await waitUntil(()=>Boolean(frame?.srcdoc));
-    verify(frame.srcdoc===liveView.grounding.renderedContent,'Google Search suggestions are passed to the sandbox without modification');
-    verify(!frame.getAttribute('sandbox').includes('allow-same-origin') && !frame.getAttribute('sandbox').includes('allow-scripts'),
-        'Google Search suggestions stay in an opaque script-disabled sandbox');
+    const suggestions=attribution.shadowRoot.querySelector('google-search-suggestions');
+    await waitUntil(()=>suggestions?.content===liveView.grounding.renderedContent);
+    verify(!attribution.shadowRoot.querySelector('iframe'),'Google Search suggestions are rendered without prohibited framing');
+    verify(suggestions.content===liveView.grounding.renderedContent,'Google Search suggestions are passed to the isolated renderer without modification');
+    verify(Boolean(suggestions.shadowRoot.querySelector('script')),'Provider Search suggestion markup is not rewritten');
     await new Promise(resolve=>setTimeout(resolve,50));
-    verify(!window.__unsafe,'Sandboxed Google Search suggestions cannot execute provider script in the app');
+    verify(!window.__unsafe,'Provider Search suggestion scripts remain inert under exact rendering');
     const storedAlpha=(await api.storage.getPreferences()).backgroundTransparency ?? 0.8;
     await api.storage.updatePreference('backgroundTransparency',0.37);await api.theme.save('light');await api.theme.save('dark');await api.theme.load();
     verify(api.theme.currentAlpha===0.37,'Changing theme and reloading appearance preserve saved alpha');
