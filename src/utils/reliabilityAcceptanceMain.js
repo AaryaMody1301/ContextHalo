@@ -122,6 +122,7 @@ function createReliabilityAcceptance({
     getMainMemory = async () => ({}),
     getNodeMemory = () => process.memoryUsage(),
     sampleMs = DEFAULT_SAMPLE_MS,
+    autoStart = true,
     now = Date.now,
     setIntervalImpl = setInterval,
     clearIntervalImpl = clearInterval,
@@ -344,9 +345,11 @@ function createReliabilityAcceptance({
     }
 
     recordEvent('acceptance-start');
-    void sample();
-    timer = setIntervalImpl(() => { void sample(); }, intervalMs);
-    timer?.unref?.();
+    if (autoStart) {
+        void sample();
+        timer = setIntervalImpl(() => { void sample(); }, intervalMs);
+        timer?.unref?.();
+    }
 
     return {
         sample,
