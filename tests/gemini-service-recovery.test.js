@@ -19,18 +19,33 @@ for (const operation of ['text', 'screen']) test(`${operation}: two 503 response
     assert.equal(f.preferences.googleSearchEnabled, true);
 });
 
-test('persistent 503 stops at four HTTP attempts and reports service unavailability without blaming connectivity', async t => {
+test('persistent 503 stops after the initial HTTP attempt plus four retries', async t => {
     const f = geminiFixture(); t.after(() => f.close());
     let calls = 0, now = 1000;
     await assert.rejects(f.api.runGeminiRequest(async () => {
         calls++; throw Object.assign(new Error('UNAVAILABLE'), { status: 503 });
     }, { operation: 'text', model: 'm', now: () => now, random: () => 0, wait: async ms => { now += ms; } }), error => {
         assert.equal(error.failure.httpStatus, 503);
-        assert.match(error.message, /temporarily unavailable|overloaded/);
+        assert.match(error.message, /HTTP 503|service unavailable|overloaded/);
+        assert.match(error.message, /exponential backoff/);
         assert.doesNotMatch(error.message, /connectivity recovers/);
         return true;
     });
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
+});
+
+test('Retry-After zero cannot disable local exponential backoff for HTTP 503', async t => {
+    const f = geminiFixture(); t.after(() => f.close());
+    let calls = 0, now = 1000; const waits = [];
+    const result = await f.api.runGeminiRequest(async () => {
+        calls++;
+        if (calls < 3) throw { status: 503, headers: { 'retry-after': '0' } };
+        return 'recovered';
+    }, { operation: 'screen', model: 'gemini-3.8-flash', now: () => now, random: () => 0,
+        wait: async ms => { waits.push(ms); now += ms; } });
+    assert.equal(result, 'recovered');
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [1000, 2000]);
 });
 
 test('Live-only Search fallback retains Search tools and instructions in text and screenshots', async t => {
