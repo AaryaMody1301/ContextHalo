@@ -1143,10 +1143,13 @@ export class MainView extends LitElement {
         const all = catalog?.all || [];
         const fields = gemini ? [
             { label: 'Gemini Live Model', value: this._geminiLiveModel, preferred: catalog?.live, all: catalog?.live || [],
-                allowAdvanced: false, onSave: this._saveGeminiLiveModel, helper: 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
+                allowAdvanced: false, onSave: this._saveGeminiLiveModel,
+                helper: catalog?.liveMapped?.some(model => model.id === 'gemini-3.8-live-extended-thinking')
+                    ? 'Gemini 3.8 Live is the low-latency default. Extended Thinking is mapped but not selectable yet because Google requires interactionStatus lifecycle handling rather than turnComplete alone.'
+                    : 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
             { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all: catalog?.screen || [],
                 allowAdvanced: false, onSave: this._saveGeminiHttpModel,
-                helper: 'Text and screenshots use stable Gemini Flash models; Gemini 3.8 Flash is the current default.' },
+                helper: 'Text and screenshots use documented stable Gemini Flash models. Gemini 3.8 Flash is the default; screen analysis uses low thinking and bounded 503 backoff.' },
         ] : [
             { label: 'Text / Reasoning Model', value: this._groqModel, preferred: catalog?.chat, all, onSave: this._saveGroqModel },
             { label: 'Screenshot / Vision Model', value: this._groqImageModel, preferred: catalog?.vision, all, onSave: this._saveGroqImageModel,
