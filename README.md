@@ -55,7 +55,7 @@ Main-branch release artifacts also receive GitHub artifact provenance attestatio
 gh attestation verify ContextHalo-Windows-x64.exe --repo AaryaMody1301/ContextHalo
 ```
 
-The repository's Phase 8 governance policy additionally requires pull requests, the Windows build check, verified commit signatures, no force-pushes/deletions on `main`, and immutable releases. The machine-readable target policy is in [`docs/PHASE_8_REPOSITORY_GOVERNANCE.json`](docs/PHASE_8_REPOSITORY_GOVERNANCE.json).
+The repository's Phase 8 governance policy additionally requires pull requests, the Windows build check, resolved review threads, no force-pushes/deletions on `main`, and immutable releases. Signed-commit enforcement is intentionally deferred until the PR head-commit path itself produces verified signatures, so the rule cannot deadlock normal merges. The machine-readable target policy is in [`docs/PHASE_8_REPOSITORY_GOVERNANCE.json`](docs/PHASE_8_REPOSITORY_GOVERNANCE.json).
 
 ## Validation
 
