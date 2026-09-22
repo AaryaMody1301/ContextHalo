@@ -77,6 +77,7 @@ test('release workflow attests only validated main artifacts and verifies publis
     assert.match(workflow, /release\/ContextHalo-Windows-x64\.exe/);
     assert.match(workflow, /release\/SHA256SUMS\.txt/);
     assert.match(workflow, /needs: \[build, attest-release\]/);
+    assert.match(workflow, /name: ContextHalo Windows Portable \$\{\{ needs\.build\.outputs\.release_tag \}\}/);
     assert.match(workflow, /overwrite_files: false/);
     assert.match(workflow, /fail_on_unmatched_files: true/);
     assert.match(workflow, /Published release target does not match workflow commit/);
