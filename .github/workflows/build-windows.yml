@@ -21,9 +21,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
     outputs:
       release_tag: ${{ steps.release_metadata.outputs.tag }}
       release_version: ${{ steps.release_metadata.outputs.version }}
@@ -148,14 +145,6 @@ jobs:
             Remove-Item Env:CONTEXTHALO_QA_DIR -ErrorAction SilentlyContinue
           }
 
-      - name: Attest validated release artifacts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: |
-            dist/ContextHalo-Windows-x64.exe
-            dist/SHA256SUMS.txt
-
       - name: Upload behavior evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -175,9 +164,34 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  attest-release:
+    name: Attest ContextHalo Windows release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download validated portable EXE
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ContextHalo-Windows-x64-Portable
+          path: release
+
+      - name: Attest validated release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/ContextHalo-Windows-x64.exe
+            release/SHA256SUMS.txt
+
   publish-release:
     name: Publish ContextHalo GitHub Release
-    needs: build
+    needs: [build, attest-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-2022
     timeout-minutes: 10
