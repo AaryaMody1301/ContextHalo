@@ -10,6 +10,9 @@ test('theme changes preserve saved alpha on the native-transparent window while 
         assert.equal(f.api.theme.currentAlpha, alpha); assert.equal(f.prefs.backgroundTransparency, alpha);
         assert.equal(f.prefs.theme, 'light');
         assert.equal(f.variables.get('--window-background'), `rgba(255, 255, 255, ${alpha})`);
+        assert.equal(f.variables.get('--control-color-scheme'), 'light');
+        assert.equal(f.scope.document.documentElement.style.colorScheme, undefined,
+            'theme selection must not set root color-scheme because it changes the transparent canvas surface');
         assert.match(f.variables.get('--bg-app'), /^rgb\(/);
         const restarted = rendererFixture({ prefs: f.prefs }); await restarted.api.theme.load();
         assert.equal(restarted.api.theme.currentAlpha, alpha); assert.equal(restarted.api.theme.current, 'light');
