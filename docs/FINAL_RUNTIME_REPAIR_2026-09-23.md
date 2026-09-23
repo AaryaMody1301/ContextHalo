@@ -36,6 +36,7 @@ Text/screen requests are never silently resent without Search. The explicit **Re
 | Failure scope and single setup control | `geminiFailure.js`, `geminiSetupRecovery.js` | final repair and installed-SDK loopback tests |
 | Provider/reconnect/cooldown ownership | `gemini.js` | recovery, service, production wiring and request tests |
 | Route-specific request recovery and disclosure | `ContextHaloApp.js`, `MainView.js`, `CustomizeView.js` | UI request recovery and final repair tests |
+| Desktop capture and compositor failure cleanup | `scripts/windows-compositor-acceptance.js` | `tests/windows-compositor-acceptance.test.js`; packaged Windows pixel gate |
 | Sanitized diagnostic fields | `transportLogger.js` | existing diagnostic redaction tests |
 | Current IPC capability map | `preload.js`, `docs/PHASE_3_TRUST_BOUNDARIES.json` | exact capability inventory test |
 
@@ -51,18 +52,28 @@ Alpha samples are 0, 0.25, 0.5, 0.8 and 1. The probe checks the root blend and a
 
 Temporary capture-protection changes and fixture surfaces are allowed only in the isolated `--ci-smoke-test` profile and are restored in `finally`. No account or real user content is loaded. Production capture protection is unchanged. This automated fixture is not a substitute for physical Windows 10/11, mixed-monitor DPI, click-through or third-party sharing acceptance.
 
-## Validation performed for this repair
+## Validation and packaged-compositor CI correction
 
-Source was obtained from the successful current-main Actions source artifact and checked against its recorded digest. Hidden workflow files and installed dependencies are not present in that source snapshot, so environment-dependent checks remain owned by the normal GitHub Windows workflow.
+PR #71's first Windows run, [35831847817 / workflow 400](https://github.com/AaryaMody1301/ContextHalo/actions/runs/35831847817), tested merge commit `2dc96d33a9bee77a0fe6293bf673ba1d6305b647` with PR head `b0a31bfb0a5a302f7641f93cb69f798e3167982c`. The job ran on Windows Server 2022 (10.0.20348), Electron 44.3.0, Node 24.21.0.
 
-- `npm run check`: 139 JavaScript files pass.
-- Focused final repair suite: 86 passed, 0 failed, 0 skipped.
-- Broad dependency-independent run: 327 tests total; 317 passed, 0 failed, 10 installed-SDK/Electron tests skipped because those dependencies are not present in the source snapshot.
-- Existing full-suite checks that require hidden `.github` files or installed Marked are not represented as local passes. Their assertions were not removed or weakened.
-- The new actual-desktop compositor gate and packaged Electron launches are implemented but not claimed as passed until the Windows PR workflow records them.
-- No physical Windows/account acceptance result is claimed.
+The recorded run passed production dependency audit (zero vulnerabilities), syntax validation (139 JavaScript files), the full regression suite (**360 passed, zero failed, zero skipped**), the real sandboxed Electron renderer smoke, and portable EXE packaging/checksum. It then failed at the first packaged launch (100% scale), before a compositor pixel comparison could run:
 
-The full Windows workflow remains the merge gate. It installs the lockfile, audits production dependencies, runs all tests, executes the real renderer, packages/checksums the EXE and tests the package at the existing four scales. This repair does not add a duplicate workflow or manually substitute fixture results for physical/account acceptance.
+`Graphics.CopyFromScreen: InvalidEnumArgumentException: CopyPixelOperation value 1087111200`
+
+That value is `SRCCOPY | CAPTUREBLT`. Windows PowerShell's .NET Framework `CopyFromScreen` wrapper rejects the combined enumeration value. The failure is in the acceptance capture call, not evidence that desktop transparency passed or failed.
+
+The correction replaces that wrapper with the documented native GDI `BitBlt` call, retaining both flags as a DWORD so layered transparent windows remain captured. The desktop and destination device contexts are released in paired `finally` blocks, Graphics/Bitmap resources are disposed, native errors remain fatal, and the destination HDC is released before PNG encoding. The bitmap explicitly uses opaque 24-bit RGB because this is a capture of the already-composited desktop, not an alpha texture.
+
+All five opacity samples, black/white backgrounds, foreground checks, pixel tolerances, ten-second capture deadline, production/smoke guards and failure propagation are unchanged. The obsolete `CopyFromScreen`/enum-cast executable path is removed rather than retained as a fallback. No workflow, runtime provider, dependency, feature branch history or previously discussed transparency/Search implementation is replaced by this correction.
+
+The checked-out failing-run source artifact has SHA-256 `ab660f3dd13a2bf084a3bef877dcfedfda86a97852318efed096ea4647f1e053`. Validation of the corrected source in the Linux editing environment:
+
+- `npm run check`: **140 JavaScript files passed**.
+- Focused compositor, final-runtime, appearance, window geometry, Gemini recovery, UI-request recovery and Electron-security suites: **65 passed, zero failed, zero skipped**.
+- The six new compositor tests exercise the actual JavaScript acceptance owner with explicit native-boundary fixtures: native call/flag contract, capture error, incorrect opacity, faded foreground, empty image, and production/platform/DevTools/native-resize guards. They also verify failure evidence and capture-protection/theme/fixture cleanup.
+- These fixture tests do **not** execute Windows GDI or certify compositor pixels. Native execution of the correction and packaged 100/125/150/200% launches remain the existing Windows PR workflow's responsibility. The previous run's 360-test result is historical evidence, not a new CI pass.
+
+No new workflow, duplicate deployment, weakened assertion or forced successful status is introduced. The same PR branch receives the correction in one push, and the normal Windows workflow remains the merge gate.
 
 ## Remaining release gates, not silently marked passed
 
@@ -72,6 +83,10 @@ The connected repository write interface does not grant Administration writes fo
 
 ## Official contract references checked
 
+- Windows GDI BitBlt and layered capture: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
+- .NET CopyFromScreen enumeration validation: https://learn.microsoft.com/en-us/dotnet/api/system.drawing.graphics.copyfromscreen
+- Graphics HDC ownership: https://learn.microsoft.com/en-us/windows/win32/api/gdiplusgraphics/nf-gdiplusgraphics-graphics-gethdc
+- Desktop DC release: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-releasedc
 - Electron transparent windows: https://www.electronjs.org/docs/latest/tutorial/custom-window-styles
 - Electron native geometry: https://www.electronjs.org/docs/latest/api/base-window
 - Electron DIP/physical conversion: https://www.electronjs.org/docs/latest/api/screen

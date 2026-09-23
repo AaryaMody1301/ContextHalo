@@ -19,19 +19,51 @@ async function verifyWindowsCompositor(window, directory) {
         skipTaskbar: true, backgroundColor: '#000000', webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     const evidence = { scope: 'Windows desktop compositor with isolated fixture surfaces', packaged: app.isPackaged,
         platform: process.platform, electron: process.versions.electron, os: require('node:os').release(), samples: [] };
+    // Graphics.CopyFromScreen on Windows PowerShell/.NET Framework rejects
+    // SRCCOPY | CAPTUREBLT as an enum value. Call GDI directly so layered
+    // transparent windows remain part of the real desktop capture.
     const powershell = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-Add-Type 'using System.Runtime.InteropServices; public static class CaptureDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
-[CaptureDpi]::SetProcessDPIAware() | Out-Null
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CaptureNative {
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr window);
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr window, IntPtr dc);
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool BitBlt(IntPtr destination, int x, int y, int width, int height,
+        IntPtr source, int sourceX, int sourceY, uint operation);
+}
+'@
+[CaptureNative]::SetProcessDPIAware() | Out-Null
 $r = $env:CONTEXTHALO_TEST_RECT.Split(',') | ForEach-Object { [int]$_ }
-$bitmap = New-Object System.Drawing.Bitmap($r[2], $r[3])
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$desktopDc = [CaptureNative]::GetDC([IntPtr]::Zero)
+if ($desktopDc -eq [IntPtr]::Zero) { throw 'Could not acquire the desktop device context' }
 try {
-  $operation = [System.Drawing.CopyPixelOperation]([int][System.Drawing.CopyPixelOperation]::SourceCopy -bor [int][System.Drawing.CopyPixelOperation]::CaptureBlt)
-  $graphics.CopyFromScreen($r[0], $r[1], 0, 0, $bitmap.Size, $operation)
-  $bitmap.Save($env:CONTEXTHALO_TEST_PNG, [System.Drawing.Imaging.ImageFormat]::Png)
-} finally { $graphics.Dispose(); $bitmap.Dispose() }
+    # The composed desktop is opaque RGB; do not invent a bitmap alpha channel.
+    $bitmap = New-Object System.Drawing.Bitmap($r[2], $r[3], [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    try {
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $destinationDc = $graphics.GetHdc()
+            try {
+                # DWORD raster operation: SRCCOPY | CAPTUREBLT, including layered windows.
+                $operation = [uint32](0x00CC0020 -bor 0x40000000)
+                $copied = [CaptureNative]::BitBlt($destinationDc, 0, 0, $r[2], $r[3], $desktopDc, $r[0], $r[1], $operation)
+                if (!$copied) { throw [System.ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
+            } finally { $graphics.ReleaseHdc($destinationDc) }
+        } finally { $graphics.Dispose() }
+        # GDI+ cannot save while the Graphics HDC is held.
+        $bitmap.Save($env:CONTEXTHALO_TEST_PNG, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $bitmap.Dispose() }
+} finally { [CaptureNative]::ReleaseDC([IntPtr]::Zero, $desktopDc) | Out-Null }
 `;
     try {
         await backdrop.loadURL('data:text/html,<html><body style="margin:0;background:transparent"></body></html>');
