@@ -1,5 +1,7 @@
 # Windows workspace repair: evidence and acceptance scope
 
+> Historical evidence at the recorded commit, not a current completion certificate. The current transparency/Search implementation and outstanding acceptance gates are documented in [Final runtime repair (September 23)](FINAL_RUNTIME_REPAIR_2026-09-23.md). Earlier native-resize, Search-state and blanket quota statements are superseded there; recorded test results are not retroactively changed.
+
 Repair branch: `fix/windows-workspace-search-recovery`; draft PR #33. Do not merge or publish without separate authorization.
 
 ## Baseline and provenance
