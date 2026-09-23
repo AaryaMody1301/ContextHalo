@@ -15,6 +15,8 @@ function compositorFixture(options = {}) {
             async executeJavaScript(code) {
                 evaluations.push(code);
                 if (code.startsWith('({theme:')) return { theme: 'light', alpha: 0.37 };
+                if (code.startsWith('({colorScheme:')) return { colorScheme: options.rootColorScheme || '',
+                    htmlBackground: 'rgba(0, 0, 0, 0)', bodyBackground: 'rgba(0, 0, 0, 0)' };
                 if (code.includes("const shell=root.querySelector('.app-shell')")) return { capture: { x: 100, y: 100, width: 40, height: 40 } };
                 const match = code.match(/^contextHalo\.theme\.apply\('dark',([\d.]+)\)$/);
                 if (match) alpha = Number(match[1]);
@@ -181,13 +183,14 @@ test('compositor falls back to moveTop only when targeted z-order is unavailable
     assertCleaned(f);
 });
 
-test('compositor cannot run in production, outside Windows, protected, with DevTools or native resize enabled', async () => {
+test('compositor cannot run in production, outside Windows, protected, with DevTools, native resize or a root color scheme', async () => {
     for (const [options, message] of [
         [{ production: true }, /isolated Windows smoke profile/],
         [{ platform: 'linux' }, /isolated Windows smoke profile/],
         [{ protected: true }, /before Windows capture protection is applied/],
         [{ devTools: true }, /Close DevTools/],
         [{ resizable: true }, /native resizing/],
+        [{ rootColorScheme: 'dark' }, /Root color-scheme must stay unset/],
     ]) {
         const f = compositorFixture(options);
         await assert.rejects(f.run(), message);
