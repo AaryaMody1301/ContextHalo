@@ -1,5 +1,7 @@
 # Remaining UI/UX repair and acceptance
 
+Current acceptance additions: [September 23 runtime repair](FINAL_RUNTIME_REPAIR_2026-09-23.md). `scripts/windows-compositor-acceptance.js` checks the composed desktop crop on the exact packaged 100% smoke, independently of renderer screenshots. Window resize uses app-owned edge/corner gestures; the bottom-right handle supports Arrow keys and Shift+Arrow. Physical Windows 10/11 checks remain separate.
+
 ## Baseline and verification boundary
 
 Baseline main: `55961a0d09357a04be104141683cff39039d857d`. AGENTS.md was read; recent PR #33 repairs were retained. Local baseline: 55 source files, 92 tests passed. Documentation-only Windows build 175 (run 34213985476) passed before application edits. Baseline screenshots were downloaded from main build 174 (run 34211061546).
