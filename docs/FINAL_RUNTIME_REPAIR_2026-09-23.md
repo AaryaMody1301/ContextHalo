@@ -75,6 +75,20 @@ The checked-out failing-run source artifact has SHA-256 `ab660f3dd13a2bf084a3bef
 
 No new workflow, duplicate deployment, weakened assertion or forced successful status is introduced. The same PR branch receives the correction in one push, and the normal Windows workflow remains the merge gate.
 
+### Workflow 401 follow-up
+
+PR run [35832956900 / workflow 401](https://github.com/AaryaMody1301/ContextHalo/actions/runs/35832956900) confirmed the native GDI correction executed: source validation passed for **140 JavaScript files**, the complete regression suite passed **366/366 with zero skips**, the real Electron smoke passed, and the portable EXE built and checksummed. The 100% packaged compositor gate then failed on the first alpha-0/black sample with `Foreground faded or fixture window was not composited on top`.
+
+The uploaded behavior evidence was inspected rather than weakening the assertion. `compositor-0-0.png` is a 100x24 image whose 2,400 pixels are all RGB 0,0,0. This means the desktop capture itself succeeded and the transparent surface correctly revealed the black fixture at alpha 0, but the intended opaque foreground probe was not present in that captured region. The previous probe was appended as a sibling of the real app shell and the crop/sample locations were hard-coded.
+
+The follow-up correction puts the opaque RGB(224,224,224) probe **inside the real `.app-shell`**, hides existing shell children while explicitly exempting the probe, reads its actual `getBoundingClientRect()`, and derives both the desktop crop and surface/foreground sample coordinates from that renderer geometry. The acceptance no longer assumes fixed marker/crop alignment. Failing capture records are written to `compositor.json` before assertions so future native failures retain the observed pixels and rectangle. Alpha thresholds, the opaque-foreground requirement, GDI `SRCCOPY | CAPTUREBLT`, production guards, cleanup and the existing Windows workflow remain unchanged.
+
+Validation of this follow-up against the exact workflow-401 source artifact:
+- `npm run check`: **140 JavaScript files passed**.
+- Focused transparency, geometry, Gemini Search recovery, UI recovery and security suites: **66 passed, zero failed, 7 installed-SDK tests skipped because the source artifact does not contain installed dependencies**.
+- The compositor-specific suite: **6 passed, zero failed, zero skipped**.
+- Native Windows pixel acceptance is not claimed until the newly pushed head runs through the normal Windows workflow.
+
 ## Remaining release gates, not silently marked passed
 
 The physical/provider matrix still requires real account Search-on/off comparisons, audio devices, Windows sleep/wake, multi-monitor/physical DPI, third-party capture protection, native CPU/Vulkan inference, interrupted downloads and wall-clock 1h/4h/8h sessions. Its historical `not-run` results remain unchanged.
