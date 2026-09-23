@@ -73,6 +73,7 @@ async function verifyWindowsCompositor(window, directory) {
     if (process.platform !== 'win32' || !process.argv.includes('--ci-smoke-test')) throw new Error('Compositor verification requires the isolated Windows smoke profile');
     if (window.webContents.isDevToolsOpened()) throw new Error('Close DevTools before transparency acceptance');
     if (window.isResizable()) throw new Error('Transparent window unexpectedly enables native resizing');
+    if (window.isContentProtected?.()) throw new Error('Transparency acceptance must start before Windows capture protection is applied');
     const evaluate = code => window.webContents.executeJavaScript(code, true);
     const originalBounds = window.getBounds();
     const display = screen.getDisplayMatching(originalBounds);
@@ -97,9 +98,8 @@ async function verifyWindowsCompositor(window, directory) {
         window.show();
         try { window.moveAbove(backdrop.getMediaSourceId()); } catch { window.moveTop(); }
         await delay(100);
-        window.setContentProtection(false);
-        // Give SetWindowDisplayAffinity/DWM one composition interval before the
-        // first supported screen-source capture.
+        // The smoke window has never had SetWindowDisplayAffinity applied.
+        // Give DWM one composition interval before the first screen-source capture.
         await delay(250);
         const fixture = await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;
             const shell=root.querySelector('.app-shell');
@@ -163,7 +163,6 @@ async function verifyWindowsCompositor(window, directory) {
         evidence.error = error.message;
         throw error;
     } finally {
-        window.setContentProtection(true);
         if (!backdrop.isDestroyed()) backdrop.destroy();
         await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;root.getElementById('compositor-test-style')?.remove();contextHalo.theme.apply(${JSON.stringify(originalAppearance.theme)},${JSON.stringify(originalAppearance.alpha)});})()`).catch(() => {});
         fs.writeFileSync(path.join(directory, 'compositor.json'), JSON.stringify(evidence, null, 2));
