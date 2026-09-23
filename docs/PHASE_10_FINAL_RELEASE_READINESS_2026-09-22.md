@@ -1,5 +1,7 @@
 # Phase 10 Final Release-Readiness Re-Audit — 2026-09-22
 
+> Historical evidence at the recorded commit, not a current completion certificate. The current transparency/Search implementation and outstanding acceptance gates are documented in [Final runtime repair (September 23)](FINAL_RUNTIME_REPAIR_2026-09-23.md). Earlier native-resize, Search-state and blanket quota statements are superseded there; recorded test results are not retroactively changed.
+
 ## Baseline
 
 Phase 10 starts from merged Phase 9 `main` at `2914c8873666603aaaf1f4791019258693219ce6`.
