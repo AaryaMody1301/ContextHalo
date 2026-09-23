@@ -1,5 +1,5 @@
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
-const { installIpcHandlerHardening, setupRuntimeWindowHardening } = require('./utils/runtimeHardeningMain');
+const { installIpcHandlerHardening } = require('./utils/runtimeHardeningMain');
 const {
     installWindowsProviderTransport,
     abortProviderSession,
@@ -49,7 +49,6 @@ let reliabilityAcceptance = null;
 
 function createMainWindow() {
     mainWindow = createWindow(sendToRenderer, geminiSessionRef);
-    setupRuntimeWindowHardening(mainWindow);
     setupContextCaptureMain(mainWindow, ipcMain);
     setupPhase4Main(mainWindow, ipcMain);
     if (WINDOWS_SMOKE_MODE) require('../scripts/renderer-behavior-smoke').installWindowsSmokeCheck(mainWindow);
