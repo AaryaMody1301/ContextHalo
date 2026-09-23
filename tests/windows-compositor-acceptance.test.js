@@ -4,10 +4,11 @@ const path = require('node:path');
 const { loadMain } = require('./helpers/native-boundary');
 
 function compositorFixture(options = {}) {
-    const captures = [], protection = [], evaluations = [], files = new Map(), zOrder = [];
+    const captures = [], protection = [], evaluations = [], files = new Map(), zOrder = [], backdropScripts = [];
     let alpha = 0.37, background = 0, destroyed = false, created = 0;
     const output = path.resolve('compositor-test-output');
     const display = { id: 77, bounds: { x: -1280, y: 0, width: 1280, height: 800 }, workArea: { x: -1280, y: 0, width: 1280, height: 760 } };
+    const windowBounds = options.fullscreen ? { x: -1280, y: 0, width: 1280, height: 760 } : { x: -900, y: 40, width: 640, height: 320 };
     const window = {
         webContents: {
             isDevToolsOpened: () => options.devTools === true,
@@ -20,27 +21,37 @@ function compositorFixture(options = {}) {
             },
         },
         isResizable: () => options.resizable === true,
-        getBounds: () => ({ x: -900, y: 40, width: 640, height: 320 }),
-        getContentBounds: () => ({ x: -900, y: 40, width: 640, height: 320 }),
+        getBounds: () => ({ ...windowBounds }),
+        getContentBounds: () => ({ ...windowBounds }),
         setContentProtection: value => protection.push(value),
         show() {}, moveTop() { zOrder.push('top'); }, moveAbove(id) { if (options.moveAboveError) throw new Error('unsupported'); zOrder.push(id); },
     };
     class Backdrop {
-        constructor() { created++; }
+        constructor() {
+            created++;
+            this.webContents = { executeJavaScript: async code => {
+                backdropScripts.push(code);
+                const match = code.match(/rgb\((\d+),(\d+),(\d+)\)/);
+                if (match) background = Number(match[1]);
+            } };
+        }
         async loadURL() {}
         showInactive() {}
-        setBackgroundColor(value) { background = value === '#ffffff' ? 255 : 0; }
         getMediaSourceId() { return 'window:fixture:0'; }
         isDestroyed() { return destroyed; }
         destroy() { destroyed = true; }
     }
-    function makeCrop(width, height) {
+    const surfaceScreenRect = () => ({ x: windowBounds.x + 100, y: windowBounds.y + 100, width: 40, height: 40 });
+    const isControlCrop = rect => rect.x < 100;
+    function makeCrop(width, height, kind) {
         return {
             getSize: () => options.emptyCrop ? { width: 0, height: 0 } : { width, height },
-            toPNG: () => Buffer.from('fixture-png'),
+            toPNG: () => Buffer.from(`fixture-${kind}`),
             toBitmap() {
                 if (options.emptyCrop) return Buffer.alloc(0);
-                const value = options.opaqueSurface ? 16 : Math.round(16 * alpha + background * (1 - alpha));
+                let value;
+                if (kind === 'control') value = options.badBackdrop ? 0 : background;
+                else value = options.opaqueSurface ? 16 : Math.round(16 * alpha + background * (1 - alpha));
                 const bitmap = Buffer.alloc(width * height * 4);
                 for (let offset = 0; offset < bitmap.length; offset += 4) {
                     bitmap[offset] = value; bitmap[offset + 1] = value; bitmap[offset + 2] = value; bitmap[offset + 3] = 255;
@@ -51,11 +62,15 @@ function compositorFixture(options = {}) {
     }
     const thumbnail = {
         getSize: () => options.emptyThumbnail ? { width: 0, height: 0 } : { width: 1280, height: 800 },
-        crop(rect) { captures.at(-1).crop = rect; return makeCrop(rect.width, rect.height); },
+        crop(rect) {
+            const kind = isControlCrop(rect) ? 'control' : 'surface';
+            captures.at(-1).crops.push({ ...rect, kind });
+            return makeCrop(rect.width, rect.height, kind);
+        },
     };
     const source = { id: 'screen:fixture:0', display_id: options.emptyDisplayId ? '' : '77', thumbnail };
     const desktopCapturer = { async getSources(request) {
-        captures.push({ request, alpha, background });
+        captures.push({ request, alpha, background, crops: [], surfaceScreenRect: surfaceScreenRect() });
         if (options.captureError) throw options.captureError;
         if (options.missingDisplay) return [{ ...source, display_id: '88' }, { ...source, id: 'screen:other:0', display_id: '99' }];
         return [source];
@@ -76,7 +91,7 @@ function compositorFixture(options = {}) {
         env: {}, versions: { electron: '44.3.0' },
     } });
     return {
-        captures, protection, evaluations, zOrder,
+        api, captures, protection, evaluations, zOrder, backdropScripts,
         get created() { return created; }, get destroyed() { return destroyed; },
         report: () => JSON.parse(files.get(path.join(output, 'compositor.json'))),
         pngs: () => [...files.keys()].filter(file => file.endsWith('.png')),
@@ -92,16 +107,20 @@ function assertCleaned(f) {
     assert.match(last, /theme\.apply\("light",0\.37\)/);
 }
 
-test('compositor capture uses Electron screen sources and verifies all native alpha blends', async () => {
+test('compositor proves backdrop control and app alpha in the same Electron screen capture', async () => {
     const f = compositorFixture();
     const result = await f.run();
     assert.equal(result.success, true);
     assert.equal(f.captures.length, 10);
-    assert.equal(f.pngs().length, 10);
+    assert.equal(f.pngs().length, 20);
     assert.ok(f.zOrder.every(id => id === 'window:fixture:0'));
+    assert.equal(f.backdropScripts.length, 10);
+    assert.match(f.backdropScripts[1], /rgb\(255,255,255\)/);
+    assert.match(f.backdropScripts[1], /requestAnimationFrame/);
     const first = f.captures[0];
     assert.deepEqual(first.request, { types: ['screen'], thumbnailSize: { width: 1280, height: 800 }, fetchWindowIcons: false });
-    assert.deepEqual(first.crop, { x: 480, y: 140, width: 40, height: 40 });
+    assert.deepEqual(first.crops.map(crop => crop.kind), ['control', 'surface']);
+    assert.deepEqual(first.crops.find(crop => crop.kind === 'surface'), { x: 480, y: 140, width: 40, height: 40, kind: 'surface' });
     const setup = f.evaluations.find(code => code.includes("const shell=root.querySelector('.app-shell')"));
     assert.match(setup, /\.app-shell > \* \{ visibility:hidden !important; \}/);
     assert.match(setup, /getBoundingClientRect\(\)/);
@@ -109,6 +128,7 @@ test('compositor capture uses Electron screen sources and verifies all native al
     assert.deepEqual(result.samples.map(sample => sample.alpha), [0, 0.25, 0.5, 0.8, 1]);
     for (const sample of result.samples) {
         assert.deepEqual(sample.captures.map(capture => capture.background), [0, 255]);
+        assert.deepEqual(sample.captures.map(capture => capture.control[0]), [0, 255]);
         assert.ok(sample.captures.every(capture => capture.thumbnail.selection === 'display-id'));
     }
     assert.equal(f.report().success, true);
@@ -123,19 +143,34 @@ test('single-display capture may use the sole source when Windows omits display_
     assertCleaned(f);
 });
 
-for (const [name, options, message] of [
-    ['screen capture failure', { captureError: new Error('screen source failed') }, /screen source failed/],
-    ['opaque window instead of transparency', { opaqueSurface: true }, /Desktop alpha mismatch/],
-    ['empty screen thumbnail', { emptyThumbnail: true }, /Desktop capture produced no pixels/],
-    ['empty cropped image', { emptyCrop: true }, /Desktop capture crop produced no pixels/],
-    ['ambiguous display source', { missingDisplay: true, multipleDisplays: true }, /capture source for display 77 is unavailable/],
+test('control rectangle is guaranteed outside the ContextHalo window', () => {
+    const f = compositorFixture();
+    const rect = f.api._test.backdropControlRect({ workArea: { x: -1280, y: 0, width: 1280, height: 760 } }, { x: -900, y: 40, width: 640, height: 320 });
+    assert.ok(rect);
+    assert.equal(f.api._test.backdropControlRect({ workArea: { x: 0, y: 0, width: 640, height: 320 } }, { x: 0, y: 0, width: 640, height: 320 }), null);
+});
+
+for (const [name, options, message, expectedCaptures] of [
+    ['screen capture failure', { captureError: new Error('screen source failed') }, /screen source failed/, 1],
+    ['backdrop fixture mismatch', { badBackdrop: true }, /Backdrop control mismatch/, 2],
+    ['opaque window instead of transparency', { opaqueSurface: true }, /Desktop alpha mismatch/, 1],
+    ['empty screen thumbnail', { emptyThumbnail: true }, /Desktop capture produced no pixels/, 1],
+    ['empty cropped image', { emptyCrop: true }, /Desktop capture crop produced no pixels/, 1],
+    ['ambiguous display source', { missingDisplay: true, multipleDisplays: true }, /capture source for display 77 is unavailable/, 1],
 ]) test(`compositor rejects ${name} and restores capture protection`, async () => {
     const f = compositorFixture(options);
     await assert.rejects(f.run(), message);
-    assert.equal(f.captures.length, 1, 'No retry may disguise a failed capture/assertion');
+    assert.equal(f.captures.length, expectedCaptures, 'No retry may disguise a failed capture/assertion');
     assert.equal(f.report().success, false);
     assert.match(f.report().error, message);
     assertCleaned(f);
+});
+
+test('compositor rejects a window that leaves no independently visible backdrop control area', async () => {
+    const f = compositorFixture({ fullscreen: true });
+    await assert.rejects(f.run(), /needs visible backdrop space/);
+    assert.equal(f.created, 0);
+    assert.deepEqual(f.protection, []);
 });
 
 test('compositor falls back to moveTop only when targeted z-order is unavailable', async () => {
