@@ -11,6 +11,7 @@ test('portable package uses an explicit runtime allowlist', () => {
         'preload.js',
         'scripts/renderer-behavior-smoke.js',
         'scripts/windows-acceptance.js',
+        'scripts/windows-compositor-acceptance.js',
         'LICENSE',
         'CREDITS.md',
         'THIRD_PARTY_NOTICES.md',
