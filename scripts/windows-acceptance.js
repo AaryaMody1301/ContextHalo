@@ -179,7 +179,13 @@ async function extendedWindowsAcceptance(window, directory) {
     verify(window.isVisible() && !window.isMinimized(), 'Hidden or minimized HUD is restored through its recovery path');
     verify(await evaluate(`document.querySelector('context-halo-app').sessionActive`), 'Hide and restore do not end the active session');
     minimum.launch = launch; minimum.tools = toolBody; minimum.recovery = windowApi.getShortcutState().recovery;
-    return { minimum, keyboard, accessibility };
+    // One compositor check on the exact package at 100%, not four redundant
+    // runs and not a renderer capture presented as desktop transparency proof.
+    let compositor;
+    if (require('electron').app.isPackaged && process.argv.includes('--force-device-scale-factor=1')) {
+        compositor = await require('./windows-compositor-acceptance').verifyWindowsCompositor(window, directory);
+    }
+    return { minimum, keyboard, accessibility, compositor };
 }
 
 module.exports = { extendedWindowsAcceptance };
