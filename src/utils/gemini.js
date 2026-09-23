@@ -264,15 +264,16 @@ function cooldownKey(apiKey, model) {
 // The only Gemini retry owner. SDK retries are disabled in every owned call.
 // A provider delay longer than the request budget is surfaced, never shortened.
 async function runGeminiRequest(work, { operation, model, apiKey = '', signal, budgetMs = 55000,
-    now = Date.now, random = Math.random, wait = sleep } = {}) {
+    now = Date.now, random = Math.random, wait = sleep, searchAttached = false } = {}) {
     const started = now();
     const httpOperation = operation === 'text' || operation === 'screen';
     // Google documents exponential backoff for transient 429/5xx failures and
     // describes up to four retries in its client guidance. Count the initial
     // request separately so HTTP operations can make at most five attempts.
     const maxAttempts = httpOperation ? 5 : 2;
-    const key = cooldownKey(apiKey, model || '');
-    const cooling = geminiCooldowns.get(key);
+    const baseKey = cooldownKey(apiKey, model || '');
+    const key = searchAttached ? `${baseKey}:${httpOperation ? 'http' : 'live'}:search` : baseKey;
+    const cooling = [geminiCooldowns.get(baseKey), geminiCooldowns.get(key)].find(failure => failure?.retryAt > now());
     if (cooling?.retryAt > now()) throw failureError(cooling);
     geminiCooldowns.delete(key);
     for (const [storedKey, failure] of geminiCooldowns) if (!(failure.retryAt > now())) geminiCooldowns.delete(storedKey);
@@ -287,16 +288,16 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
             try {
                 const result = await abortable(() => work(Math.max(1, budgetMs - (now() - started)), attempt, operationSignal), operationSignal);
                 operationSignal.throwIfAborted();
-            if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
+                if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
                 return result;
             } catch (error) {
                 if (signal?.aborted) throw signal.reason;
                 if (operationSignal.aborted) throw failureError(classifyGeminiFailure(operationSignal.reason, operation, model));
-                const failure = classifyGeminiFailure(error, operation, model, now());
+                const failure = classifyGeminiFailure(error, operation, model, now(), { searchAttached });
                 // Once a streaming response has rendered tokens, retrying the same
                 // request would duplicate visible output. Pre-response failures keep
                 // the normal bounded retry policy.
-                if (error?.noRetryAfterPartial) throw failureError(failure);
+                const terminal = error?.noRetryAfterPartial || error?.noRetryAfterSearchControl;
                 const localBackoff = Math.round(Math.min(10000, (httpOperation ? 1000 : 600) * 2 ** attempt)
                     + random() * (httpOperation ? 250 : 300));
                 // Retry-After is a provider minimum, not permission to spin.
@@ -305,11 +306,11 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 const backoff = failure.retryAfterMs === null ? localBackoff : Math.max(localBackoff, failure.retryAfterMs);
                 // A final short-term failure also gates rapid user actions/reconnects.
                 if (failure.retryable) failure.retryAt = now() + backoff;
-                if (failure.retryAt > now()) geminiCooldowns.set(key, failure);
+                if (failure.retryAt > now()) geminiCooldowns.set(failure.quotaScope === 'model' || !failure.searchAttached ? baseKey : key, failure);
                 logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
                     status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,
-                    attempt: attempt + 1, durationMs: now() - started });
-                if (!failure.retryable || attempt === maxAttempts - 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
+                    attempt: attempt + 1, durationMs: now() - started, quotaScope: failure.quotaScope, searchAttached: failure.searchAttached, searchControl: failure.searchControl || '' });
+                if (terminal || !failure.retryable || attempt === maxAttempts - 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
                 sendToRenderer('update-status', `Gemini ${operation || 'request'} retry ${attempt + 2}/${maxAttempts} in ${Math.ceil(backoff / 1000)} seconds. Model and Search settings are unchanged.`);
                 await abortable(() => wait(backoff, undefined, { signal: operationSignal }), operationSignal);
                 geminiCooldowns.delete(key);
@@ -356,7 +357,7 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
             if (emitted && error && typeof error === 'object') error.noRetryAfterPartial = true;
             throw error;
         }
-    }, requestOptions);
+    }, { ...requestOptions, searchAttached: Boolean(params.config?.tools?.some(tool => tool.googleSearch)) });
 }
 
 // helper to check if groq has been configured
