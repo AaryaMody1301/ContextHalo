@@ -21,6 +21,7 @@ function compositorFixture(options = {}) {
             },
         },
         isResizable: () => options.resizable === true,
+        isContentProtected: () => options.protected === true,
         getBounds: () => ({ ...windowBounds }),
         getContentBounds: () => ({ ...windowBounds }),
         setContentProtection: value => protection.push(value),
@@ -101,7 +102,7 @@ function compositorFixture(options = {}) {
 
 function assertCleaned(f) {
     assert.equal(f.destroyed, true);
-    assert.deepEqual(f.protection, [false, true]);
+    assert.deepEqual(f.protection, [], 'acceptance must never toggle capture protection');
     const last = f.evaluations.at(-1);
     assert.match(last, /compositor-test-style.*remove\(\)/);
     assert.match(last, /theme\.apply\("light",0\.37\)/);
@@ -157,7 +158,7 @@ for (const [name, options, message, expectedCaptures] of [
     ['empty screen thumbnail', { emptyThumbnail: true }, /Desktop capture produced no pixels/, 1],
     ['empty cropped image', { emptyCrop: true }, /Desktop capture crop produced no pixels/, 1],
     ['ambiguous display source', { missingDisplay: true, multipleDisplays: true }, /capture source for display 77 is unavailable/, 1],
-]) test(`compositor rejects ${name} and restores capture protection`, async () => {
+]) test(`compositor rejects ${name} and cleans up the fixture`, async () => {
     const f = compositorFixture(options);
     await assert.rejects(f.run(), message);
     assert.equal(f.captures.length, expectedCaptures, 'No retry may disguise a failed capture/assertion');
@@ -180,10 +181,11 @@ test('compositor falls back to moveTop only when targeted z-order is unavailable
     assertCleaned(f);
 });
 
-test('compositor cannot run in production, outside Windows, with DevTools or native resize enabled', async () => {
+test('compositor cannot run in production, outside Windows, protected, with DevTools or native resize enabled', async () => {
     for (const [options, message] of [
         [{ production: true }, /isolated Windows smoke profile/],
         [{ platform: 'linux' }, /isolated Windows smoke profile/],
+        [{ protected: true }, /before Windows capture protection is applied/],
         [{ devTools: true }, /Close DevTools/],
         [{ resizable: true }, /native resizing/],
     ]) {
