@@ -1078,7 +1078,7 @@ export class MainView extends LitElement {
                 <span class="session-status-dot"></span>
                 <span>${text}</span>
                 ${this.isInitializing ? html`<button type="button" class="download-cancel" @click=${() => this.onCancelStart?.()}>Cancel start</button>` : ''}
-                ${error && this.searchState?.effective && this.providerError?.canDisableSearch ? html`<button type="button" class="download-cancel" ?disabled=${this.retryBlocked} @click=${() => this.onRetryWithoutSearch?.()}>Continue without Search</button>` : ''}
+                ${error && this.searchState?.liveEffective && this.providerError?.canDisableSearch ? html`<button type="button" class="download-cancel" ?disabled=${this.retryBlocked} @click=${() => this.onRetryWithoutSearch?.()}>Continue without Search</button>` : ''}
             </div>
         `;
     }
@@ -1186,7 +1186,7 @@ export class MainView extends LitElement {
                     <details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
                         ${fields.map(field => renderModelPicker(this, field))}
                     </details>
-                    <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live, typed and screen requests share its effective Search setting.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
+                    <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
                 </div>
             </details>
 
@@ -1317,7 +1317,7 @@ export class MainView extends LitElement {
                             <div class="help-section-title">Default model</div>
                             <div class="help-models">
                                 <div class="help-model">
-                                    <span class="help-model-name">Qwen3.5 4B Q4_K_M</span><span>Download size depends on model and quantization</span>
+                                    <span class="help-model-name">Qwen3.5 2B Q4_K_M</span><span>Download size depends on model and quantization</span>
                                 </div>
                             </div>
                         </div>
