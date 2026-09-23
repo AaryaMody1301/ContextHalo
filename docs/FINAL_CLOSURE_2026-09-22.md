@@ -1,5 +1,7 @@
 # Final closure audit — 2026-09-22
 
+> Historical evidence at the recorded commit, not a current completion certificate. The current transparency/Search implementation and outstanding acceptance gates are documented in [Final runtime repair (September 23)](FINAL_RUNTIME_REPAIR_2026-09-23.md). Earlier native-resize, Search-state and blanket quota statements are superseded there; recorded test results are not retroactively changed.
+
 ## Purpose
 
 This closure pass follows merged Phase 10 on `main` at `722df9e8f9ff045943b3dfc310a499078307fffe` and the successful public release `v0.8.0-portable.385`.
