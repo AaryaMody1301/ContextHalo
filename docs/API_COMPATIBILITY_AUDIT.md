@@ -60,7 +60,7 @@ GitHub branch protection is an administrative setting, not a source-code fix. Th
 
 ## Search and transparency ownership (September 23)
 
-`geminiSetupRecovery.js` owns a single same-model/account Search-off control after an eligible Search-enabled setup failure. Authentication, permission and explicitly named base-model quotas are not probed. The control respects provider retry delay and the existing abortable deadline. A successful control proves an available no-Search path, not a particular exhausted quota. A control on reconnect clears the old Search-enabled resumption handle and restores bounded local history. A failed quota control is terminal and cannot trigger another diagnostic or a core-config retry.
+`geminiSetupRecovery.js` owns a single same-model/account Search-off control after an eligible Search-enabled setup failure. Authentication, permission and explicitly named base-model quotas are not probed. The control respects provider retry delay and the existing abortable deadline. A successful control proves an available no-Search path, not a particular exhausted quota. A control on reconnect clears the old Search-enabled resumption handle and restores bounded local history. A failed control is terminal and cannot trigger another diagnostic or a core-config retry.
 
 Search state has `requested`, `liveEffective`, `httpEffective`, `liveReason` and `httpReason`; no legacy `effective` alias remains. `disable-http-search` changes only text/screen tools after an explicit epoch-checked user action. Search-scoped cooldowns do not block a different route; named model quota and a failed no-Search control remain model-scoped.
 

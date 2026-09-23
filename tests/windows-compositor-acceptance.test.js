@@ -12,12 +12,15 @@ function compositorFixture(options = {}) {
     const window = {
         webContents: {
             isDevToolsOpened: () => options.devTools === true,
+            debugger: { isAttached: () => options.debugger === true },
             async executeJavaScript(code) {
                 evaluations.push(code);
                 if (code.startsWith('({theme:')) return { theme: 'light', alpha: 0.37 };
                 if (code.startsWith('({colorScheme:')) return { colorScheme: options.rootColorScheme || '',
                     htmlBackground: 'rgba(0, 0, 0, 0)', bodyBackground: 'rgba(0, 0, 0, 0)' };
-                if (code.includes("const shell=root.querySelector('.app-shell')")) return { capture: { x: 100, y: 100, width: 40, height: 40 } };
+                if (code.includes('return {surface:')) return { surface: `rgba(16,16,16,${alpha})`, foreground: 'rgb(38,38,38)' };
+                if (code.includes("const shell=root.querySelector('.app-shell')")) return {
+                    capture: { x: 100, y: 100, width: 40, height: 40 }, foreground: { x: 50, y: 3, width: 4, height: 2 } };
                 const match = code.match(/^contextHalo\.theme\.apply\('dark',([\d.]+)\)$/);
                 if (match) alpha = Number(match[1]);
             },
@@ -54,6 +57,7 @@ function compositorFixture(options = {}) {
                 if (options.emptyCrop) return Buffer.alloc(0);
                 let value;
                 if (kind === 'control') value = options.badBackdrop ? 0 : background;
+                else if (kind === 'foreground') value = options.fadedForeground ? Math.round(38 * alpha + background * (1 - alpha)) : 38;
                 else value = options.opaqueSurface ? 16 : Math.round(16 * alpha + background * (1 - alpha));
                 const bitmap = Buffer.alloc(width * height * 4);
                 for (let offset = 0; offset < bitmap.length; offset += 4) {
@@ -66,7 +70,7 @@ function compositorFixture(options = {}) {
     const thumbnail = {
         getSize: () => options.emptyThumbnail ? { width: 0, height: 0 } : { width: 1280, height: 800 },
         crop(rect) {
-            const kind = isControlCrop(rect) ? 'control' : 'surface';
+            const kind = isControlCrop(rect) ? 'control' : rect.width === 4 ? 'foreground' : 'surface';
             captures.at(-1).crops.push({ ...rect, kind });
             return makeCrop(rect.width, rect.height, kind);
         },
@@ -115,14 +119,14 @@ test('compositor proves backdrop control and app alpha in the same Electron scre
     const result = await f.run();
     assert.equal(result.success, true);
     assert.equal(f.captures.length, 10);
-    assert.equal(f.pngs().length, 20);
+    assert.equal(f.pngs().length, 30);
     assert.ok(f.zOrder.every(id => id === 'window:fixture:0'));
     assert.equal(f.backdropScripts.length, 10);
     assert.match(f.backdropScripts[1], /rgb\(255,255,255\)/);
     assert.match(f.backdropScripts[1], /requestAnimationFrame/);
     const first = f.captures[0];
     assert.deepEqual(first.request, { types: ['screen'], thumbnailSize: { width: 1280, height: 800 }, fetchWindowIcons: false });
-    assert.deepEqual(first.crops.map(crop => crop.kind), ['control', 'surface']);
+    assert.deepEqual(first.crops.map(crop => crop.kind), ['control', 'surface', 'foreground']);
     assert.deepEqual(first.crops.find(crop => crop.kind === 'surface'), { x: 480, y: 140, width: 40, height: 40, kind: 'surface' });
     const setup = f.evaluations.find(code => code.includes("const shell=root.querySelector('.app-shell')"));
     assert.match(setup, /\.app-shell > \* \{ visibility:hidden !important; \}/);
@@ -132,6 +136,7 @@ test('compositor proves backdrop control and app alpha in the same Electron scre
     for (const sample of result.samples) {
         assert.deepEqual(sample.captures.map(capture => capture.background), [0, 255]);
         assert.deepEqual(sample.captures.map(capture => capture.control[0]), [0, 255]);
+        assert.ok(sample.captures.every(capture => capture.foreground.every(value => value === 38)));
         assert.ok(sample.captures.every(capture => capture.thumbnail.selection === 'display-id'));
     }
     assert.equal(f.report().success, true);
@@ -157,6 +162,7 @@ for (const [name, options, message, expectedCaptures] of [
     ['screen capture failure', { captureError: new Error('screen source failed') }, /screen source failed/, 1],
     ['backdrop fixture mismatch', { badBackdrop: true }, /Backdrop control mismatch/, 2],
     ['opaque window instead of transparency', { opaqueSurface: true }, /Desktop alpha mismatch/, 1],
+    ['faded foreground control', { fadedForeground: true }, /Desktop foreground faded/, 1],
     ['empty screen thumbnail', { emptyThumbnail: true }, /Desktop capture produced no pixels/, 1],
     ['empty cropped image', { emptyCrop: true }, /Desktop capture crop produced no pixels/, 1],
     ['ambiguous display source', { missingDisplay: true, multipleDisplays: true }, /capture source for display 77 is unavailable/, 1],
@@ -189,6 +195,7 @@ test('compositor cannot run in production, outside Windows, protected, with DevT
         [{ platform: 'linux' }, /isolated Windows smoke profile/],
         [{ protected: true }, /before Windows capture protection is applied/],
         [{ devTools: true }, /Close DevTools/],
+        [{ debugger: true }, /Detach the debugger/],
         [{ resizable: true }, /native resizing/],
         [{ rootColorScheme: 'dark' }, /Root color-scheme must stay unset/],
     ]) {
@@ -198,4 +205,13 @@ test('compositor cannot run in production, outside Windows, protected, with DevT
         assert.equal(f.captures.length, 0);
         assert.deepEqual(f.protection, []);
     }
+});
+
+test('packaged compositor precedes debugger attachment and checks the actual foreground control', () => {
+    const fs = require('node:fs');
+    const acceptance = fs.readFileSync('scripts/windows-acceptance.js', 'utf8');
+    assert.ok(acceptance.indexOf('.verifyWindowsCompositor(') < acceptance.indexOf('.debugger.attach('));
+    const compositor = fs.readFileSync('scripts/windows-compositor-acceptance.js', 'utf8');
+    assert.match(compositor, /querySelector\('\.live-bar button'\)/);
+    assert.doesNotMatch(compositor, /setBackgroundColor\(|setOpacity\(/);
 });

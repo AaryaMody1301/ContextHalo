@@ -54,6 +54,21 @@ test('quota control failure with transient status cannot cause another diagnosti
     assert.equal(calls, 2);
 });
 
+for (const reason of ['Internal server error', 'Invalid configuration', 'Quota exceeded']) {
+    test(`failed Search comparison is terminal for ${reason}, including outer Live retries`, async t => {
+        const f = geminiFixture({ search: true, live: closed(reason) });
+        t.after(() => f.close());
+        const result = await f.start();
+        assert.equal(result.success, false);
+        assert.equal(f.connections.length, 2);
+        assert.equal(result.failure.searchControl, 'failed');
+        assert.equal(result.failure.canDisableSearch, false);
+        assert.equal(result.search.liveEffective, true);
+        assert.equal(result.search.httpEffective, true);
+        assert.deepEqual(f.connections[1].config.contextWindowCompression, f.connections[0].config.contextWindowCompression);
+    });
+}
+
 test('setup control respects provider delay and cancellation without publishing false success', async () => {
     const controller = new AbortController(); let calls = 0; const waits = [];
     await assert.rejects(recoverGeminiSetup(async () => {

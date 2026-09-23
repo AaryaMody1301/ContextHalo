@@ -26,10 +26,6 @@ function getDisplayForBounds(screen, bounds) {
 function setSkipTaskbar(window, value) {
     try { window.setSkipTaskbar(value); } catch { console.warn('Could not update ContextHalo taskbar visibility'); }
 }
-function disableBackdrop(window) {
-    if (process.platform !== 'win32' || typeof window.setBackgroundMaterial !== 'function') return;
-    try { window.setBackgroundMaterial('none'); } catch { console.warn('Could not disable Windows backdrop material'); }
-}
 
 // Preserve the opposite edge and clamp against the originating monitor. Cursor
 // and bounds are both Electron DIPs; renderer screenX/Y are deliberately unused.
@@ -83,7 +79,6 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         hudActive = true;
         applyBounds(hudBounds || getHudBounds(display), HUD_MINIMUM_SIZE);
         setSkipTaskbar(mainWindow, true);
-        disableBackdrop(mainWindow);
         rememberBounds(); reassertHudMode();
     };
     const enterNormalMode = () => {
@@ -96,7 +91,6 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         protectContent();
         mainWindow.setAlwaysOnTop(false);
         setSkipTaskbar(mainWindow, false);
-        disableBackdrop(mainWindow);
         if (wasHud) applyBounds(normalExpanded ? getDisplayForBounds(screen, normalBounds).workArea : normalBounds, NORMAL_MINIMUM_SIZE);
         rememberBounds();
     };
@@ -164,7 +158,9 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         applyBounds(normalExpanded ? getDisplayForBounds(screen, normalBounds).workArea : normalBounds, NORMAL_MINIMUM_SIZE);
     }
     protectContent();
-    disableBackdrop(mainWindow);
+    // Do not call setBackgroundMaterial, including 'none': on Windows 11
+    // Electron resets DWM margins/translucency independently of transparent:true.
+    // This window never enables a system backdrop in the first place.
     return { rememberBounds, enterHudMode, enterNormalMode, repositionHud, reassertHudMode, moveBy,
         resize, cancelResize, toggleExpanded, isHudActive: () => hudActive };
 }

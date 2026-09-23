@@ -29,6 +29,7 @@ async function liveServer(t, mode = 'success', fixtureOptions = {}) {
                     if (mode === 'configuration') connection.close(1008, 'Invalid setup configuration');
                     else if (mode === 'search-quota' && message.setup.tools?.some(tool => tool.googleSearch)) connection.close(1011, 'Quota exceeded');
                     else if (mode === 'model-quota') connection.close(1011, 'generate_content_requests quota exceeded');
+                    else if (mode === 'both-search-setups-fail') connection.close(1011, 'Internal server error');
                     else if (mode === 'search-setup-1011' && message.setup.tools?.some(tool => tool.googleSearch)) {
                         connection.close(1011, 'Search setup unavailable for this project');
                     } else if (mode === 'session-management-1011' && (message.setup.sessionResumption || message.setup.contextWindowCompression)) {
@@ -92,6 +93,17 @@ test('real SDK retries setup 1011 with the documented core Live configuration', 
     assert.equal(received[1].setup.contextWindowCompression, undefined);
     assert.deepEqual(received[1].setup.inputAudioTranscription, {});
     assert.deepEqual(received[1].setup.outputAudioTranscription, {});
+});
+
+test('real SDK failed Search-off comparison ends after two identical-core setups', { skip: !sdk, timeout: 5000 }, async t => {
+    const { fixture, received } = await liveServer(t, 'both-search-setups-fail', { search: true });
+    const result = await fixture.start();
+    assert.equal(result.success, false);
+    assert.equal(received.length, 2);
+    assert.equal(result.failure.searchControl, 'failed');
+    assert.equal(received[1].setup.tools, undefined);
+    assert.deepEqual(received[1].setup.contextWindowCompression, received[0].setup.contextWindowCompression);
+    assert.equal(result.search.httpEffective, true);
 });
 
 for (const [mode, category] of [['authentication', 'authentication'], ['configuration', 'invalid-configuration']]) {

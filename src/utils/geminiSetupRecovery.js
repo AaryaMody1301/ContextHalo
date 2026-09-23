@@ -31,14 +31,13 @@ async function recoverGeminiSetup(connect, { model, searchEnabled, coreConfig = 
         catch (error) {
             signal?.throwIfAborted();
             const controlFailure = classify(error, false);
-            if (LIMIT_FAILURES.has(failure.category)) {
-                controlFailure.searchControl = 'failed';
-                controlFailure.message += ' A single same-model setup without Search also failed; no Search-specific cause was established.';
-                throw Object.assign(new Error(controlFailure.message), { failure: controlFailure, noRetryAfterSearchControl: true });
-            }
-            if (coreConfig || !coreEligible(controlFailure)) throw error;
-            onCoreFallback();
-            session = await attempt(false, true);
+            // The comparison is only meaningful with the original core setup.
+            // A third connection with fewer fields would confound that result,
+            // and an outer transient retry would repeat the Search comparison.
+            controlFailure.searchControl = 'failed';
+            controlFailure.canDisableSearch = false;
+            controlFailure.message += ' A single same-model setup without Search also failed; no Search-specific cause was established.';
+            throw Object.assign(new Error(controlFailure.message), { failure: controlFailure, noRetryAfterSearchControl: true });
         }
         onSearchFallback(failure);
         return session;

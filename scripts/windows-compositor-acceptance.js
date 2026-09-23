@@ -72,6 +72,7 @@ async function verifyWindowsCompositor(window, directory) {
     const { app, BrowserWindow, desktopCapturer, screen } = require('electron');
     if (process.platform !== 'win32' || !process.argv.includes('--ci-smoke-test')) throw new Error('Compositor verification requires the isolated Windows smoke profile');
     if (window.webContents.isDevToolsOpened()) throw new Error('Close DevTools before transparency acceptance');
+    if (window.webContents.debugger?.isAttached()) throw new Error('Detach the debugger before transparency acceptance');
     if (window.isResizable()) throw new Error('Transparent window unexpectedly enables native resizing');
     if (window.isContentProtected?.()) throw new Error('Transparency acceptance must start before Windows capture protection is applied');
     const evaluate = code => window.webContents.executeJavaScript(code, true);
@@ -108,18 +109,30 @@ async function verifyWindowsCompositor(window, directory) {
         const fixture = await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;
             const shell=root.querySelector('.app-shell');
             const style=document.createElement('style');style.id='compositor-test-style';
-            style.textContent='.app-shell > * { visibility:hidden !important; }';root.append(style);
+            style.textContent='.app-shell > * { visibility:hidden !important; } .live-bar button { visibility:visible !important; }';root.append(style);
             const rect=shell.getBoundingClientRect();
             const inset=Math.max(12,Math.min(48,Math.floor(Math.min(rect.width,rect.height)/6)));
             const width=Math.max(8,Math.min(48,Math.floor(rect.width-inset*2)));
             const height=Math.max(8,Math.min(48,Math.floor(rect.height-inset*2)));
-            return {capture:{x:Math.round(rect.left+inset),y:Math.round(rect.top+inset),width,height}};})()`);
+            const button=root.querySelector('.live-bar button');
+            if(!button)throw new Error('A real HUD foreground control is required');
+            const foreground=button.getBoundingClientRect();
+            return {capture:{x:Math.round(rect.left+inset),y:Math.round(rect.top+inset),width,height},
+                foreground:{x:Math.round(foreground.left+foreground.width/2-2),y:Math.round(foreground.top+3),width:4,height:2}};})()`);
         if (!fixture?.capture || fixture.capture.width <= 0 || fixture.capture.height <= 0) throw new Error('Compositor fixture geometry is unavailable');
         evidence.fixture = fixture;
         const displayCount = screen.getAllDisplays().length;
         for (const alpha of [0, 0.25, 0.5, 0.8, 1]) {
             await evaluate(`contextHalo.theme.apply('dark',${alpha})`);
-            const sample = { alpha, captures: [] };
+            const rendererState = await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;
+                const shell=root.querySelector('.app-shell'),button=root.querySelector('.live-bar button');
+                return {surface:getComputedStyle(shell).backgroundColor,foreground:getComputedStyle(button).backgroundColor,
+                    html:getComputedStyle(document.documentElement).backgroundColor,body:getComputedStyle(document.body).backgroundColor};})()`);
+            const foregroundExpected = rendererState.foreground.match(/[\d.]+/g)?.map(Number);
+            if (!foregroundExpected || foregroundExpected.length < 3 || foregroundExpected.length > 3 && foregroundExpected[3] !== 1) {
+                throw new Error('HUD control must have an opaque foreground background');
+            }
+            const sample = { alpha, rendererState, captures: [] };
             evidence.samples.push(sample);
             for (const background of [0, 255]) {
                 await setBackdrop(background);
@@ -128,6 +141,7 @@ async function verifyWindowsCompositor(window, directory) {
                 const bounds = window.getContentBounds();
                 const capture = fixture.capture;
                 const screenRect = { x: bounds.x + capture.x, y: bounds.y + capture.y, width: capture.width, height: capture.height };
+                const foregroundRect = { ...fixture.foreground, x: bounds.x + fixture.foreground.x, y: bounds.y + fixture.foreground.y };
                 const sources = await desktopCapturer.getSources({
                     types: ['screen'],
                     thumbnailSize: { width: Math.max(1, Math.round(display.bounds.width)), height: Math.max(1, Math.round(display.bounds.height)) },
@@ -140,23 +154,30 @@ async function verifyWindowsCompositor(window, directory) {
                 if (!thumbnailSize.width || !thumbnailSize.height) throw new Error('Desktop capture produced no pixels');
                 const controlCropRect = thumbnailCropForDipRect(display, thumbnailSize, controlRect);
                 const surfaceCropRect = thumbnailCropForDipRect(display, thumbnailSize, screenRect);
-                if (!controlCropRect || !surfaceCropRect) throw new Error('Desktop capture crop is outside the selected display');
+                const foregroundCropRect = thumbnailCropForDipRect(display, thumbnailSize, foregroundRect);
+                if (!controlCropRect || !surfaceCropRect || !foregroundCropRect) throw new Error('Desktop capture crop is outside the selected display');
                 const controlImage = thumbnail.crop(controlCropRect);
                 const surfaceImage = thumbnail.crop(surfaceCropRect);
+                const foregroundImage = thumbnail.crop(foregroundCropRect);
                 const control = representativeRgb(controlImage);
                 const surface = representativeRgb(surfaceImage);
-                if (!control || !surface) throw new Error('Desktop capture crop produced no pixels');
+                const foreground = representativeRgb(foregroundImage);
+                if (!control || !surface || !foreground) throw new Error('Desktop capture crop produced no pixels');
                 fs.writeFileSync(path.join(directory, `compositor-control-${alpha}-${background}.png`), controlImage.toPNG());
                 fs.writeFileSync(path.join(directory, `compositor-${alpha}-${background}.png`), surfaceImage.toPNG());
+                fs.writeFileSync(path.join(directory, `compositor-foreground-${alpha}-${background}.png`), foregroundImage.toPNG());
                 const expected = Math.round(16 * alpha + background * (1 - alpha));
-                sample.captures.push({ background, control, surface, screenRect, thumbnail: { size: thumbnailSize,
-                    controlCrop: controlCropRect, surfaceCrop: surfaceCropRect, sourceId: selected.source.id,
+                sample.captures.push({ background, control, surface, foreground, screenRect, thumbnail: { size: thumbnailSize,
+                    controlCrop: controlCropRect, surfaceCrop: surfaceCropRect, foregroundCrop: foregroundCropRect, sourceId: selected.source.id,
                     displayId: selected.source.display_id, selection: selected.selection } });
                 if (control.some(value => Math.abs(value - background) > 8)) {
                     throw new Error(`Backdrop control mismatch for ${background}: ${control.join(',')}`);
                 }
                 if (surface.some(value => Math.abs(value - expected) > 12)) {
                     throw new Error(`Desktop alpha mismatch at ${alpha}, backdrop ${background}: ${surface.join(',')}, expected ${expected}`);
+                }
+                if (foreground.some((value, index) => Math.abs(value - foregroundExpected[index]) > 12)) {
+                    throw new Error(`Desktop foreground faded at ${alpha}, backdrop ${background}: ${foreground.join(',')}`);
                 }
             }
         }

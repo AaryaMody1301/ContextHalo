@@ -53,7 +53,7 @@ test('resized HUD bounds survive transitions/restart and clamp after display rem
     assert.ok(calls.some(([type, value]) => type === 'topmost' && value === true));
     assert.ok(calls.some(([type, value]) => type === 'click-through' && value === false));
     assert.ok(calls.filter(([type]) => type === 'protected').every(([, value]) => value === true));
-    assert.ok(calls.filter(([type]) => type === 'material').every(([, value]) => value === 'none'));
+    assert.deepEqual(calls.filter(([type]) => type === 'material'), [], 'System backdrop changes must not reset native transparency');
 });
 
 test('content protection is production-owned but never applied to the isolated compositor smoke window', () => {
