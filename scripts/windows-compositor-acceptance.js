@@ -72,19 +72,37 @@ try {
         window.show(); window.moveTop();
         await delay(100);
         // Fixture-only content is visible. No account requests or real user data
-        // are loaded by the smoke profile, and capture is cropped to 100x24 DIPs.
+        // are loaded by the smoke profile. Put the opaque probe inside the real
+        // app shell so it shares the window's compositor surface, and return its
+        // renderer-relative geometry instead of assuming a hard-coded crop.
         window.setContentProtection(false);
-        await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;
-            const style=document.createElement('style');style.id='compositor-test-style';style.textContent='.app-shell > * { visibility:hidden !important; }';root.append(style);
-            const marker=document.createElement('div');marker.id='compositor-test-marker';marker.style.cssText='position:fixed;left:164px;top:100px;width:24px;height:24px;background:var(--text-primary);z-index:20000';root.append(marker);})()`);
+        const fixture = await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;
+            const shell=root.querySelector('.app-shell');
+            const style=document.createElement('style');style.id='compositor-test-style';
+            style.textContent='.app-shell > :not(#compositor-test-marker) { visibility:hidden !important; } #compositor-test-marker { visibility:visible !important; }';root.append(style);
+            const marker=document.createElement('div');marker.id='compositor-test-marker';
+            marker.style.cssText='position:fixed;left:164px;top:100px;width:24px;height:24px;background:rgb(224,224,224);z-index:2147483647;pointer-events:none';shell.append(marker);
+            const rect=marker.getBoundingClientRect();
+            const capture={x:Math.round(rect.left-64),y:Math.round(rect.top),width:Math.round(rect.width+64),height:Math.round(rect.height)};
+            return {capture,surface:{x:capture.x+24,y:Math.round(rect.top+rect.height/2)},foreground:{x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)}};})()`);
+        if (!fixture?.capture || fixture.capture.width <= 0 || fixture.capture.height <= 0) throw new Error('Compositor fixture geometry is unavailable');
+        evidence.fixture = fixture;
+        const sampleFraction = point => ({
+            x: (point.x - fixture.capture.x) / fixture.capture.width,
+            y: (point.y - fixture.capture.y) / fixture.capture.height,
+        });
+        const surfaceSample = sampleFraction(fixture.surface);
+        const foregroundSample = sampleFraction(fixture.foreground);
         for (const alpha of [0, 0.25, 0.5, 0.8, 1]) {
             await evaluate(`contextHalo.theme.apply('dark',${alpha})`);
-            const pair = [];
+            const sample = { alpha, captures: [] };
+            evidence.samples.push(sample);
             for (const background of [0, 255]) {
                 backdrop.setBackgroundColor(background ? '#ffffff' : '#000000');
                 await delay(160);
                 const bounds = window.getContentBounds();
-                const physical = screen.dipToScreenRect(window, { x: bounds.x + 100, y: bounds.y + 100, width: 100, height: 24 });
+                const capture = fixture.capture;
+                const physical = screen.dipToScreenRect(window, { x: bounds.x + capture.x, y: bounds.y + capture.y, width: capture.width, height: capture.height });
                 const filename = path.join(directory, `compositor-${alpha}-${background}.png`);
                 await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', powershell], {
                     windowsHide: true, timeout: 10000,
@@ -93,17 +111,18 @@ try {
                 const image = nativeImage.createFromPath(filename);
                 const size = image.getSize(), bitmap = image.toBitmap();
                 if (!size.width || !size.height) throw new Error('Desktop capture produced no pixels');
-                const pixel = fraction => {
-                    const offset = (Math.floor(size.height / 2) * size.width + Math.floor(size.width * fraction)) * 4;
+                const pixel = point => {
+                    const x = Math.min(size.width - 1, Math.max(0, Math.round((size.width - 1) * point.x)));
+                    const y = Math.min(size.height - 1, Math.max(0, Math.round((size.height - 1) * point.y)));
+                    const offset = (y * size.width + x) * 4;
                     return [bitmap[offset + 2], bitmap[offset + 1], bitmap[offset]];
                 };
-                const surface = pixel(0.1), foreground = pixel(0.8);
+                const surface = pixel(surfaceSample), foreground = pixel(foregroundSample);
                 const expected = Math.round(16 * alpha + background * (1 - alpha));
+                sample.captures.push({ background, surface, foreground, physical });
                 if (surface.some(value => Math.abs(value - expected) > 12)) throw new Error(`Desktop alpha mismatch at ${alpha}, backdrop ${background}: ${surface.join(',')}, expected ${expected}`);
-                if (foreground.some(value => Math.abs(value - 224) > 8)) throw new Error('Foreground faded or fixture window was not composited on top');
-                pair.push({ background, surface, foreground, physical });
+                if (foreground.some(value => Math.abs(value - 224) > 8)) throw new Error(`Opaque foreground mismatch at ${alpha}, backdrop ${background}: ${foreground.join(',')}`);
             }
-            evidence.samples.push({ alpha, captures: pair });
         }
         evidence.success = true;
         return evidence;
