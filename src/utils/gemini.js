@@ -18,6 +18,7 @@ const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSes
 const { createGeminiLiveRuntime } = require('./geminiLiveRuntime');
 const { SCREEN_PROVIDER_BUDGET_MS, SCREEN_SESSION_TIMEOUT_MS, screenThinkingConfig } = require('./geminiScreenReliability');
 const { classifyGeminiFailure } = require('./geminiFailure');
+const { recoverGeminiSetup } = require('./geminiSetupRecovery');
 const { groundingFragmentFromResponse, mergeGrounding, publicGrounding } = require('./geminiGrounding');
 const { appendModelParts, modelPartsForHistory } = require('./geminiWorkingContext');
 let liveGeneration = 0;
@@ -27,7 +28,7 @@ let liveController = new AbortController();
 let mainSessionActive = false;
 let providerUiEpoch;
 let lastGeminiFailure = null;
-let searchState = { requested: false, effective: false, status: 'off' };
+let searchState = { requested: false, liveEffective: false, httpEffective: false, status: 'off', liveReason: '', httpReason: '' };
 let liveSetupCompatibility = false;
 const geminiCooldowns = new Map();
 
@@ -222,31 +223,19 @@ function getCurrentSessionData() {
 function configureSearch(provider, override) {
     const requested = getPreferences().googleSearchEnabled === true;
     const effective = provider === 'byok' && requested && override !== false;
-    searchState = { requested, effective, httpEffective: effective, status: provider !== 'byok' ? 'not-supported'
+    searchState = { requested, liveEffective: effective, httpEffective: effective, liveReason: '', httpReason: '', status: provider !== 'byok' ? 'not-supported'
         : effective ? 'pending' : requested ? 'user-disabled' : 'off' };
     sendToRenderer('search-state', { ...searchState });
 }
 
-function disableLiveSearchForSetupCompatibility() {
-    if (!searchState.effective) return;
-    searchState = { ...searchState, effective: false, status: 'live-setup-fallback' };
+function disableLiveSearchForSetupCompatibility(failure) {
+    geminiLiveRuntime?.clearResumption();
+    searchState = { ...searchState, liveEffective: false, status: 'live-setup-fallback',
+        liveReason: ['quota-exhausted', 'rate-or-quota', 'throttled'].includes(failure.category)
+            ? 'Search-enabled Live setup hit a rate or quota limit; the same model connected without Search. The exact tool quota or access cause is unconfirmed.'
+            : 'Live setup succeeded without Search after a tool/configuration failure.' };
     sendToRenderer('search-state', { ...searchState });
-    sendToRenderer('update-status', 'Retrying Gemini Live without Search after a setup failure. Text and screen Search remain enabled; your saved preference is unchanged.');
-}
-
-function shouldRetryLiveSetupWithoutSearch(error) {
-    if (!searchState.effective) return false;
-    const failure = classifyGeminiFailure(error, 'live');
-    if (failure.stage !== 'setup') return false;
-    return ['unsupported-tool', 'invalid-configuration'].includes(failure.category)
-        || failure.category === 'transient' && failure.socketCode === 1011;
-}
-
-function shouldRetryLiveSetupWithCoreConfig(error) {
-    if (liveSetupCompatibility) return false;
-    const failure = classifyGeminiFailure(error, 'live');
-    return failure.stage === 'setup' && (failure.category === 'invalid-configuration'
-        || failure.category === 'transient' && failure.socketCode === 1011);
+    sendToRenderer('update-status', 'Gemini Live connected without Search. Text and screen Search and your saved preference are unchanged. See Session details.');
 }
 
 function enableLiveSetupCompatibility() {
@@ -255,9 +244,8 @@ function enableLiveSetupCompatibility() {
     sendToRenderer('update-status', 'Retrying with the core Live configuration after a setup failure. Reconnects will restore local conversation context.');
 }
 
-async function getEnabledTools(operation = 'http') {
-    const enabled = operation === 'live' ? searchState.effective : searchState.httpEffective;
-    return enabled ? [{ googleSearch: {} }] : [];
+function getHttpSearchTools() {
+    return searchState.httpEffective ? [{ googleSearch: {} }] : [];
 }
 
 function publishProviderState(state, error = null) {
