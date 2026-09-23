@@ -46,48 +46,49 @@ Model defaults and dependency pins are unchanged. Existing Gemini AUDIO/transcri
 
 ## Compositor acceptance in the existing Windows workflow
 
-`windows-compositor-acceptance.js` runs once, on the exact packaged EXE at Chromium scale 1, through the existing Windows acceptance owner. There is no extra workflow or repeated four-scale compositor job. It keeps DevTools closed, checks native resizing is disabled, places black/white fixture backgrounds behind the real app shell, and captures a cropped desktop region using Windows GDI rather than `webContents.capturePage()`.
+`scripts/windows-compositor-acceptance.js` runs once on the exact packaged EXE at Chromium scale 1 through the existing Windows acceptance owner. There is no second workflow and no renderer screenshot presented as native proof. The smoke keeps DevTools closed, requires native resizing to stay disabled, temporarily disables capture protection only inside `--ci-smoke-test`, places controlled black/white windows behind ContextHalo, and captures the matching Windows display through Electron's supported `desktopCapturer.getSources({ types: ['screen'] })` path.
 
-Alpha samples are 0, 0.25, 0.5, 0.8 and 1. The probe checks the root blend and an opaque foreground marker, saves cropped PNGs, and writes `compositor.json` plus its result in the existing `checks.json`. A compositor mismatch fails the normal packaged smoke rather than being reported as a pass.
+The capture source is matched to Electron `screen.Display.id` through `DesktopCapturerSource.display_id`; only a one-display/one-source environment may use the documented empty-`display_id` fallback. Because Electron does not guarantee that a source thumbnail equals the requested `thumbnailSize`, the real thumbnail dimensions are mapped back to the display DIP bounds before cropping. The crop itself is derived from the real `.app-shell` bounding rectangle, with existing shell children hidden so only the root alpha surface is measured.
 
-Temporary capture-protection changes and fixture surfaces are allowed only in the isolated `--ci-smoke-test` profile and are restored in `finally`. No account or real user content is loaded. Production capture protection is unchanged. This automated fixture is not a substitute for physical Windows 10/11, mixed-monitor DPI, click-through or third-party sharing acceptance.
+Alpha samples are 0, 0.25, 0.5, 0.8 and 1 over both black and white controlled backdrops. Each crop is saved as evidence and the median RGB of a 3x3 sample grid is compared with the expected composition of the dark theme base (`#101010`) and the backdrop. Testing both backdrops across nonzero alpha values proves that the ContextHalo surface participates in desktop composition; an omitted/opaque window cannot satisfy both expected blends. Foreground opacity remains covered independently by renderer/appearance tests, so the desktop gate no longer depends on a synthetic marker unrelated to the transparency requirement.
 
-## Validation and packaged-compositor CI correction
+Temporary capture-protection changes, hidden fixture content and backdrop windows are restored in `finally`. Production sessions never run this capture path. Physical Windows 10/11, mixed-monitor DPI, click-through and independent third-party sharing acceptance remain separate external gates.
 
-PR #71's first Windows run, [35831847817 / workflow 400](https://github.com/AaryaMody1301/ContextHalo/actions/runs/35831847817), tested merge commit `2dc96d33a9bee77a0fe6293bf673ba1d6305b647` with PR head `b0a31bfb0a5a302f7641f93cb69f798e3167982c`. The job ran on Windows Server 2022 (10.0.20348), Electron 44.3.0, Node 24.21.0.
+## Validation and packaged-compositor CI corrections
 
-The recorded run passed production dependency audit (zero vulnerabilities), syntax validation (139 JavaScript files), the full regression suite (**360 passed, zero failed, zero skipped**), the real sandboxed Electron renderer smoke, and portable EXE packaging/checksum. It then failed at the first packaged launch (100% scale), before a compositor pixel comparison could run:
+PR #71 has produced three useful Windows failures, each inspected from its actual workflow logs/artifacts instead of being re-run blindly:
 
-`Graphics.CopyFromScreen: InvalidEnumArgumentException: CopyPixelOperation value 1087111200`
+- **Workflow 400 / run 35831847817**, head `b0a31bfb0a5a302f7641f93cb69f798e3167982c`: dependency audit, 139-file syntax validation, **360/360 tests**, real Electron smoke and portable packaging passed. The 100% packaged smoke failed before a pixel assertion because .NET `Graphics.CopyFromScreen` rejected the combined `SRCCOPY | CAPTUREBLT` enum value.
+- **Workflow 401 / run 35832956900**, head `67247e96c7ea79b4c537a441a6d7ba6ebf7a10d4`: the GDI replacement executed, 140-file syntax validation, **366/366 tests**, real Electron smoke and packaging passed. The first alpha-0 capture contained only the controlled backdrop, so the synthetic foreground probe was not observed.
+- **Workflow 404 / run 35838421337**, head `2b33e803e58a57c5fb87ca634649352f5b133365`: 140-file syntax validation, **366/366 tests**, real Electron smoke and packaging again passed. The uploaded `compositor-0-0.png` and `compositor.json` show the renderer-derived 88x24 crop was correct but all pixels remained backdrop black, including the marker. This establishes that changing marker geometry did not solve the capture boundary.
 
-That value is `SRCCOPY | CAPTUREBLT`. Windows PowerShell's .NET Framework `CopyFromScreen` wrapper rejects the combined enumeration value. The failure is in the acceptance capture call, not evidence that desktop transparency passed or failed.
+The workflow-404 evidence changes the acceptance implementation, not the runtime transparency model. Microsoft documents DirectComposition as DWM-owned composition and recommends avoiding reads from a display DC. Electron provides `desktopCapturer` specifically for screen sources, with `display_id` corresponding to the Screen API display and a `NativeImage` thumbnail whose actual size may differ from the requested size. The final acceptance path therefore removes PowerShell, GDI `BitBlt`, `CAPTUREBLT`, the synthetic foreground marker and their tests instead of retaining them as fallbacks.
 
-The correction replaces that wrapper with the documented native GDI `BitBlt` call, retaining both flags as a DWORD so layered transparent windows remain captured. The desktop and destination device contexts are released in paired `finally` blocks, Graphics/Bitmap resources are disposed, native errors remain fatal, and the destination HDC is released before PNG encoding. The bitmap explicitly uses opaque 24-bit RGB because this is a capture of the already-composited desktop, not an alpha texture.
-
-All five opacity samples, black/white backgrounds, foreground checks, pixel tolerances, ten-second capture deadline, production/smoke guards and failure propagation are unchanged. The obsolete `CopyFromScreen`/enum-cast executable path is removed rather than retained as a fallback. No workflow, runtime provider, dependency, feature branch history or previously discussed transparency/Search implementation is replaced by this correction.
-
-The checked-out failing-run source artifact has SHA-256 `ab660f3dd13a2bf084a3bef877dcfedfda86a97852318efed096ea4647f1e053`. Validation of the corrected source in the Linux editing environment:
+Validation of the replacement against the exact workflow-404 source snapshot:
 
 - `npm run check`: **140 JavaScript files passed**.
-- Focused compositor, final-runtime, appearance, window geometry, Gemini recovery, UI-request recovery and Electron-security suites: **65 passed, zero failed, zero skipped**.
-- The six new compositor tests exercise the actual JavaScript acceptance owner with explicit native-boundary fixtures: native call/flag contract, capture error, incorrect opacity, faded foreground, empty image, and production/platform/DevTools/native-resize guards. They also verify failure evidence and capture-protection/theme/fixture cleanup.
-- These fixture tests do **not** execute Windows GDI or certify compositor pixels. Native execution of the correction and packaged 100/125/150/200% launches remain the existing Windows PR workflow's responsibility. The previous run's 360-test result is historical evidence, not a new CI pass.
+- Focused appearance, window geometry, Gemini Search recovery, UI recovery, IPC/security and compositor suites: **82 passed, zero failed, zero skipped**.
+- The compositor-specific suite: **9 passed, zero failed, zero skipped**, covering exact display selection, the single-display fallback, thumbnail/crop mapping, opacity mismatch, empty capture, ambiguous display source, z-order fallback, capture failure and production/DevTools/native-resize guards.
+- Critical runtime ownership remains unchanged: the transparent BrowserWindow is still natively non-resizable/non-maximizable; app-owned resizing remains the only resize path; legacy `searchState.effective` remains absent; Live and HTTP Search recovery remain separate; no provider/model/API key fallback was introduced.
 
-No new workflow, duplicate deployment, weakened assertion or forced successful status is introduced. The same PR branch receives the correction in one push, and the normal Windows workflow remains the merge gate.
+These local fixture tests do not certify Windows compositor pixels. The newly pushed head must still pass the normal Windows workflow's packaged 100/125/150/200% launches before native transparency is recorded as verified. No workflow, dependency/model upgrade, duplicate deployment, weakened alpha assertion or forced successful status is introduced.
 
-### Workflow 401 follow-up
+## Official contract references checked for this correction
 
-PR run [35832956900 / workflow 401](https://github.com/AaryaMody1301/ContextHalo/actions/runs/35832956900) confirmed the native GDI correction executed: source validation passed for **140 JavaScript files**, the complete regression suite passed **366/366 with zero skips**, the real Electron smoke passed, and the portable EXE built and checksummed. The 100% packaged compositor gate then failed on the first alpha-0/black sample with `Foreground faded or fixture window was not composited on top`.
+- Electron screen capture: https://www.electronjs.org/docs/latest/api/desktop-capturer
+- Electron screen-source display mapping: https://www.electronjs.org/docs/latest/api/structures/desktop-capturer-source
+- Electron display/DIP model: https://www.electronjs.org/docs/latest/api/screen
+- Electron transparent windows: https://www.electronjs.org/docs/latest/tutorial/custom-window-styles
+- Microsoft DWM drawing/capture guidance: https://learn.microsoft.com/en-us/windows/win32/dwm/bestpractices-ovw
+- Microsoft DirectComposition architecture: https://learn.microsoft.com/en-us/windows/win32/directcomp/architecture-and-components
+- Gemini 3.8 Live capabilities: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live
+- Live Google Search tools: https://ai.google.dev/gemini-api/docs/live-api/tools
+- Live compression/resumption: https://ai.google.dev/gemini-api/docs/live-api/session-management
+- Gemini limits: https://ai.google.dev/gemini-api/docs/rate-limits
+- Search pricing/accounting: https://ai.google.dev/gemini-api/docs/pricing
+- HTTP grounding contract: https://ai.google.dev/gemini-api/docs/generate-content/google-search
 
-The uploaded behavior evidence was inspected rather than weakening the assertion. `compositor-0-0.png` is a 100x24 image whose 2,400 pixels are all RGB 0,0,0. This means the desktop capture itself succeeded and the transparent surface correctly revealed the black fixture at alpha 0, but the intended opaque foreground probe was not present in that captured region. The previous probe was appended as a sibling of the real app shell and the crop/sample locations were hard-coded.
-
-The follow-up correction puts the opaque RGB(224,224,224) probe **inside the real `.app-shell`**, hides existing shell children while explicitly exempting the probe, reads its actual `getBoundingClientRect()`, and derives both the desktop crop and surface/foreground sample coordinates from that renderer geometry. The acceptance no longer assumes fixed marker/crop alignment. Failing capture records are written to `compositor.json` before assertions so future native failures retain the observed pixels and rectangle. Alpha thresholds, the opaque-foreground requirement, GDI `SRCCOPY | CAPTUREBLT`, production guards, cleanup and the existing Windows workflow remain unchanged.
-
-Validation of this follow-up against the exact workflow-401 source artifact:
-- `npm run check`: **140 JavaScript files passed**.
-- Focused transparency, geometry, Gemini Search recovery, UI recovery and security suites: **66 passed, zero failed, 7 installed-SDK tests skipped because the source artifact does not contain installed dependencies**.
-- The compositor-specific suite: **6 passed, zero failed, zero skipped**.
-- Native Windows pixel acceptance is not claimed until the newly pushed head runs through the normal Windows workflow.
+These sources define platform/provider contracts, not the user's exact Gemini entitlement/quota or physical Windows/GPU behavior.
 
 ## Remaining release gates, not silently marked passed
 
