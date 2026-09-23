@@ -81,12 +81,16 @@ async function verifyWindowsCompositor(window, directory) {
     const controlRect = backdropControlRect(display, originalBounds);
     if (!controlRect) throw new Error('Compositor acceptance needs visible backdrop space outside the ContextHalo window');
     const originalAppearance = await evaluate(`({theme:contextHalo.theme.current,alpha:contextHalo.theme.currentAlpha})`);
+    const canvasState = await evaluate(`({colorScheme:document.documentElement.style.colorScheme || '',
+        htmlBackground:getComputedStyle(document.documentElement).backgroundColor,
+        bodyBackground:getComputedStyle(document.body).backgroundColor})`);
+    if (canvasState.colorScheme) throw new Error(`Root color-scheme must stay unset for a transparent canvas; found ${canvasState.colorScheme}`);
     const backdrop = new BrowserWindow({ ...area, frame: false, show: false, resizable: false, focusable: false,
         skipTaskbar: true, backgroundColor: '#000000', webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     const evidence = { scope: 'Electron screen-source capture of the Windows desktop compositor with isolated fixture surfaces',
         packaged: app.isPackaged, platform: process.platform, electron: process.versions.electron,
         os: require('node:os').release(), display: { id: String(display.id), bounds: display.bounds, workArea: display.workArea },
-        controlRect, samples: [] };
+        canvasState, controlRect, samples: [] };
     const setBackdrop = async value => {
         const color = `rgb(${value},${value},${value})`;
         await backdrop.webContents.executeJavaScript(`new Promise(resolve=>{document.documentElement.style.background=${JSON.stringify(color)};document.body.style.background=${JSON.stringify(color)};requestAnimationFrame(()=>requestAnimationFrame(resolve));})`, true);
