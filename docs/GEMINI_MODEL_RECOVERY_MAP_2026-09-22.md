@@ -1,5 +1,7 @@
 # Gemini model and recovery map — 2026-09-22
 
+The model map remains unchanged. Search quota/setup handling is superseded by [the September 23 runtime repair](FINAL_RUNTIME_REPAIR_2026-09-23.md): explicit route state, one bounded Search-off control, and no unsupported claim that every quota error is a project/model quota.
+
 This audit was triggered by a real ContextHalo Analyze Screen request returning HTTP 503 with `gemini-3.8-flash`.
 
 ## Screen-analysis finding
