@@ -9,7 +9,7 @@ function geminiErrorObject(value) {
 
 // Never return arbitrary provider messages/headers to diagnostics: these can
 // contain request URLs, credentials, or parts of a confidential prompt.
-function classifyGeminiFailure(error, operation = 'live', model = '', now = Date.now()) {
+function classifyGeminiFailure(error, operation = 'live', model = '', now = Date.now(), context = {}) {
     if (error?.failure) return { ...error.failure, operation, model };
     // ws ErrorEvent stores the useful error under .error; fetch uses .cause.
     // Inspect a bounded chain, but never expose its arbitrary messages to the UI.
@@ -51,6 +51,11 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     const quota = /quota_exceeded|quota.{0,24}exceeded|exceeded.{0,24}quota|per.?day|daily|per.?month|monthly|limit[: =]+0\b/.test(combined);
     const throttled = /rate_limit_exceeded|per.?minute|per.?second|requestsperminute|tokensperminute/.test(combined);
     const searchRelated = /google.?search|grounding/.test(combined);
+    // Only named base-model quota metrics prove that removing a tool cannot
+    // help. Generic RESOURCE_EXHAUSTED / 1011 text does not identify a scope.
+    const modelQuota = /(?:generate[_ ]?content|bidi[_ ]?generate[_ ]?content)[_ /]?(?:input[_ ]?tokens|requests)|model[_ ](?:token|request)[_ ]quota/.test(combined);
+    const quotaScope = modelQuota ? 'model' : searchRelated ? 'search' : 'unknown';
+    const searchAttached = context.searchAttached === true;
     let category = 'unknown';
     if (cancelled) category = 'cancelled';
     else if (networkCode && /CERT|SELF_SIGNED|ISSUER|SIGNATURE/.test(networkCode)) category = 'tls';
@@ -73,9 +78,9 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         'proxy-authentication': 'The network proxy requires authentication before Gemini can connect. Review the system proxy configuration with your network administrator.',
         authentication: 'Gemini authentication failed. Check the API key in Home; it has not been changed.',
         permission: 'Gemini denied access. Check API-key restrictions, project access and the selected model in Settings.',
-        'quota-exhausted': 'Gemini project quota is exhausted. Wait for the project quota reset or review usage in Google AI Studio. Turning Search off does not bypass model quotas.',
+        'quota-exhausted': 'Gemini rejected this request because a quota limit was reached. Review the active project limits in Google AI Studio.',
         throttled: 'Gemini temporarily throttled this request. Wait before retrying; your session and draft are retained.',
-        'rate-or-quota': 'Gemini returned 429 without enough detail to distinguish throttling from exhausted quota. Check project usage before retrying.',
+        'rate-or-quota': 'Gemini reported a rate or quota limit without enough detail to identify the exhausted resource. Check project usage before retrying.',
         'model-unavailable': 'The configured Gemini model is unavailable to this project. Select a supported model in Home; your saved model has not been changed.',
         'aborted-conflict': 'Gemini interrupted the Live connection because of a transient session conflict. ContextHalo will reconnect without ending the interview.',
         'state-conflict': 'Gemini reported a non-retryable state conflict. Review this operation before retrying.',
@@ -90,6 +95,11 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     const retryable = ['throttled', 'transient', 'aborted-conflict'].includes(category);
     const retryAt = retryAfterMs === null ? null : now + retryAfterMs;
     let message = messages[category];
+    if (['quota-exhausted', 'rate-or-quota', 'throttled'].includes(category)) {
+        if (quotaScope === 'search') message += ' The provider identified Google Search or grounding as the affected resource.';
+        else if (quotaScope === 'model') message += ' The provider identified a base-model quota; disabling Search will not remove that limit.';
+        else if (searchAttached) message += ' Search was attached, but the response does not establish whether the limit belongs to Search or the model.';
+    }
     if (category === 'transient' && httpStatus === 503) {
         message = 'Gemini returned HTTP 503 (service unavailable or overloaded). ContextHalo retried with exponential backoff, but the service did not recover within this request. Retry later; your session and draft are retained. No model, Search setting, or account was changed.';
     } else if (category === 'transient' && ['ENOTFOUND', 'EAI_AGAIN'].includes(networkCode)) {
@@ -101,7 +111,8 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     }
     const diagnostic = [stage, httpStatus && `HTTP ${httpStatus}`, socketCode && `WebSocket ${socketCode}`, networkCode].filter(Boolean).join(', ');
     return { category, httpStatus, socketCode, networkCode, stage, operation, model: String(model).slice(0, 160), retryable,
-        retryAfterMs, retryAt, canDisableSearch: category === 'unsupported-tool' || searchRelated && ['quota-exhausted', 'throttled', 'rate-or-quota'].includes(category),
+        retryAfterMs, retryAt, quotaScope, searchAttached,
+        canDisableSearch: category === 'unsupported-tool' || (searchRelated || searchAttached) && quotaScope !== 'model' && ['quota-exhausted', 'throttled', 'rate-or-quota'].includes(category),
         message: message + (diagnostic ? ` (${diagnostic})` : '')
             + (retryAfterMs === null ? '' : ` Provider retry delay: ${Math.ceil(retryAfterMs / 1000)} seconds.`) };
 }
