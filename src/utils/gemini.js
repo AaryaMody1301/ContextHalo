@@ -1020,12 +1020,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         setupMessages = [];
         lastGeminiFailure = null;
         lastGeminiInitializationError = '';
-        searchState = { ...searchState, status: searchState.effective ? 'enabled' : searchState.status };
+        searchState = { ...searchState, status: searchState.liveEffective ? 'enabled' : searchState.status };
         publishProviderState('ready');
         return session;
     } catch (error) {
         if (!current()) return null;
-        lastGeminiFailure = classifyGeminiFailure(error, 'live', liveModel);
+        lastGeminiFailure = classifyGeminiFailure(error, 'live', liveModel, Date.now(), { searchAttached: searchState.liveEffective });
         const { category, httpStatus, socketCode, networkCode, stage } = lastGeminiFailure;
         const diagnostic = { model: liveModel, operation: 'live', category, status: httpStatus, code: socketCode, networkCode, stage };
         logTransportEvent('gemini.live.start.failed', diagnostic);
@@ -1122,7 +1122,7 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
     try {
         const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
-        const tools = await getEnabledTools();
+        const tools = getHttpSearchTools();
         const mode = getResponseMode(getPreferences().responseMode);
         const params = augmentGenerateParams({
             model,
@@ -1164,7 +1164,7 @@ async function sendTypedGeminiText(text) {
         + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
         + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-4000) : '');
     const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
-    const tools = await getEnabledTools();
+    const tools = getHttpSearchTools();
     const mode = getResponseMode(getPreferences().responseMode);
     const params = augmentGenerateParams({
         model,
@@ -1526,18 +1526,31 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
+    register('disable-http-search', async (_event, options = {}) => {
+        if (currentProviderMode !== 'byok' || !mainSessionActive || !Number.isSafeInteger(options?.uiEpoch)
+            || options.uiEpoch !== providerUiEpoch) return { success: false, error: 'No matching Gemini session' };
+        searchState = { ...searchState, httpEffective: false,
+            httpReason: 'You disabled Search for text and screen requests in this session. Live Search and the saved preference are unchanged.' };
+        currentSystemPrompt = getSystemPrompt(currentProfile, currentCustomPrompt, false);
+        sendToRenderer('search-state', { ...searchState });
+        return { success: true, search: { ...searchState } };
+    });
+
     register('retry-session-connection', async (_event, options = {}) => {
         if (!options || typeof options !== 'object' || typeof options.withoutSearch !== 'boolean') return { success: false, error: 'Invalid recovery options' };
         if (currentProviderMode !== 'byok' || !sessionParams?.apiKey || !mainSessionActive) return { success: false, error: 'No Gemini session to reconnect' };
         if (manualReconnectPromise) return manualReconnectPromise.then(success => ({ success, failure: lastGeminiFailure, search: { ...searchState } }));
         const model = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
-        const cooldown = geminiCooldowns.get(cooldownKey(sessionParams.apiKey, model));
+        const baseKey = cooldownKey(sessionParams.apiKey, model);
+        const cooldown = [geminiCooldowns.get(baseKey),
+            !options.withoutSearch && searchState.liveEffective && geminiCooldowns.get(`${baseKey}:live:search`)]
+            .find(failure => failure?.retryAt > Date.now());
         if (cooldown?.retryAt > Date.now()) return { success: false, error: cooldown.message, failure: cooldown };
         if (geminiLiveRuntime?.getState().reconnecting) return { success: false, error: 'Automatic recovery is in progress. Wait before retrying.' };
         geminiLiveRuntime?.cancelScheduledReconnect?.();
         if (options.withoutSearch) {
             geminiLiveRuntime?.clearResumption();
-            searchState = { ...searchState, effective: false, httpEffective: false, status: 'user-disabled' };
+            searchState = { ...searchState, liveEffective: false, httpEffective: false, status: 'user-disabled', liveReason: 'You disabled Search for this session.', httpReason: 'You disabled Search for this session.' };
             currentSystemPrompt = getSystemPrompt(currentProfile, currentCustomPrompt, false);
             sendToRenderer('search-state', { ...searchState });
         }
@@ -1554,7 +1567,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
 module.exports = {
     initializeGeminiSession,
-    getEnabledTools,
     sendToRenderer,
     initializeNewSession,
     saveConversationTurn,
