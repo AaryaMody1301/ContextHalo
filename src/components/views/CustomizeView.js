@@ -226,7 +226,7 @@ export class CustomizeView extends LitElement {
         this.settingsLoading = true;
         this._saveVersions = {};
         this._failedWrites = new Map();
-        this.googleSearchEnabled = true;
+        this.googleSearchEnabled = false;
         this.isClearing = false;
         this.isRestoring = false;
         this.clearStatusMessage = '';
@@ -253,7 +253,7 @@ export class CustomizeView extends LitElement {
             this.selectedLanguage = prefs.selectedLanguage || this.selectedLanguage;
             this.selectedImageQuality = prefs.selectedImageQuality || this.selectedImageQuality;
             this.layoutMode = prefs.layoutMode || this.layoutMode;
-            this.googleSearchEnabled = prefs.googleSearchEnabled ?? true;
+            this.googleSearchEnabled = prefs.googleSearchEnabled ?? false;
             this.backgroundTransparency = prefs.backgroundTransparency ?? 0.8;
             this.fontSize = prefs.fontSize ?? 20;
             this.audioMode = prefs.audioMode ?? 'speaker_only';
