@@ -109,7 +109,7 @@ test('an unsupported Search setup fails once, retains requested Search and does 
     const f = fixture(t, { search: true, live: async () => { throw httpError(400, 'google_search tool is unsupported'); } });
     const result = await f.start();
     assert.equal(result.success, false); assert.equal(result.failure.category, 'unsupported-tool');
-    assert.equal(result.search.requested, true); assert.equal(result.search.effective, true);
+    assert.equal(result.search.requested, true); assert.equal(result.search.liveEffective, true);
     assert.equal(f.connections.length, 1);
     assert.equal(f.preferences.googleSearchEnabled, true);
 });
@@ -121,7 +121,7 @@ test('explicit continue-without-Search covers subsequent Live, typed, screen and
     const old = f.callbacks;
     const result = await f.call('retry-session-connection', { withoutSearch: true });
     assert.equal(result.success, true);
-    assert.equal(result.search.requested, true); assert.equal(result.search.effective, false);
+    assert.equal(result.search.requested, true); assert.equal(result.search.liveEffective, false);
     assert.equal(f.preferences.googleSearchEnabled, true);
     assert.equal(f.connections[1].config.tools, undefined);
     assert.doesNotMatch(f.connections[1].config.systemInstruction, /SEARCH TOOL USAGE/);
