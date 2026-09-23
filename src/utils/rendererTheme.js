@@ -152,7 +152,6 @@
                 const baseRgb = this.hexToRgb(backgroundColor);
                 const windowBackground = `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${alpha})`;
                 root.style.setProperty('--window-background', windowBackground);
-                root.style.setProperty('--hud-background', windowBackground);
                 // The native BrowserWindow is transparent. Apply alpha only to the root
                 // window surface; text and cards keep opaque theme colors for readability.
                 root.style.setProperty('--control-color-scheme', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark');
