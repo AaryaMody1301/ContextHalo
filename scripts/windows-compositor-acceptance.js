@@ -40,6 +40,32 @@ function selectScreenSource(sources, display, displayCount) {
     return null;
 }
 
+function intersects(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function backdropControlRect(display, windowBounds, size = 40) {
+    const area = display?.workArea;
+    if (!area || !windowBounds) return null;
+    const width = Math.min(size, Math.max(0, area.width - 16));
+    const height = Math.min(size, Math.max(0, area.height - 16));
+    if (width < 8 || height < 8) return null;
+    const margin = 8;
+    const x1 = area.x + margin;
+    const x2 = area.x + area.width - width - margin;
+    const y1 = area.y + margin;
+    const y2 = area.y + area.height - height - margin;
+    const xm = Math.round(area.x + (area.width - width) / 2);
+    const ym = Math.round(area.y + (area.height - height) / 2);
+    const candidates = [
+        { x: x1, y: y1, width, height }, { x: x2, y: y1, width, height },
+        { x: x1, y: y2, width, height }, { x: x2, y: y2, width, height },
+        { x: xm, y: y1, width, height }, { x: xm, y: y2, width, height },
+        { x: x1, y: ym, width, height }, { x: x2, y: ym, width, height },
+    ];
+    return candidates.find(candidate => !intersects(candidate, windowBounds)) || null;
+}
+
 // Only the isolated --ci-smoke-test profile may temporarily disable capture
 // protection. Production sessions never use this path or capture the desktop.
 async function verifyWindowsCompositor(window, directory) {
@@ -51,14 +77,22 @@ async function verifyWindowsCompositor(window, directory) {
     const originalBounds = window.getBounds();
     const display = screen.getDisplayMatching(originalBounds);
     const area = display.workArea;
+    const controlRect = backdropControlRect(display, originalBounds);
+    if (!controlRect) throw new Error('Compositor acceptance needs visible backdrop space outside the ContextHalo window');
     const originalAppearance = await evaluate(`({theme:contextHalo.theme.current,alpha:contextHalo.theme.currentAlpha})`);
     const backdrop = new BrowserWindow({ ...area, frame: false, show: false, resizable: false, focusable: false,
         skipTaskbar: true, backgroundColor: '#000000', webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     const evidence = { scope: 'Electron screen-source capture of the Windows desktop compositor with isolated fixture surfaces',
         packaged: app.isPackaged, platform: process.platform, electron: process.versions.electron,
-        os: require('node:os').release(), display: { id: String(display.id), bounds: display.bounds, workArea: display.workArea }, samples: [] };
+        os: require('node:os').release(), display: { id: String(display.id), bounds: display.bounds, workArea: display.workArea },
+        controlRect, samples: [] };
+    const setBackdrop = async value => {
+        const color = `rgb(${value},${value},${value})`;
+        await backdrop.webContents.executeJavaScript(`new Promise(resolve=>{document.documentElement.style.background=${JSON.stringify(color)};document.body.style.background=${JSON.stringify(color)};requestAnimationFrame(()=>requestAnimationFrame(resolve));})`, true);
+    };
     try {
-        await backdrop.loadURL('data:text/html,<html><body style="margin:0;background:transparent"></body></html>');
+        const html = '<!doctype html><html style="margin:0;width:100%;height:100%;background:#000"><body style="margin:0;width:100%;height:100%;background:#000"></body></html>';
+        await backdrop.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
         backdrop.showInactive();
         window.show();
         try { window.moveAbove(backdrop.getMediaSourceId()); } catch { window.moveTop(); }
@@ -84,7 +118,7 @@ async function verifyWindowsCompositor(window, directory) {
             const sample = { alpha, captures: [] };
             evidence.samples.push(sample);
             for (const background of [0, 255]) {
-                backdrop.setBackgroundColor(background ? '#ffffff' : '#000000');
+                await setBackdrop(background);
                 try { window.moveAbove(backdrop.getMediaSourceId()); } catch { window.moveTop(); }
                 await delay(180);
                 const bounds = window.getContentBounds();
@@ -100,16 +134,23 @@ async function verifyWindowsCompositor(window, directory) {
                 const thumbnail = selected.source.thumbnail;
                 const thumbnailSize = thumbnail.getSize();
                 if (!thumbnailSize.width || !thumbnailSize.height) throw new Error('Desktop capture produced no pixels');
-                const cropRect = thumbnailCropForDipRect(display, thumbnailSize, screenRect);
-                if (!cropRect) throw new Error('Desktop capture crop is outside the selected display');
-                const image = thumbnail.crop(cropRect);
-                const surface = representativeRgb(image);
-                if (!surface) throw new Error('Desktop capture crop produced no pixels');
-                const filename = path.join(directory, `compositor-${alpha}-${background}.png`);
-                fs.writeFileSync(filename, image.toPNG());
+                const controlCropRect = thumbnailCropForDipRect(display, thumbnailSize, controlRect);
+                const surfaceCropRect = thumbnailCropForDipRect(display, thumbnailSize, screenRect);
+                if (!controlCropRect || !surfaceCropRect) throw new Error('Desktop capture crop is outside the selected display');
+                const controlImage = thumbnail.crop(controlCropRect);
+                const surfaceImage = thumbnail.crop(surfaceCropRect);
+                const control = representativeRgb(controlImage);
+                const surface = representativeRgb(surfaceImage);
+                if (!control || !surface) throw new Error('Desktop capture crop produced no pixels');
+                fs.writeFileSync(path.join(directory, `compositor-control-${alpha}-${background}.png`), controlImage.toPNG());
+                fs.writeFileSync(path.join(directory, `compositor-${alpha}-${background}.png`), surfaceImage.toPNG());
                 const expected = Math.round(16 * alpha + background * (1 - alpha));
-                sample.captures.push({ background, surface, screenRect, thumbnail: { size: thumbnailSize, crop: cropRect,
-                    sourceId: selected.source.id, displayId: selected.source.display_id, selection: selected.selection } });
+                sample.captures.push({ background, control, surface, screenRect, thumbnail: { size: thumbnailSize,
+                    controlCrop: controlCropRect, surfaceCrop: surfaceCropRect, sourceId: selected.source.id,
+                    displayId: selected.source.display_id, selection: selected.selection } });
+                if (control.some(value => Math.abs(value - background) > 8)) {
+                    throw new Error(`Backdrop control mismatch for ${background}: ${control.join(',')}`);
+                }
                 if (surface.some(value => Math.abs(value - expected) > 12)) {
                     throw new Error(`Desktop alpha mismatch at ${alpha}, backdrop ${background}: ${surface.join(',')}, expected ${expected}`);
                 }
@@ -129,4 +170,4 @@ async function verifyWindowsCompositor(window, directory) {
     }
 }
 
-module.exports = { verifyWindowsCompositor, _test: { thumbnailCropForDipRect, representativeRgb, selectScreenSource } };
+module.exports = { verifyWindowsCompositor, _test: { thumbnailCropForDipRect, representativeRgb, selectScreenSource, backdropControlRect } };
