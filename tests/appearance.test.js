@@ -52,3 +52,26 @@ test('resized HUD bounds survive transitions/restart and clamp after display rem
     assert.ok(calls.filter(([type]) => type === 'protected').every(([, value]) => value === true));
     assert.ok(calls.filter(([type]) => type === 'material').every(([, value]) => value === 'none'));
 });
+
+test('content protection is production-owned but never applied to the isolated compositor smoke window', () => {
+    const run = contentProtection => {
+        let bounds = { x: 10, y: 10, width: 800, height: 500 };
+        const protectedValues = [];
+        const win = {
+            getBounds: () => ({ ...bounds }), isDestroyed: () => false, isVisible: () => true,
+            setBounds(value) { bounds = value; }, setMinimumSize() {}, setIgnoreMouseEvents() {},
+            setContentProtection(value) { protectedValues.push(value); }, setAlwaysOnTop() {},
+            setSkipTaskbar() {}, setBackgroundMaterial() {}, moveTop() {},
+        };
+        const display = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+        const controller = createWindowModeController(win, { getDisplayMatching: () => display }, { contentProtection });
+        controller.enterHudMode();
+        controller.enterNormalMode();
+        return protectedValues;
+    };
+    const production = run(true);
+    assert.ok(production.length >= 1);
+    assert.ok(production.every(value => value === true));
+    assert.deepEqual(run(false), []);
+});
+
