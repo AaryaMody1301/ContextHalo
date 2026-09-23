@@ -250,27 +250,8 @@ function installIpcHandlerHardening() {
     };
 }
 
-function setupRuntimeWindowHardening(mainWindow) {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-
-    try {
-        ipcMain.removeHandler('window-toggle-maximize');
-    } catch {}
-
-    ipcMain.handle('window-toggle-maximize', event => {
-        if (!event?.sender || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id || event.senderFrame !== mainWindow.webContents.mainFrame) {
-            return { success: false, error: 'Untrusted renderer' };
-        }
-        if (mainWindow.isMaximized()) mainWindow.unmaximize();
-        else mainWindow.maximize();
-        return { success: true, maximized: mainWindow.isMaximized() };
-    });
-
-}
-
 module.exports = {
     resetRuntimeAudio: resetGroqVad,
     prepareRuntimeProvider,
     installIpcHandlerHardening,
-    setupRuntimeWindowHardening,
 };
