@@ -95,21 +95,3 @@ These sources define platform/provider contracts, not the user's exact Gemini en
 The physical/provider matrix still requires real account Search-on/off comparisons, audio devices, Windows sleep/wake, multi-monitor/physical DPI, third-party capture protection, native CPU/Vulkan inference, interrupted downloads and wall-clock 1h/4h/8h sessions. Its historical `not-run` results remain unchanged.
 
 The connected repository write interface does not grant Administration writes for rulesets or immutable-release settings. The existing Phase 8 policy/applicator is retained; those settings must be applied with appropriate authorization and verified, not bypassed with an Actions token. A passing source suite or an earlier closure document is not evidence that either administrative setting is enabled. Do not publish a final-completion claim until CI and the relevant real acceptance evidence exist.
-
-## Official contract references checked
-
-- Windows GDI BitBlt and layered capture: https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt
-- .NET CopyFromScreen enumeration validation: https://learn.microsoft.com/en-us/dotnet/api/system.drawing.graphics.copyfromscreen
-- Graphics HDC ownership: https://learn.microsoft.com/en-us/windows/win32/api/gdiplusgraphics/nf-gdiplusgraphics-graphics-gethdc
-- Desktop DC release: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-releasedc
-- Electron transparent windows: https://www.electronjs.org/docs/latest/tutorial/custom-window-styles
-- Electron native geometry: https://www.electronjs.org/docs/latest/api/base-window
-- Electron DIP/physical conversion: https://www.electronjs.org/docs/latest/api/screen
-- Gemini 3.8 Live capabilities: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live
-- Live Google Search tools: https://ai.google.dev/gemini-api/docs/live-api/tools
-- Live compression/resumption: https://ai.google.dev/gemini-api/docs/live-api/session-management
-- Gemini limits: https://ai.google.dev/gemini-api/docs/rate-limits
-- Search pricing/accounting: https://ai.google.dev/gemini-api/docs/pricing
-- HTTP grounding contract: https://ai.google.dev/gemini-api/docs/generate-content/google-search
-
-These sources describe platform/provider contracts, not the user's project entitlement, exact quota or Windows GPU/compositor behavior.
