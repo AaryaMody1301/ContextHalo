@@ -163,6 +163,10 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     };
     const windowModeController = createWindowModeController(mainWindow, screen, {
         bounds: storage.getConfig().windowBounds,
+        // The isolated smoke profile contains no user/account data. Never apply
+        // capture exclusion there: Electron/Windows may render a protected
+        // window black to desktop capture even after a later disable call.
+        contentProtection: !process.argv.includes('--ci-smoke-test'),
         saveBounds(value) {
             pendingBounds = value;
             clearTimeout(boundsTimer);
