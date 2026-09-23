@@ -47,6 +47,10 @@ function resizeBounds(bounds, edge, dx, dy, area, minimum = NORMAL_MINIMUM_SIZE)
 }
 
 function createWindowModeController(mainWindow, screen, options = {}) {
+    const contentProtectionEnabled = options.contentProtection !== false;
+    const protectContent = () => {
+        if (contentProtectionEnabled) mainWindow.setContentProtection(true);
+    };
     let hudActive = false;
     let normalBounds = validBounds(options.bounds?.normal) ? options.bounds.normal : mainWindow.getBounds();
     let hudBounds = validBounds(options.bounds?.hud) ? options.bounds.hud : null;
@@ -61,7 +65,7 @@ function createWindowModeController(mainWindow, screen, options = {}) {
     };
     const reassertHudMode = () => {
         if (!hudActive || mainWindow.isDestroyed()) return;
-        mainWindow.setContentProtection(true);
+        protectContent();
         mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
         try { mainWindow.moveTop(); } catch {}
     };
@@ -89,7 +93,7 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         if (wasHud) hudBounds = mainWindow.getBounds();
         hudActive = false;
         mainWindow.setIgnoreMouseEvents(false);
-        mainWindow.setContentProtection(true);
+        protectContent();
         mainWindow.setAlwaysOnTop(false);
         setSkipTaskbar(mainWindow, false);
         disableBackdrop(mainWindow);
@@ -159,7 +163,7 @@ function createWindowModeController(mainWindow, screen, options = {}) {
     if (normalExpanded || validBounds(options.bounds?.normal)) {
         applyBounds(normalExpanded ? getDisplayForBounds(screen, normalBounds).workArea : normalBounds, NORMAL_MINIMUM_SIZE);
     }
-    mainWindow.setContentProtection(true);
+    protectContent();
     disableBackdrop(mainWindow);
     return { rememberBounds, enterHudMode, enterNormalMode, repositionHud, reassertHudMode, moveBy,
         resize, cancelResize, toggleExpanded, isHudActive: () => hudActive };
