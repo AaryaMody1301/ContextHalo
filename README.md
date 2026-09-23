@@ -1,5 +1,7 @@
 # ContextHalo
 
+Runtime status and source map: [September 23 final repair](docs/FINAL_RUNTIME_REPAIR_2026-09-23.md). This is not a claim that physical Windows/provider acceptance or repository Administration gates have passed.
+
 ContextHalo is an open-source, context-aware AI desktop assistant for Windows. It combines screen context, Windows system audio, microphone input, typed prompts, and local or cloud AI models to provide real-time assistance for meetings, presentations, development workflows, research, and general productivity.
 
 > **Supported platform:** Windows 10/11 x64.
@@ -110,3 +112,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT
 ContextHalo is a substantially modified and rebranded derivative of earlier GPL-3.0 work. See [CREDITS.md](CREDITS.md) for attribution and provenance.
 
 Licensed under the [GNU General Public License v3.0](LICENSE).
+
+### Transparency and Google Search recovery
+
+HUD opacity changes the background only; text and controls remain solid. Drag the window edges/corners to resize, or focus the bottom-right resize handle and use Arrow keys (Shift for larger steps). Workspace fit/restore is application-owned; the transparent native window never enables native resize/maximize. Keep DevTools closed when evaluating desktop transparency.
+
+Live and text/screen Search may have different effective states after recovery. Session details show both routes and the reason. A Search-enabled Live setup quota/1011 failure may receive one bounded same-model Search-off control; success keeps Live available without changing the saved preference or HTTP Search. An HTTP failure is never silently resent without Search: use **Retry request without Search** to opt out for the text/screen route. A generic quota error does not by itself identify a project/model quota.
