@@ -165,6 +165,7 @@ test('resize renderer bounds in-flight IPC and releases pointer capture on teard
 test('unsupported transparent-window and duplicate maximize owners are removed', () => {
     const window = fs.readFileSync('src/utils/window.js', 'utf8');
     assert.match(window, /transparent: true/); assert.match(window, /resizable: false/); assert.match(window, /thickFrame: false/);
+    assert.match(window, /contentProtection:\s*!process\.argv\.includes\('--ci-smoke-test'\)/);
     assert.doesNotMatch(fs.readFileSync('src/utils/windowModeController.js', 'utf8'), /setResizable\(true\)|\.maximize\(/);
     assert.doesNotMatch(fs.readFileSync('src/utils/runtimeHardeningMain.js', 'utf8'), /setupRuntimeWindowHardening|window-toggle-maximize/);
 });
