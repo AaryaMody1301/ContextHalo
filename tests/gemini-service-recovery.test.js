@@ -58,7 +58,7 @@ test('Live-only Search fallback retains Search tools and instructions in text an
     } }); t.after(() => f.close());
     const started = await f.start();
     assert.equal(started.success, true);
-    assert.equal(started.search.effective, false);
+    assert.equal(started.search.liveEffective, false);
     assert.equal(started.search.httpEffective, true);
     await f.call('send-text-message', 'question');
     await f.call('send-image-content', { data: Buffer.alloc(1100).toString('base64'), mimeType: 'image/jpeg', prompt: 'Read the code' });
@@ -69,7 +69,7 @@ test('Live-only Search fallback retains Search tools and instructions in text an
     assert.equal(f.preferences.googleSearchEnabled, true);
 });
 
-for (const [status, reason] of [[401, 'unauthenticated'], [403, 'permission_denied'], [429, 'daily quota exceeded']]) {
+for (const [status, reason] of [[401, 'unauthenticated'], [403, 'permission_denied'], [429, 'generate_content_requests quota exceeded']]) {
     test(`Live setup ${status} inside 1011 is not bypassed by dropping capabilities`, async t => {
         const f = geminiFixture({ search: true, live: async params => {
             params.callbacks.onopen?.({});
@@ -79,7 +79,7 @@ for (const [status, reason] of [[401, 'unauthenticated'], [403, 'permission_deni
         const result = await f.start();
         assert.equal(result.success, false);
         assert.equal(f.connections.length, 1);
-        assert.equal(result.search.effective, true);
+        assert.equal(result.search.liveEffective, true);
     });
 }
 
