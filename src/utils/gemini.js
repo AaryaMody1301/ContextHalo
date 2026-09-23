@@ -391,22 +391,6 @@ function stripThinkingTags(text) {
     return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 }
 
-function getGeminiErrorDetail(error) {
-    const values = [
-        error?.message,
-        error?.reason,
-        error?.error?.message,
-        error?.error?.status,
-        error?.status,
-        Number.isFinite(error?.code) ? `code ${error.code}` : '',
-    ].filter(Boolean).map(String);
-    return [...new Set(values)].join(' · ') || String(error || 'Unknown Gemini error');
-}
-
-function formatGeminiError(error) {
-    return classifyGeminiFailure(error).message;
-}
-
 async function getGeminiLivePreflightError(apiKey, liveModel, signal) {
     const deadline = deadlineSignal(signal, 10000);
     try {
@@ -858,7 +842,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 const success = await attemptReconnect(details);
                 if (!success) throw failureError(lastGeminiFailure || classifyGeminiFailure(new Error('Gemini reconnect failed'), 'live', liveModel));
             },
-            normalizeFailure: error => classifyGeminiFailure(error, 'live', liveModel),
+            normalizeFailure: error => classifyGeminiFailure(error, 'live', liveModel, Date.now(), { searchAttached: searchState.liveEffective }),
             publishState(state, detail) {
                 if (state === 'reconnecting') {
                     publishProviderState('reconnecting');
@@ -872,13 +856,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         });
     }
     const current = () => generation === liveGeneration && !signal.aborted;
-    const buildInstruction = () => {
+    const buildInstruction = (liveSearch = searchState.liveEffective) => {
         currentSystemPrompt = getSystemPrompt(profile, customPrompt, searchState.httpEffective);
-        const livePrompt = getSystemPrompt(profile, customPrompt, searchState.effective);
+        const livePrompt = getSystemPrompt(profile, customPrompt, liveSearch);
         let value = tuneLiveSystemInstruction(appendSessionPack(livePrompt), getPreferences().responseMode);
         return appendContextToInstruction(value, retrieveContext('', { limit: 4, maxChars: 6500 }));
     };
-    let instruction = buildInstruction();
     publishProviderState(isReconnect ? 'reconnecting' : 'connecting');
     try {
         if (!isReconnect) {
@@ -945,9 +928,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             },
             onerror(error, recovery) {
                 if (!current() || !liveSessionReady) return;
-                lastGeminiFailure = classifyGeminiFailure(error, 'live', liveModel);
+                lastGeminiFailure = classifyGeminiFailure(error, 'live', liveModel, Date.now(), { searchAttached: searchState.liveEffective });
                 if (lastGeminiFailure.retryAt > Date.now()) {
-                    geminiCooldowns.set(cooldownKey(apiKey, liveModel), lastGeminiFailure);
+                    const baseKey = cooldownKey(apiKey, liveModel);
+                    geminiCooldowns.set(lastGeminiFailure.quotaScope === 'model' || !searchState.liveEffective ? baseKey : `${baseKey}:live:search`, lastGeminiFailure);
                 }
                 if (!recovery?.recoverable) {
                     publishProviderState('failed', lastGeminiFailure);
@@ -957,9 +941,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             onclose(event, recovery) {
                 if (!current() || !liveSessionReady || isUserClosing) return;
                 global.geminiSessionRef.current = null;
-                lastGeminiFailure = classifyGeminiFailure(event, 'live', liveModel);
+                lastGeminiFailure = classifyGeminiFailure(event, 'live', liveModel, Date.now(), { searchAttached: searchState.liveEffective });
                 if (lastGeminiFailure.retryAt > Date.now()) {
-                    geminiCooldowns.set(cooldownKey(apiKey, liveModel), lastGeminiFailure);
+                    const baseKey = cooldownKey(apiKey, liveModel);
+                    geminiCooldowns.set(lastGeminiFailure.quotaScope === 'model' || !searchState.liveEffective ? baseKey : `${baseKey}:live:search`, lastGeminiFailure);
                 }
                 if (!recovery?.recoverable) {
                     publishProviderState('failed', lastGeminiFailure);
@@ -974,7 +959,6 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             if (!liveSessionReady) { if (setupMessages.length < 64) setupMessages.push(message); return; }
             runtimeCallbacks.onmessage(message);
         } };
-        let tools = await getEnabledTools('live');
         let session;
         for (let freshFallback = 0; freshFallback < 2; freshFallback++) {
             const reliabilityConfig = geminiLiveRuntime.getConnectConfig();
@@ -983,41 +967,30 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 session = await runGeminiRequest(async (remaining, _attempt, operationSignal) => {
                     setupMessages = [];
                     const attemptStarted = Date.now();
-                    const connect = () => {
+                    const connect = ({ searchEnabled, coreConfig }) => {
+                        setupMessages = [];
                         // Replay is based on the configuration actually sent, not
                         // on a resumption handle omitted by compatibility mode.
-                        const connectConfig = liveSetupCompatibility ? {} : reliabilityConfig;
+                        const connectConfig = coreConfig ? {} : { ...reliabilityConfig };
+                        // A tool change must not resume an old Search-enabled
+                        // session. Fresh controls restore bounded local history.
+                        if (!searchEnabled && searchState.liveEffective && connectConfig.sessionResumption?.handle) {
+                            connectConfig.sessionResumption = {};
+                        }
                         contextMessage = isReconnect && !connectConfig.sessionResumption?.handle ? buildContextMessage() : null;
                         return connectGeminiLiveWithGuard(client, {
                             model: liveModel, callbacks,
                             config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
                                 ...connectConfig,
                                 ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
-                                systemInstruction: instruction, ...(tools.length ? { tools } : {}) },
+                                systemInstruction: buildInstruction(searchEnabled), ...(searchEnabled ? { tools: [{ googleSearch: {} }] } : {}) },
                         }, Math.max(1, Math.min(15000, remaining - (Date.now() - attemptStarted))), operationSignal);
                     };
-                    let connected;
-                    let setupError;
-                    try {
-                        connected = await connect();
-                    } catch (error) {
-                        setupError = error;
-                    }
-                    if (!connected && shouldRetryLiveSetupWithoutSearch(setupError)) {
-                        disableLiveSearchForSetupCompatibility();
-                        tools = [];
-                        instruction = buildInstruction();
-                        setupMessages = [];
-                        operationSignal.throwIfAborted();
-                        try { connected = await connect(); } catch (error) { setupError = error; }
-                    }
-                    if (!connected && shouldRetryLiveSetupWithCoreConfig(setupError)) {
-                        enableLiveSetupCompatibility();
-                        setupMessages = [];
-                        operationSignal.throwIfAborted();
-                        connected = await connect();
-                    }
-                    if (!connected) throw setupError;
+                    const connected = await recoverGeminiSetup(connect, {
+                        model: liveModel, searchEnabled: searchState.liveEffective, coreConfig: liveSetupCompatibility,
+                        signal: operationSignal, onSearchFallback: disableLiveSearchForSetupCompatibility,
+                        onCoreFallback: enableLiveSetupCompatibility,
+                    });
                     if (contextMessage) {
                         try {
                             connected.sendClientContent({
@@ -1030,7 +1003,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         }
                     }
                     return connected;
-                }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000 });
+                }, { operation: 'live', model: liveModel, apiKey, signal, budgetMs: 35000, searchAttached: searchState.liveEffective });
                 break;
             } catch (error) {
                 const failure = classifyGeminiFailure(error, 'live', liveModel);
