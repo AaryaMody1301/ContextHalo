@@ -577,7 +577,7 @@ export class ContextHaloApp extends LitElement {
     }
 
     retryProvider(withoutSearch = false) {
-        if (Math.max(this.providerError?.retryAt || 0, this.requestError?.retryAt || 0) > Date.now()) return Promise.resolve({ success: false });
+        if (this.providerError?.retryAt > Date.now()) return Promise.resolve({ success: false });
         if (!this.sessionActive) return this.handleStart(withoutSearch ? { searchEnabled: false } : {});
         if (this._retryPromise) return this._retryPromise;
         const epoch = this._uiSessionEpoch;

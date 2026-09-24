@@ -81,6 +81,20 @@ test('retrying the old text sends that text without erasing a newer draft or ste
     assert.deepEqual(sent, ['old failed question']); assert.equal(field.value, 'new draft');
 });
 
+test('HTTP cooldown does not block Live reconnect, while Live cooldown still does', async () => {
+    const { app, calls } = requestApp(); await tick();
+    app._sessionStarted = true; app._setLifecycle('active');
+    const requestError = { operation: 'screen', message: 'HTTP Search limit', retryAt: Date.now() + 60000 };
+    app.requestError = requestError;
+    app.providerError = { message: 'Live disconnected', retryAt: 0 };
+    assert.equal((await app.retryProvider()).success, true);
+    assert.equal(calls.filter(channel => channel === 'retry-session-connection').length, 1);
+    assert.equal(app.requestError, requestError, 'Live recovery preserves the independent request error');
+    app.providerError = { message: 'Live limit', retryAt: Date.now() + 60000 };
+    assert.equal((await app.retryProvider()).success, false);
+    assert.equal(calls.filter(channel => channel === 'retry-session-connection').length, 1);
+});
+
 for (const provider of ['byok', 'groq', 'local']) test(`${provider}: actual IPC results retain request ID, operation and UI epoch`, async t => {
     const f = geminiFixture(); t.after(() => f.close());
     await f.start(provider, { uiEpoch: 37 });
