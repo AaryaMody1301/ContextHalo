@@ -77,4 +77,3 @@ test('content protection is production-owned but never applied to the isolated c
     assert.ok(production.every(value => value === true));
     assert.deepEqual(run(false), []);
 });
-
