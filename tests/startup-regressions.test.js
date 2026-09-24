@@ -126,10 +126,10 @@ test('Gemini Live setup retries once without Search after a setup-level WebSocke
     assert.equal(JSON.stringify(f.connections[0].config.tools), JSON.stringify([{ googleSearch: {} }]));
     assert.equal(f.connections[1].config.tools, undefined);
     assert.equal(result.search.requested, true);
-    assert.equal(result.search.effective, false);
+    assert.equal(result.search.liveEffective, false);
     assert.equal(result.search.status, 'live-setup-fallback');
     assert.equal(f.preferences.googleSearchEnabled, true, 'saved Search preference is unchanged');
-    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /retrying Gemini Live without Search/i.test(value)));
+    assert.ok(f.events.some(([channel, value]) => channel === 'update-status' && /Gemini Live connected without Search/i.test(value)));
 });
 
 test('a compatibility fallback is limited to one fresh session and does not disable later long-session reliability', async t => {

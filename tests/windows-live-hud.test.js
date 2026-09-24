@@ -1,18 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const {
     getHudBounds,
     clampBoundsToWorkArea,
 } = require('../src/utils/windowModeController');
-
-const root = path.join(__dirname, '..');
-
-function read(relativePath) {
-    return fs.readFileSync(path.join(root, relativePath), 'utf8');
-}
 
 test('live HUD is top-centered and bounded on a 1080p-class Windows work area', () => {
     const bounds = getHudBounds({ workArea: { x: 0, y: 0, width: 1920, height: 1040 } });
@@ -44,24 +36,28 @@ test('restored normal bounds are clamped into the current Windows work area', ()
 
 
 
-test('returning from HUD restores the maximized state and original normal bounds', () => {
+test('workspace expansion survives HUD transitions without native maximize or resizing', () => {
     const { createWindowModeController } = require('../src/utils/windowModeController');
     const original = { x: 50, y: 60, width: 900, height: 650 };
-    let bounds = { x: 0, y: 0, width: 1920, height: 1040 };
-    let maximized = true;
+    let bounds = { ...original };
+    let saved;
     const window = {
-        getBounds: () => bounds, getNormalBounds: () => original,
-        isDestroyed: () => false, isMaximized: () => maximized,
-        unmaximize() { maximized = false; bounds = { width: 700, height: 320, x: 0, y: 0 }; },
-        maximize() { maximized = true; }, setBounds(value) { bounds = value; },
+        getBounds: () => bounds, isDestroyed: () => false,
+        maximize() { assert.fail('Transparent windows must not use native maximize'); },
+        setResizable() { assert.fail('Transparent windows must stay natively non-resizable'); },
+        setBounds(value) { bounds = value; },
         setContentProtection() {}, setBackgroundMaterial() {}, setMinimumSize() {},
-        setResizable() {}, setSkipTaskbar() {}, setAlwaysOnTop() {}, setIgnoreMouseEvents() {}, moveTop() {},
+        setSkipTaskbar() {}, setAlwaysOnTop() {}, setIgnoreMouseEvents() {}, moveTop() {},
     };
     const display = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
-    const controller = createWindowModeController(window, { getDisplayMatching: () => display });
+    const controller = createWindowModeController(window, { getDisplayMatching: () => display }, { saveBounds: value => { saved = value; } });
+    assert.equal(controller.toggleExpanded().maximized, true);
+    assert.deepEqual(bounds, display.workArea);
     controller.enterHudMode();
-    assert.equal(maximized, false);
+    assert.notDeepEqual(bounds, display.workArea);
     controller.enterNormalMode();
-    assert.equal(maximized, true);
+    assert.deepEqual(bounds, display.workArea);
+    assert.deepEqual(saved.normal, original);
+    assert.equal(controller.toggleExpanded().maximized, false);
     assert.deepEqual(bounds, original);
 });

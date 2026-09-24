@@ -108,16 +108,16 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     const mainWindow = new BrowserWindow({
         width: Math.min(DEFAULT_MAIN_WINDOW_SIZE.width, workArea.width),
         height: Math.min(DEFAULT_MAIN_WINDOW_SIZE.height, workArea.height),
-        minWidth: MIN_WINDOW_SIZE.width,
-        minHeight: MIN_WINDOW_SIZE.height,
-        resizable: true,
-        maximizable: true,
+        minWidth: Math.min(MIN_WINDOW_SIZE.width, workArea.width),
+        minHeight: Math.min(MIN_WINDOW_SIZE.height, workArea.height),
+        resizable: false,
+        maximizable: false,
         minimizable: true,
         frame: false,
         transparent: true,
-        hasShadow: true,
+        hasShadow: false,
         roundedCorners: true,
-        thickFrame: true,
+        thickFrame: false,
         alwaysOnTop: false,
         skipTaskbar: false,
         autoHideMenuBar: true,
@@ -163,12 +163,17 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     };
     const windowModeController = createWindowModeController(mainWindow, screen, {
         bounds: storage.getConfig().windowBounds,
+        // The isolated smoke profile contains no user/account data. Never apply
+        // capture exclusion there: Electron/Windows may render a protected
+        // window black to desktop capture even after a later disable call.
+        contentProtection: !process.argv.includes('--ci-smoke-test'),
         saveBounds(value) {
             pendingBounds = value;
             clearTimeout(boundsTimer);
             boundsTimer = setTimeout(saveBounds, 200);
         },
     });
+    for (const event of ['blur', 'hide', 'close']) mainWindow.on(event, windowModeController.cancelResize);
     mainWindow.on('moved', windowModeController.rememberBounds);
     mainWindow.on('resized', windowModeController.rememberBounds);
     mainWindow.on('close', saveBounds);
@@ -326,6 +331,16 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, wi
         mainWindow.setIgnoreMouseEvents(false);
         mainWindow.webContents.send('click-through-toggled', false);
         windowModeController?.enterNormalMode();
+    });
+
+    ipcMain.handle('window-resize', (event, request) => {
+        if (!isTrustedEvent(event, mainWindow) || mouseEventsIgnored) return { success: false, error: 'Window interaction unavailable' };
+        return windowModeController.resize(request);
+    });
+
+    ipcMain.handle('window-toggle-maximize', event => {
+        if (!isTrustedEvent(event, mainWindow)) return { success: false, error: 'Untrusted renderer' };
+        return windowModeController.toggleExpanded();
     });
 
     ipcMain.handle('window-minimize', event => {

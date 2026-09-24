@@ -27,6 +27,9 @@ async function liveServer(t, mode = 'success', fixtureOptions = {}) {
                 const message = JSON.parse(bytes.toString()); received.push(message);
                 if (message.setup) {
                     if (mode === 'configuration') connection.close(1008, 'Invalid setup configuration');
+                    else if (mode === 'search-quota' && message.setup.tools?.some(tool => tool.googleSearch)) connection.close(1011, 'Quota exceeded');
+                    else if (mode === 'model-quota') connection.close(1011, 'generate_content_requests quota exceeded');
+                    else if (mode === 'both-search-setups-fail') connection.close(1011, 'Internal server error');
                     else if (mode === 'search-setup-1011' && message.setup.tools?.some(tool => tool.googleSearch)) {
                         connection.close(1011, 'Search setup unavailable for this project');
                     } else if (mode === 'session-management-1011' && (message.setup.sessionResumption || message.setup.contextWindowCompression)) {
@@ -75,7 +78,7 @@ test('real SDK recovers from a setup-level 1011 by retrying the session without 
     assert.equal(received[0].setup.tools.some(tool => tool.googleSearch), true);
     assert.equal(received[1].setup.tools, undefined);
     assert.equal(result.search.requested, true);
-    assert.equal(result.search.effective, false);
+    assert.equal(result.search.liveEffective, false);
     assert.equal(result.search.status, 'live-setup-fallback');
 });
 
@@ -92,6 +95,17 @@ test('real SDK retries setup 1011 with the documented core Live configuration', 
     assert.deepEqual(received[1].setup.outputAudioTranscription, {});
 });
 
+test('real SDK failed Search-off comparison ends after two identical-core setups', { skip: !sdk, timeout: 5000 }, async t => {
+    const { fixture, received } = await liveServer(t, 'both-search-setups-fail', { search: true });
+    const result = await fixture.start();
+    assert.equal(result.success, false);
+    assert.equal(received.length, 2);
+    assert.equal(result.failure.searchControl, 'failed');
+    assert.equal(received[1].setup.tools, undefined);
+    assert.deepEqual(received[1].setup.contextWindowCompression, received[0].setup.contextWindowCompression);
+    assert.equal(result.search.httpEffective, true);
+});
+
 for (const [mode, category] of [['authentication', 'authentication'], ['configuration', 'invalid-configuration']]) {
     test(`real SDK ${mode} rejection is actionable and does not retry as a network outage`, { skip: !sdk, timeout: 5000 }, async t => {
         const { fixture } = await liveServer(t, mode);
@@ -102,3 +116,20 @@ for (const [mode, category] of [['authentication', 'authentication'], ['configur
         assert.doesNotMatch(result.error, /test-key-not-a-real-credential|127\.0\.0\.1/);
     });
 }
+
+for (const mode of ['search-quota', 'model-quota']) test(`real SDK ${mode} preserves quota scope and route-specific Search`, { skip: !sdk, timeout: 5000 }, async t => {
+    const { fixture, received } = await liveServer(t, mode, { search: true });
+    const result = await fixture.start('byok', { uiEpoch: 41 });
+    assert.equal(result.success, mode === 'search-quota');
+    assert.equal(received.length, mode === 'search-quota' ? 2 : 1);
+    assert.equal(result.search.requested, true);
+    assert.equal(result.search.httpEffective, true);
+    assert.equal(fixture.preferences.googleSearchEnabled, true);
+    if (mode === 'search-quota') {
+        assert.equal(received[1].setup.tools, undefined);
+        assert.equal(received[1].setup.model, received[0].setup.model);
+        assert.deepEqual(received[1].setup.sessionResumption, received[0].setup.sessionResumption);
+        assert.equal(result.search.liveEffective, false);
+        assert.match(result.search.liveReason, /unconfirmed/);
+    } else assert.equal(result.failure.quotaScope, 'model');
+});

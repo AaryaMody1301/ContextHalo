@@ -9,8 +9,10 @@ test('theme changes preserve saved alpha on the native-transparent window while 
         await f.api.theme.load(); await f.api.theme.save('light');
         assert.equal(f.api.theme.currentAlpha, alpha); assert.equal(f.prefs.backgroundTransparency, alpha);
         assert.equal(f.prefs.theme, 'light');
-        assert.equal(f.variables.get('--hud-background'), `rgba(255, 255, 255, ${alpha})`);
         assert.equal(f.variables.get('--window-background'), `rgba(255, 255, 255, ${alpha})`);
+        assert.equal(f.variables.get('--control-color-scheme'), 'light');
+        assert.equal(f.scope.document.documentElement.style.colorScheme, undefined,
+            'theme selection must not set root color-scheme because it changes the transparent canvas surface');
         assert.match(f.variables.get('--bg-app'), /^rgb\(/);
         const restarted = rendererFixture({ prefs: f.prefs }); await restarted.api.theme.load();
         assert.equal(restarted.api.theme.currentAlpha, alpha); assert.equal(restarted.api.theme.current, 'light');
@@ -51,5 +53,27 @@ test('resized HUD bounds survive transitions/restart and clamp after display rem
     assert.ok(calls.some(([type, value]) => type === 'topmost' && value === true));
     assert.ok(calls.some(([type, value]) => type === 'click-through' && value === false));
     assert.ok(calls.filter(([type]) => type === 'protected').every(([, value]) => value === true));
-    assert.ok(calls.filter(([type]) => type === 'material').every(([, value]) => value === 'none'));
+    assert.deepEqual(calls.filter(([type]) => type === 'material'), [], 'System backdrop changes must not reset native transparency');
+});
+
+test('content protection is production-owned but never applied to the isolated compositor smoke window', () => {
+    const run = contentProtection => {
+        let bounds = { x: 10, y: 10, width: 800, height: 500 };
+        const protectedValues = [];
+        const win = {
+            getBounds: () => ({ ...bounds }), isDestroyed: () => false, isVisible: () => true,
+            setBounds(value) { bounds = value; }, setMinimumSize() {}, setIgnoreMouseEvents() {},
+            setContentProtection(value) { protectedValues.push(value); }, setAlwaysOnTop() {},
+            setSkipTaskbar() {}, setBackgroundMaterial() {}, moveTop() {},
+        };
+        const display = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+        const controller = createWindowModeController(win, { getDisplayMatching: () => display }, { contentProtection });
+        controller.enterHudMode();
+        controller.enterNormalMode();
+        return protectedValues;
+    };
+    const production = run(true);
+    assert.ok(production.length >= 1);
+    assert.ok(production.every(value => value === true));
+    assert.deepEqual(run(false), []);
 });

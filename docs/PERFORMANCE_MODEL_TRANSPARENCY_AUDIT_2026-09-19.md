@@ -1,5 +1,7 @@
 # Performance, model, and transparency audit - 19 September 2026
 
+> Historical evidence at the recorded commit, not a current completion certificate. The current transparency/Search implementation and outstanding acceptance gates are documented in [Final runtime repair (September 23)](FINAL_RUNTIME_REPAIR_2026-09-23.md). Earlier native-resize, Search-state and blanket quota statements are superseded there; recorded test results are not retroactively changed.
+
 Baseline: `main` `3d4b12066f7be15433fc5037ebd79b2c27e8ee51`.
 
 ## Confirmed causes

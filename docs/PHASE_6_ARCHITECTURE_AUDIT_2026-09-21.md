@@ -1,5 +1,7 @@
 # Phase 6 Architecture Audit — 2026-09-21
 
+> Historical evidence at the recorded commit, not a current completion certificate. The current transparency/Search implementation and outstanding acceptance gates are documented in [Final runtime repair (September 23)](FINAL_RUNTIME_REPAIR_2026-09-23.md). Earlier native-resize, Search-state and blanket quota statements are superseded there; recorded test results are not retroactively changed.
+
 ## Baseline
 
 Phase 6 starts from merged Phase 5 `main` at `aa86deb30935b60db37c89566c16454e63497044`.

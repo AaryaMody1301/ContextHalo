@@ -57,39 +57,6 @@ async function extendedWindowsAcceptance(window, directory) {
     await navigate('main'); await navigate('customize');
     verify(await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('customize-view').keybinds.toggleVisibility===${JSON.stringify(oldState.data.toggleVisibility)}`), 'Settings reload displays the previous saved working binding');
 
-    // Accessibility snapshots exclude values (especially password field values).
-    window.webContents.debugger.attach('1.3');
-    try {
-        await window.webContents.debugger.sendCommand('Accessibility.enable');
-        for (const page of ['main','customize','ai-customize','history','help','feedback','onboarding']) {
-            await navigate(page);
-            const { nodes } = await window.webContents.debugger.sendCommand('Accessibility.getFullAXTree');
-            const controls = nodes.filter(node => !node.ignored && ['button','textbox','combobox','slider','checkbox','dialog'].includes(node.role?.value))
-                .map(node => ({ role:node.role.value, name:node.name?.value || '' }));
-            verify(controls.every(control => Boolean(control.name.trim())), `${page}: accessibility tree exposes names for all interactive controls`);
-            accessibility.push({ page, controls });
-        }
-        await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[{name:'prefers-reduced-motion',value:'reduce'}] });
-        verify(await evaluate(`matchMedia('(prefers-reduced-motion:reduce)').matches && document.querySelector('context-halo-app').shadowRoot.querySelector('onboarding-view').shadowRoot.querySelectorAll('canvas').length===0`), 'Reduced-motion onboarding has no animated canvas or animation loop');
-        await capture('onboarding-reduced-motion');
-        await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[] });
-        await navigate('main');
-        for (const tab of ['knowledge','practice','review']) {
-            await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('#phase4-${tab}-nav').focus()`);
-            await key('Return'); await delay(150);
-            verify(await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('.phase4-overlay').open`), `${tab}: native Enter opens the workspace`);
-            for (let n=0;n<12;n++) {
-                await key('Tab', n%3===0 ? ['shift'] : []);
-                verify(await evaluate(`Boolean(document.querySelector('context-halo-app').shadowRoot.activeElement?.closest('.phase4-overlay'))`), `${tab}: native Tab and Shift+Tab stay in the workspace`);
-            }
-            const { nodes } = await window.webContents.debugger.sendCommand('Accessibility.getFullAXTree');
-            const controls = nodes.filter(node => !node.ignored && ['button','textbox','combobox','slider','checkbox','dialog'].includes(node.role?.value)).map(node=>({role:node.role.value,name:node.name?.value||''}));
-            verify(controls.every(control=>control.name.trim()), `${tab}: accessibility tree names every workspace control`);
-            accessibility.push({page:tab,controls}); await capture(`workspace-${tab}`);
-            await key('Escape');
-            verify(await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;return !root.querySelector('.phase4-overlay').open && root.activeElement?.id==='phase4-${tab}-nav';})()`), `${tab}: Escape closes and restores the opener`);
-        }
-    } finally { window.webContents.debugger.detach(); }
 
     await navigate('main');
     await evaluate(`(async()=>{const view=document.querySelector('context-halo-app').shadowRoot.querySelector('main-view');view._mode='local';view._setupOpen=true;await view.updateComplete;view.shadowRoot.querySelector('.mode-link[aria-label]')?.focus();})()`);
@@ -179,7 +146,51 @@ async function extendedWindowsAcceptance(window, directory) {
     verify(window.isVisible() && !window.isMinimized(), 'Hidden or minimized HUD is restored through its recovery path');
     verify(await evaluate(`document.querySelector('context-halo-app').sessionActive`), 'Hide and restore do not end the active session');
     minimum.launch = launch; minimum.tools = toolBody; minimum.recovery = windowApi.getShortcutState().recovery;
-    return { minimum, keyboard, accessibility };
+    // One compositor check on the exact package at 100%, not four redundant
+    // runs and not a renderer capture presented as desktop transparency proof.
+    let compositor;
+    if ((require('electron').app.isPackaged && process.argv.includes('--force-device-scale-factor=1'))
+        || process.argv.includes('--compositor-acceptance')) {
+        compositor = await require('./windows-compositor-acceptance').verifyWindowsCompositor(window, directory);
+    }
+    // Run debugger-based accessibility checks last. Detaching Chromium's
+    // inspector clears its canvas override; compositor evidence must use an
+    // untouched production renderer, with no debugger having been attached.
+    // Accessibility snapshots exclude values (especially password field values).
+    window.webContents.debugger.attach('1.3');
+    try {
+        await window.webContents.debugger.sendCommand('Accessibility.enable');
+        for (const page of ['main','customize','ai-customize','history','help','feedback','onboarding']) {
+            await navigate(page);
+            const { nodes } = await window.webContents.debugger.sendCommand('Accessibility.getFullAXTree');
+            const controls = nodes.filter(node => !node.ignored && ['button','textbox','combobox','slider','checkbox','dialog'].includes(node.role?.value))
+                .map(node => ({ role:node.role.value, name:node.name?.value || '' }));
+            verify(controls.every(control => Boolean(control.name.trim())), `${page}: accessibility tree exposes names for all interactive controls`);
+            accessibility.push({ page, controls });
+        }
+        await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[{name:'prefers-reduced-motion',value:'reduce'}] });
+        verify(await evaluate(`matchMedia('(prefers-reduced-motion:reduce)').matches && document.querySelector('context-halo-app').shadowRoot.querySelector('onboarding-view').shadowRoot.querySelectorAll('canvas').length===0`), 'Reduced-motion onboarding has no animated canvas or animation loop');
+        await capture('onboarding-reduced-motion');
+        await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[] });
+        await navigate('main');
+        for (const tab of ['knowledge','practice','review']) {
+            await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('#phase4-${tab}-nav').focus()`);
+            await key('Return'); await delay(150);
+            verify(await evaluate(`document.querySelector('context-halo-app').shadowRoot.querySelector('.phase4-overlay').open`), `${tab}: native Enter opens the workspace`);
+            for (let n=0;n<12;n++) {
+                await key('Tab', n%3===0 ? ['shift'] : []);
+                verify(await evaluate(`Boolean(document.querySelector('context-halo-app').shadowRoot.activeElement?.closest('.phase4-overlay'))`), `${tab}: native Tab and Shift+Tab stay in the workspace`);
+            }
+            const { nodes } = await window.webContents.debugger.sendCommand('Accessibility.getFullAXTree');
+            const controls = nodes.filter(node => !node.ignored && ['button','textbox','combobox','slider','checkbox','dialog'].includes(node.role?.value)).map(node=>({role:node.role.value,name:node.name?.value||''}));
+            verify(controls.every(control=>control.name.trim()), `${tab}: accessibility tree names every workspace control`);
+            accessibility.push({page:tab,controls}); await capture(`workspace-${tab}`);
+            await key('Escape');
+            verify(await evaluate(`(()=>{const root=document.querySelector('context-halo-app').shadowRoot;return !root.querySelector('.phase4-overlay').open && root.activeElement?.id==='phase4-${tab}-nav';})()`), `${tab}: Escape closes and restores the opener`);
+        }
+    } finally { window.webContents.debugger.detach(); }
+
+    return { minimum, keyboard, accessibility, compositor };
 }
 
 module.exports = { extendedWindowsAcceptance };

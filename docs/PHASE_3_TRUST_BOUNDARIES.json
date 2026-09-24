@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "auditedAt": "2026-09-21",
+  "auditedAt": "2026-09-23",
   "repository": "AaryaMody1301/ContextHalo",
-  "auditBaseline": "8c145a768a0c460893d42e7d4fa153f7294c5f0c",
+  "auditBaseline": "a236c19e2f87fdb493b65c21393ebefc13ef7a6c",
   "rendererToMain": [
     {
       "transport": "invoke",
@@ -70,13 +70,14 @@
     },
     {
       "transport": "invoke",
-      "owner": "src/utils/window.js + src/utils/runtimeHardeningMain.js",
+      "owner": "src/utils/window.js + src/utils/windowModeController.js",
       "channels": [
         "window-minimize",
         "window-toggle-maximize",
-        "toggle-window-visibility"
+        "toggle-window-visibility",
+        "window-resize"
       ],
-      "boundary": "main-window WebContents + exact main frame; no renderer-owned BrowserWindow object is accepted"
+      "boundary": "main-window WebContents + exact main frame; resize phase/edge/key enums; main samples the OS cursor in DIPs; no renderer coordinates or BrowserWindow accepted; inactive/hidden/blurred gestures cancelled; native resize/maximize never enabled"
     },
     {
       "transport": "invoke",
@@ -94,9 +95,10 @@
         "send-text-message",
         "close-session",
         "get-current-session",
-        "start-new-session"
+        "start-new-session",
+        "disable-http-search"
       ],
-      "boundary": "main-window WebContents + exact main frame; typed payload bounds, UI/session epochs, cancellation and provider-specific validation"
+      "boundary": "main-window WebContents + exact main frame; typed payload bounds, UI/session epochs, cancellation and provider-specific validation; HTTP-only Search opt-out additionally requires an active Gemini session and matching uiEpoch, and never reconnects Live"
     },
     {
       "transport": "send",

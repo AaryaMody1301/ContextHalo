@@ -356,7 +356,7 @@ export const contextHaloAppStyles = css`
         }
 
         /* A single alpha surface; child backgrounds must not compound it. */
-        .app-shell.live-hud { background: var(--window-background, var(--hud-background, rgba(10,10,10,0.8))); }
+        .app-shell.live-hud { background: var(--window-background, rgba(10,10,10,0.8)); }
         .live-hud .content, .content-inner.live { background: transparent; }
         .live-bar {
             display: grid;

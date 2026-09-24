@@ -221,9 +221,9 @@ async function rendererBehaviorSmoke() {
     await api.storage.updatePreference('backgroundTransparency',0.37);await api.theme.save('light');await api.theme.save('dark');await api.theme.load();
     verify(api.theme.currentAlpha===0.37,'Changing theme and reloading appearance preserve saved alpha');
     await api.storage.updatePreference('backgroundTransparency',storedAlpha);
-    app.searchState={requested:true,effective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
+    app.searchState={requested:true,liveEffective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
     verify(app.shadowRoot.querySelector('.search-state').textContent.includes('off (session)'),'Requested/effective Search remains visible independently of transient status');
-    app.searchState={requested:true,effective:false,httpEffective:true,status:'live-setup-fallback'};await settle(app);
+    app.searchState={requested:true,liveEffective:false,httpEffective:true,status:'live-setup-fallback'};await settle(app);
     verify(app.shadowRoot.querySelector('.search-state').textContent.includes('text/screen only'),'Live fallback keeps HTTP Search visibly enabled');
     app.requestError={operation:'text',httpStatus:503,model:'gemini-3.8-flash',message:'Controlled service unavailable',retryAt:0};
     await app.openSessionDetails();await settle(app);
@@ -435,7 +435,7 @@ function installWindowsSmokeCheck(window) {
                         contextHalo.theme.apply(${JSON.stringify(theme)}, ${alpha});
                         app.navigate('assistant'); await app.updateComplete;
                         app.providerState = 'ready'; app.statusText = 'Controlled renderer fixture - no live account or device';
-                        app.searchState = {requested:true,effective:false,status:'disabled-for-session'};
+                        app.searchState = {requested:true,liveEffective:false,status:'disabled-for-session'};
                         await app.updateComplete; await new Promise(resolve=>setTimeout(resolve,100));
                         const shell=app.shadowRoot.querySelector('.app-shell');
                         return { theme:${JSON.stringify(theme)}, alpha:${alpha}, background:getComputedStyle(shell).backgroundColor, devicePixelRatio, width:innerWidth, height:innerHeight };
@@ -444,8 +444,8 @@ function installWindowsSmokeCheck(window) {
                     fs.writeFileSync(path.join(directory, `hud-${theme}-${alpha}.png`), (await window.webContents.capturePage()).toPNG());
                 }
             }
-            const { minimum, keyboard, accessibility } = await extendedWindowsAcceptance(window, directory);
-            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, keyboard, accessibility, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
+            const { minimum, keyboard, accessibility, compositor } = await extendedWindowsAcceptance(window, directory);
+            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, keyboard, accessibility, compositor, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
             if (rendererErrors.length) throw new Error('Renderer console errors: '+rendererErrors.join('; '));
             finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {

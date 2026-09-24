@@ -152,11 +152,13 @@
                 const baseRgb = this.hexToRgb(backgroundColor);
                 const windowBackground = `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${alpha})`;
                 root.style.setProperty('--window-background', windowBackground);
-                root.style.setProperty('--hud-background', windowBackground);
                 // The native BrowserWindow is transparent. Apply alpha only to the root
                 // window surface; text and cards keep opaque theme colors for readability.
                 root.style.setProperty('--control-color-scheme', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark');
-                root.style.colorScheme = (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128 ? 'light' : 'dark';
+                // Do not set color-scheme on the document root. CSS Color Adjustment
+                // makes the root scheme affect the canvas surface itself, which can
+                // turn an otherwise transparent Electron canvas into an opaque UA
+                // dark/light canvas. Controls opt in through --control-color-scheme.
                 this._appearanceRevision = (this._appearanceRevision || 0) + 1;
                 root.style.setProperty('--hud-text-shadow', (baseRgb.r + baseRgb.g + baseRgb.b) / 3 > 128
                     ? '0 1px 2px rgba(255,255,255,0.85)' : '0 1px 2px rgba(0,0,0,0.9)');
