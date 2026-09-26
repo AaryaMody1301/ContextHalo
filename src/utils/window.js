@@ -119,7 +119,8 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         roundedCorners: true,
         thickFrame: false,
         alwaysOnTop: false,
-        skipTaskbar: false,
+        skipTaskbar: true,
+        show: false,
         autoHideMenuBar: true,
         title: 'ContextHalo',
         icon: path.join(__dirname, '../assets/logo.ico'),
@@ -202,6 +203,8 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     updateGlobalShortcuts({ ...getDefaultKeybinds(), ...storage.getKeybinds() }, mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
 
     setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
+    // Establish capture protection and tray/taskbar recovery before first display.
+    mainWindow.show();
     return mainWindow;
 }
 

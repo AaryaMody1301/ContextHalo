@@ -23,9 +23,6 @@ function getHudBounds(display) {
 function getDisplayForBounds(screen, bounds) {
     try { return screen.getDisplayMatching(bounds); } catch { return screen.getPrimaryDisplay(); }
 }
-function setSkipTaskbar(window, value) {
-    try { window.setSkipTaskbar(value); } catch { console.warn('Could not update ContextHalo taskbar visibility'); }
-}
 
 // Preserve the opposite edge and clamp against the originating monitor. Cursor
 // and bounds are both Electron DIPs; renderer screenX/Y are deliberately unused.
@@ -43,6 +40,7 @@ function resizeBounds(bounds, edge, dx, dy, area, minimum = NORMAL_MINIMUM_SIZE)
 }
 
 function createWindowModeController(mainWindow, screen, options = {}) {
+    // Taskbar visibility belongs to window.js recovery, independently of layout.
     const contentProtectionEnabled = options.contentProtection !== false;
     const protectContent = () => {
         if (contentProtectionEnabled) mainWindow.setContentProtection(true);
@@ -78,7 +76,6 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         const display = getDisplayForBounds(screen, hudBounds || mainWindow.getBounds());
         hudActive = true;
         applyBounds(hudBounds || getHudBounds(display), HUD_MINIMUM_SIZE);
-        setSkipTaskbar(mainWindow, true);
         rememberBounds(); reassertHudMode();
     };
     const enterNormalMode = () => {
@@ -90,7 +87,6 @@ function createWindowModeController(mainWindow, screen, options = {}) {
         mainWindow.setIgnoreMouseEvents(false);
         protectContent();
         mainWindow.setAlwaysOnTop(false);
-        setSkipTaskbar(mainWindow, false);
         if (wasHud) applyBounds(normalExpanded ? getDisplayForBounds(screen, normalBounds).workArea : normalBounds, NORMAL_MINIMUM_SIZE);
         rememberBounds();
     };
