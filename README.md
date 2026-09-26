@@ -25,6 +25,8 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 - Windows DPAPI-backed API-key protection through Electron safeStorage
 - Production portable builds use electron-builder with hardened Electron fuses, ASAR integrity validation, embedded release provenance, and a notification-only official-release update check
 
+The app window stays out of the taskbar from launch, including Home, Settings, History, and after a live session ends. Use the notification-area icon or the configured hide/show shortcut (default: Ctrl + backslash) to restore it. If the tray cannot initialize, the existing taskbar recovery remains available. Hiding the window does not stop an active session.
+
 ## Requirements
 
 - Windows 10 or Windows 11 x64
