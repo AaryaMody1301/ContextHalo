@@ -103,6 +103,8 @@ ContextHalo has no application subscription requirement. Cloud providers may imp
 
 ## API and reliability verification
 
+See the [28 September screen recovery and API mapping audit](docs/API_SCREEN_RECOVERY_AUDIT_2026-09-28.md) for the Flash 3.8 investigation, streaming error repairs, thinking-token ceilings, and current Gemini/Groq/Local request mappings.
+
 See [the dated API compatibility audit](docs/API_COMPATIBILITY_AUDIT.md) for verified endpoints, model contracts, source references, and the boundary between automated verification and live-account/device acceptance. A virtual 60-minute test exercises 36,000 audio chunks and six reconnect rotations; it is not a real one-hour provider or hardware test.
 
 ## Contributing

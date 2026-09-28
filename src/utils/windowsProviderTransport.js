@@ -3,6 +3,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const { getRequestSignal } = require('./sessionRequests');
 const { abortable } = require('./requestDeadline');
+const { guardGeminiStream } = require('./geminiStreamGuard');
 
 const providerScope = new AsyncLocalStorage();
 const activeControllers = new Set();
@@ -192,7 +193,7 @@ function wrapResponseBody(response, controller, timer, idleMs, requestLabel) {
 // boundary without adding another retry owner or changing a successful response.
 async function geminiHttpResponse(input, init) {
     const response = await originalFetch(input, init);
-    if (response.ok) return response;
+    if (response.ok) return guardGeminiStream(response);
     const reader = response.body?.getReader();
     const chunks = [];
     let bytes = 0;
@@ -204,6 +205,12 @@ async function geminiHttpResponse(input, init) {
             if (bytes > 65536) { chunks.length = 0; break; }
             chunks.push(Buffer.from(result.value));
         }
+    } catch (error) {
+        if (init.signal?.aborted) throw init.signal.reason;
+        // The server already supplied authoritative status/Retry-After headers.
+        // A truncated error body must not turn a 503 or a 403 into an unknown
+        // network failure or discard a provider-mandated cooldown.
+        chunks.length = 0;
     } finally {
         try { await reader?.cancel(); } catch {}
         reader?.releaseLock();
