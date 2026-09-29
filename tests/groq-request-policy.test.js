@@ -49,9 +49,14 @@ test('Qwen 3.8 reasoning mode is explicit and never mixes reasoning output contr
     for (const disableThinking of [false, true]) {
         const options = getGroqReasoningOptions('qwen/qwen3.8-27b', disableThinking);
         assert.equal(options.reasoning_format, 'hidden');
-        assert.equal(options.reasoning_effort, disableThinking ? 'none' : 'default');
+        assert.equal(options.reasoning_effort, disableThinking ? 'none' : 'low');
         assert.equal(Object.hasOwn(options, 'include_reasoning'), false);
     }
+});
+
+test('enterprise Qwen 3.6 keeps its legacy reasoning contract', () => {
+    assert.equal(getGroqReasoningOptions('qwen/qwen3.6-27b', false).reasoning_effort, 'default');
+    assert.equal(getGroqReasoningOptions('qwen/qwen3.6-27b', true).reasoning_effort, 'none');
 });
 
 test('GPT-OSS keeps its low-latency reasoning policy without unsupported reasoning_format', () => {

@@ -10,7 +10,7 @@ const { setTimeout: sleep } = require('node:timers/promises');
 const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction } = require('./realtimeContextMain');
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
-const { getResponseMode } = require('./realtimeContextCore');
+const { getResponseMode, applyResponseModeInstruction } = require('./realtimeContextCore');
 const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
@@ -21,6 +21,8 @@ const { classifyGeminiFailure } = require('./geminiFailure');
 const { recoverGeminiSetup } = require('./geminiSetupRecovery');
 const { groundingFragmentFromResponse, mergeGrounding, publicGrounding } = require('./geminiGrounding');
 const { appendModelParts, modelPartsForHistory } = require('./geminiWorkingContext');
+const { geminiOutputTokenLimit, assertGeminiGenerationOutcome } = require('./geminiGenerationPolicy');
+const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 let liveGeneration = 0;
 let manualReconnectPromise = null;
 let initializePromise = null;
@@ -86,7 +88,7 @@ let groqRateLimitState = null;
 let geminiLiveRuntime = null;
 let lastGeminiInitializationError = '';
 const GROQ_EMPTY_RESPONSE_MESSAGE =
-    'Groq reached the maximum completion-token limit before returning a final answer. Disable thinking in Home → AI responses and try again.';
+    'Groq returned no text answer. Review the question and selected model, then try again.';
 
 // Reconnection variables
 let isUserClosing = false;
@@ -286,7 +288,16 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
             operationSignal.throwIfAborted();
             if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
             try {
-                const result = await abortable(() => work(Math.max(1, budgetMs - (now() - started)), attempt, operationSignal), operationSignal);
+                // Dispose each SDK request before backoff, even when its stream
+                // fails before producing text. The operation deadline spans all attempts.
+                const attemptController = new AbortController();
+                const attemptSignal = AbortSignal.any([operationSignal, attemptController.signal]);
+                let result;
+                try {
+                    result = await abortable(() => work(Math.max(1, budgetMs - (now() - started)), attempt, attemptSignal), attemptSignal);
+                } finally {
+                    attemptController.abort(Object.assign(new Error('Gemini attempt finished'), { name: 'AbortError' }));
+                }
                 operationSignal.throwIfAborted();
                 if (now() - started >= budgetMs) throw failureError(classifyGeminiFailure(new Error('Provider operation timed out'), operation, model));
                 return result;
@@ -294,6 +305,12 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 if (signal?.aborted) throw signal.reason;
                 if (operationSignal.aborted) throw failureError(classifyGeminiFailure(operationSignal.reason, operation, model));
                 const failure = classifyGeminiFailure(error, operation, model, now(), { searchAttached });
+                failure.attempts = attempt + 1;
+                if (failure.httpStatus === 503) {
+                    failure.message += attempt > 0
+                        ? ` ContextHalo made ${attempt + 1} attempts with exponential backoff.`
+                        : ' ContextHalo made 1 attempt.';
+                }
                 // Once a streaming response has rendered tokens, retrying the same
                 // request would duplicate visible output. Pre-response failures keep
                 // the normal bounded retry policy.
@@ -309,7 +326,8 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
                 if (failure.retryAt > now()) geminiCooldowns.set(failure.quotaScope === 'model' || !failure.searchAttached ? baseKey : key, failure);
                 logTransportEvent('gemini.request.failure', { model, operation, category: failure.category,
                     status: failure.httpStatus || 0, code: failure.socketCode || 0, retryAfterMs: failure.retryAfterMs ?? -1,
-                    attempt: attempt + 1, durationMs: now() - started, quotaScope: failure.quotaScope, searchAttached: failure.searchAttached, searchControl: failure.searchControl || '' });
+                    attempt: attempt + 1, durationMs: now() - started, quotaScope: failure.quotaScope, searchAttached: failure.searchAttached,
+                    generationReason: failure.generationReason || '', searchControl: failure.searchControl || '' });
                 if (terminal || !failure.retryable || attempt === maxAttempts - 1 || now() - started + backoff + 1000 >= budgetMs) throw failureError(failure);
                 sendToRenderer('update-status', `Gemini ${operation || 'request'} retry ${attempt + 2}/${maxAttempts} in ${Math.ceil(backoff / 1000)} seconds. Model and Search settings are unchanged.`);
                 await abortable(() => wait(backoff, undefined, { signal: operationSignal }), operationSignal);
@@ -342,6 +360,7 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
             });
             for await (const chunk of stream) {
                 operationSignal.throwIfAborted();
+                assertGeminiGenerationOutcome(chunk);
                 const piece = String(chunk?.text || '');
                 groundingState = mergeGrounding(groundingState, groundingFragmentFromResponse(chunk));
                 modelParts = appendModelParts(modelParts, chunk);
@@ -667,6 +686,7 @@ async function sendToGroqNow(transcription) {
         for await (const event of readSseJson(response.body, getRequestSignal())) {
             assertCurrentRequest();
             finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            assertChatCompletionOutcome(finishReason, 'groq');
             fullText += event.choices?.[0]?.delta?.content || '';
             const displayText = stripThinkingTags(fullText);
             if (displayText) {
@@ -698,7 +718,7 @@ async function sendToGroqNow(transcription) {
                 finishReason,
             });
             sendToRenderer('new-response', GROQ_EMPTY_RESPONSE_MESSAGE);
-            sendToRenderer('update-status', 'Groq reached the completion-token limit');
+            sendToRenderer('update-status', 'Groq returned no text answer');
             return { success: false, error: GROQ_EMPTY_RESPONSE_MESSAGE };
         }
 
@@ -783,6 +803,7 @@ async function sendImageToGroq(base64Data, prompt) {
         for await (const event of readSseJson(response.body, getRequestSignal())) {
             assertCurrentRequest();
             finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            assertChatCompletionOutcome(finishReason, 'groq');
             fullText += event.choices?.[0]?.delta?.content || '';
             const displayText = stripThinkingTags(fullText);
             if (displayText) {
@@ -1127,8 +1148,8 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
         const params = augmentGenerateParams({
             model,
             contents: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }],
-            config: { systemInstruction: appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.httpEffective)),
-                maxOutputTokens: mode.maxTokens, ...interactiveGeminiThinkingConfig(model, 'instant'), ...(tools.length ? { tools } : {}) },
+            config: { systemInstruction: applyResponseModeInstruction(appendSessionPack(currentSystemPrompt || getSystemPrompt(currentProfile, currentCustomPrompt, searchState.httpEffective)), mode.id),
+                maxOutputTokens: geminiOutputTokenLimit(model, mode.maxTokens, 'low'), ...interactiveGeminiThinkingConfig(model, 'instant'), ...(tools.length ? { tools } : {}) },
         });
         let first = true;
         const response = await generateGeminiStream(ai, params,
@@ -1169,7 +1190,8 @@ async function sendTypedGeminiText(text) {
     const params = augmentGenerateParams({
         model,
         contents: [...history, { role: 'user', parts: [{ text }] }],
-        config: { systemInstruction: instruction, maxOutputTokens: mode.maxTokens,
+        config: { systemInstruction: applyResponseModeInstruction(instruction, mode.id),
+            maxOutputTokens: geminiOutputTokenLimit(model, mode.maxTokens, mode.id === 'detailed' ? 'medium' : 'low'),
             ...interactiveGeminiThinkingConfig(model, mode.id), ...(tools.length ? { tools } : {}) },
     });
     let first = true;

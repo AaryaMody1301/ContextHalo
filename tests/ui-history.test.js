@@ -77,7 +77,10 @@ test('empty and filtered-empty copy is specific; saved titles are searchable wit
     view.searchQuery = 'architecture'; assert.equal(view.getFilteredSessions().length, 2);
     view.searchQuery = '\u65e5\u672c'; assert.equal(view.getFilteredSessions()[0].sessionId, '3');
     view.searchQuery = 'absent'; assert.equal(view.getFilteredSessions().length, 0); assert.match(view.renderListView(), /No sessions match "absent"/);
-    assert.match(view.getSessionTitle(view.sessions[3]), /Interview.*1970/);
+    assert.match(view.getSessionTitle(view.sessions[3]), /Interview/);
+    assert.ok(view.getSessionTitle(view.sessions[3]).includes(new Date(4000).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+    })), 'legacy titles use the local date, which can be December 1969 west of UTC');
 });
 
 test('failed or missing detail loads explain only that entry, and a retry can open it', async () => {

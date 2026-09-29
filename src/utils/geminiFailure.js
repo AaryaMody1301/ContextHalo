@@ -58,6 +58,9 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
     const searchAttached = context.searchAttached === true;
     let category = 'unknown';
     if (cancelled) category = 'cancelled';
+    else if (error?.code === 'GEMINI_OUTPUT_LIMIT') category = 'output-limit';
+    else if (error?.code === 'GEMINI_CONTENT_BLOCKED') category = 'content-blocked';
+    else if (error?.code === 'GEMINI_GENERATION_FAILED') category = 'generation-failed';
     else if (networkCode && /CERT|SELF_SIGNED|ISSUER|SIGNATURE/.test(networkCode)) category = 'tls';
     else if (httpStatus === 407) category = 'proxy-authentication';
     else if (httpStatus === 401 || /unauthenticated|api.?key.?invalid|api key not valid/.test(text)) category = 'authentication';
@@ -90,6 +93,9 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         transient: 'Gemini could not complete the request because of a network, timeout or server failure. Retry when connectivity recovers.',
         cancelled: 'Request cancelled.',
         'empty-response': 'Gemini returned no text. Review the prompt or model safety settings, then retry.',
+        'output-limit': 'Gemini reached the combined thinking and answer token limit before completing this answer. Try a smaller screen region or a narrower question; for longer answers, select Detailed mode. This incomplete answer was not saved.',
+        'content-blocked': 'Gemini blocked this request or response under its content rules. Review the screenshot and question. This answer was not saved and the request was not automatically retried.',
+        'generation-failed': 'Gemini stopped without completing the answer. This answer was not saved. Review the question and try again.',
         unknown: 'Gemini could not complete the request. Review provider settings and retry. No provider or account was changed.',
     };
     const retryable = ['throttled', 'transient', 'aborted-conflict'].includes(category);
@@ -101,7 +107,7 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
         else if (searchAttached) message += ' Search was attached, but the response does not establish whether the limit belongs to Search or the model.';
     }
     if (category === 'transient' && httpStatus === 503) {
-        message = 'Gemini returned HTTP 503 (service unavailable or overloaded). ContextHalo retried with exponential backoff, but the service did not recover within this request. Retry later; your session and draft are retained. No model, Search setting, or account was changed.';
+        message = 'Gemini returned HTTP 503 (service unavailable or overloaded). Retry later; your session and draft are retained. No model, Search setting, or account was changed.';
     } else if (category === 'transient' && ['ENOTFOUND', 'EAI_AGAIN'].includes(networkCode)) {
         message = 'Gemini hostname lookup failed. Check DNS and network connectivity, then retry.';
     } else if (category === 'transient' && operation === 'live' && stage) {
@@ -110,10 +116,14 @@ function classifyGeminiFailure(error, operation = 'live', model = '', now = Date
             : 'Gemini Live connected, but session setup did not complete. Retry or review the selected model and project access.';
     }
     const diagnostic = [stage, httpStatus && `HTTP ${httpStatus}`, socketCode && `WebSocket ${socketCode}`, networkCode].filter(Boolean).join(', ');
+    const generationReason = ['output-limit', 'content-blocked', 'generation-failed'].includes(category)
+        ? String(error.finishReason || error.blockReason || '').replace(/[^A-Z_]/g, '').slice(0, 64) : '';
     return { category, httpStatus, socketCode, networkCode, stage, operation, model: String(model).slice(0, 160), retryable,
+        ...(generationReason ? { generationReason } : {}),
         retryAfterMs, retryAt, quotaScope, searchAttached,
         canDisableSearch: category === 'unsupported-tool' || (searchRelated || searchAttached) && quotaScope !== 'model' && ['quota-exhausted', 'throttled', 'rate-or-quota'].includes(category),
         message: message + (diagnostic ? ` (${diagnostic})` : '')
+            + (generationReason ? ` (${generationReason})` : '')
             + (retryAfterMs === null ? '' : ` Provider retry delay: ${Math.ceil(retryAfterMs / 1000)} seconds.`) };
 }
 

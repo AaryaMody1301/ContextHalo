@@ -76,7 +76,7 @@ function geminiFixture(options = {}) {
     };
     const scope = {
         module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process: options.process || process, Buffer, URL,
-        AbortController, setTimeout, clearTimeout, global: {},
+        AbortController, AbortSignal, setTimeout, clearTimeout, global: {},
         fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"}}]}\n\n')),
         require: name => {
             if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };

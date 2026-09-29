@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { readSseJson } = require('./sse');
+const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 const { runSessionRequest, assertCurrentRequest, requestIsCurrent, getRequestSignal } = require('./sessionRequests');
 const { getSystemPrompt } = require('./prompts');
 const { sendToRenderer, initializeNewSession, saveConversationTurn } = require('./gemini');
@@ -214,6 +215,7 @@ async function readStreamingResponse(response, onText) {
     let fullText = '';
     for await (const event of readSseJson(response.body, getRequestSignal())) {
         assertCurrentRequest();
+        assertChatCompletionOutcome(event.choices?.[0]?.finish_reason, 'local');
         const token = event.choices?.[0]?.delta?.content || '';
         if (token) { fullText += token; onText(fullText); }
     }

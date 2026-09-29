@@ -40,7 +40,10 @@ function getGroqReasoningOptions(model, disableThinking) {
     if (QWEN_REASONING_MODELS.test(normalizedModel)) {
         return {
             reasoning_format: 'hidden',
-            reasoning_effort: disableThinking ? 'none' : 'default',
+            // Groq's reasoning/API reference maps Qwen 3.8 default to no
+            // reasoning. Select a documented effort when the user enables it;
+            // preserve the older enterprise-only 3.6 contract.
+            reasoning_effort: disableThinking ? 'none' : normalizedModel === 'qwen/qwen3.8-27b' ? 'low' : 'default',
         };
     }
     if (GPT_OSS_MODELS.test(normalizedModel)) {
