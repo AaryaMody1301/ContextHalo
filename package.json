@@ -42,7 +42,7 @@
     "license": "GPL-3.0",
     "dependencies": {
         "@google/genai": "2.22.0",
-        "marked": "18.0.13"
+        "marked": "18.0.14"
     },
     "devDependencies": {
         "electron": "^44.3.0",
