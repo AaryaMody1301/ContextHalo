@@ -38,6 +38,26 @@ test('Gemini budgets leave room for thinking while the chosen mode still control
     }
 });
 
+test('Instant text and screenshots use minimal thinking only on explicitly selected compatible models', async t => {
+    for (const [model, level] of [
+        ['gemini-3.8-flash', 'low'], ['gemini-3.7-flash', 'low'],
+        ['gemini-3.6-flash', 'minimal'], ['gemini-3.5-flash', 'minimal'],
+        ['gemini-3.5-flash-lite', 'minimal'], ['gemini-3.1-flash-lite', 'minimal'],
+        ['custom-model', undefined],
+    ]) {
+        const f = geminiFixture({ model, preferences: { responseMode: 'instant' } });
+        t.after(() => f.close()); await f.start();
+        assert.equal((await f.call('send-image-content', screenshot)).success, true);
+        assert.equal((await f.call('send-text-message', 'Be concise')).success, true);
+        for (const params of f.generated) {
+            assert.equal(params.model, model, 'latency settings must not change the selected model');
+            assert.equal(params.config.thinkingConfig?.thinkingLevel, level);
+        }
+        assert.equal(f.connections.length, 1, 'HTTP thinking must not reconnect Live');
+        await f.close();
+    }
+});
+
 test('a failed HTTP attempt is cancelled before its retry starts', async t => {
     const f = geminiFixture(); t.after(() => f.close());
     const signals = []; let clock = 1000;

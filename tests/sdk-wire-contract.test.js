@@ -39,7 +39,7 @@ test('installed Gemini SDK serializes the supported screen contract and forwards
 const { geminiFixture } = require('./helpers/gemini-fixture');
 const transport = require('../src/utils/windowsProviderTransport');
 
-for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 ${scenario} preserves provider backoff and the typed request`, { skip: !available, timeout: 5000 }, async t => {
+for (const scenario of ['recover', 'retry-after', 'stalled-body']) test(`installed SDK HTTP 503 ${scenario} preserves provider backoff and the typed request`, { skip: !available, timeout: 5000 }, async t => {
     const { GoogleGenAI, Modality } = require('@google/genai');
     const received = [];
     const providerUrls = [];
@@ -47,9 +47,10 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
         const chunks = []; for await (const chunk of request) chunks.push(chunk);
         received.push(JSON.parse(Buffer.concat(chunks).toString()));
         response.setHeader('content-type', 'application/json');
-        if (scenario === 'retry-after' || received.length < 3) {
+        if (scenario !== 'recover' || received.length < 3) {
             response.statusCode = 503;
-            response.setHeader('retry-after', scenario === 'retry-after' ? '120' : '0');
+            response.setHeader('retry-after', scenario === 'recover' ? '0' : '120');
+            if (scenario === 'stalled-body') { response.write('{'); return; }
             response.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'Service unavailable' } }));
         } else {
             response.setHeader('content-type', 'text/event-stream');

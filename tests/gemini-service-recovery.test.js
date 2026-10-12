@@ -19,19 +19,40 @@ for (const operation of ['text', 'screen']) test(`${operation}: two 503 response
     assert.equal(f.preferences.googleSearchEnabled, true);
 });
 
-test('persistent 503 stops after the initial HTTP attempt plus four retries', async t => {
+test('persistent 503 stops after three interactive attempts with three seconds of backoff', async t => {
     const f = geminiFixture(); t.after(() => f.close());
-    let calls = 0, now = 1000;
+    let calls = 0, now = 1000; const waits = [];
     await assert.rejects(f.api.runGeminiRequest(async () => {
         calls++; throw Object.assign(new Error('UNAVAILABLE'), { status: 503 });
-    }, { operation: 'text', model: 'm', now: () => now, random: () => 0, wait: async ms => { now += ms; } }), error => {
+    }, { operation: 'text', model: 'm', now: () => now, random: () => 0, wait: async ms => { waits.push(ms); now += ms; } }), error => {
         assert.equal(error.failure.httpStatus, 503);
         assert.match(error.message, /HTTP 503|service unavailable|overloaded/);
         assert.match(error.message, /exponential backoff/);
         assert.doesNotMatch(error.message, /connectivity recovers/);
         return true;
     });
-    assert.equal(calls, 5);
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [1000, 2000]);
+});
+
+test('a stalled Gemini HTTP error body promptly preserves 503 and Retry-After', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const controller = new AbortController();
+    let failure, cancelled = false;
+    t.after(() => { controller.abort(); transport.setFetchImplementationForTests(global.fetch); });
+    transport.setFetchImplementationForTests(async () => new Response(new ReadableStream({
+        cancel() { cancelled = true; return new Promise(() => {}); },
+    }), { status: 503, headers: { 'retry-after': '120' } }));
+    const pending = transport.boundedFetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse', {
+        signal: controller.signal,
+    }).catch(error => { failure = error; });
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1000);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(failure?.status, 503, 'known HTTP failure must not wait for the full generation deadline');
+    assert.equal(failure.headers['retry-after'], '120');
+    assert.equal(cancelled, true);
+    await pending;
 });
 
 test('Retry-After zero cannot disable local exponential backoff for HTTP 503', async t => {

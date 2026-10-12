@@ -2,7 +2,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const { getRequestSignal } = require('./sessionRequests');
-const { abortable } = require('./requestDeadline');
+const { abortable, deadlineSignal } = require('./requestDeadline');
 const { guardGeminiStream } = require('./geminiStreamGuard');
 
 const providerScope = new AsyncLocalStorage();
@@ -197,9 +197,12 @@ async function geminiHttpResponse(input, init) {
     const reader = response.body?.getReader();
     const chunks = [];
     let bytes = 0;
+    // Status/Retry-After are already authoritative. A stalled error body must
+    // not consume the generation deadline or hide a known 503 behind a timeout.
+    const deadline = deadlineSignal(init.signal, 1000);
     try {
         while (reader) {
-            const result = init.signal ? await abortable(() => reader.read(), init.signal) : await reader.read();
+            const result = await abortable(() => reader.read(), deadline.signal);
             if (result.done) break;
             bytes += result.value.byteLength;
             if (bytes > 65536) { chunks.length = 0; break; }
@@ -212,8 +215,9 @@ async function geminiHttpResponse(input, init) {
         // network failure or discard a provider-mandated cooldown.
         chunks.length = 0;
     } finally {
-        try { await reader?.cancel(); } catch {}
+        try { void reader?.cancel().catch(() => {}); } catch {}
         reader?.releaseLock();
+        deadline.close();
     }
     throw Object.assign(new Error(Buffer.concat(chunks).toString('utf8') || 'Gemini HTTP request failed'), {
         status: response.status, headers: { 'retry-after': response.headers.get('retry-after') },

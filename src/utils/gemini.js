@@ -22,6 +22,7 @@ const { recoverGeminiSetup } = require('./geminiSetupRecovery');
 const { groundingFragmentFromResponse, mergeGrounding, publicGrounding } = require('./geminiGrounding');
 const { appendModelParts, modelPartsForHistory } = require('./geminiWorkingContext');
 const { geminiOutputTokenLimit, assertGeminiGenerationOutcome } = require('./geminiGenerationPolicy');
+const { geminiModelPolicy } = require('./geminiModelPolicy');
 const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 let liveGeneration = 0;
 let manualReconnectPromise = null;
@@ -267,10 +268,9 @@ async function runGeminiRequest(work, { operation, model, apiKey = '', signal, b
     now = Date.now, random = Math.random, wait = sleep, searchAttached = false } = {}) {
     const started = now();
     const httpOperation = operation === 'text' || operation === 'screen';
-    // Google documents exponential backoff for transient 429/5xx failures and
-    // describes up to four retries in its client guidance. Count the initial
-    // request separately so HTTP operations can make at most five attempts.
-    const maxAttempts = httpOperation ? 5 : 2;
+    // Interactive HTTP requests get two retries: longer chains add excessive
+    // latency during overload. Keep exponential backoff and provider minimums.
+    const maxAttempts = httpOperation ? 3 : 2;
     const baseKey = cooldownKey(apiKey, model || '');
     const key = searchAttached ? `${baseKey}:${httpOperation ? 'http' : 'live'}:search` : baseKey;
     const cooling = [geminiCooldowns.get(baseKey), geminiCooldowns.get(key)].find(failure => failure?.retryAt > now());
@@ -342,6 +342,9 @@ function groundingFromResponse(response) {
 function interactiveGeminiThinkingConfig(model, modeId = 'balanced') {
     const low = screenThinkingConfig(model);
     if (!low.thinkingConfig) return {};
+    if (modeId === 'instant' && geminiModelPolicy(model)?.thinkingLevels.includes('minimal')) {
+        return { thinkingConfig: { thinkingLevel: 'minimal' } };
+    }
     return modeId === 'detailed' ? { thinkingConfig: { thinkingLevel: 'medium' } } : low;
 }
 
