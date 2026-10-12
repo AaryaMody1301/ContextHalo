@@ -1074,7 +1074,7 @@ export class MainView extends LitElement {
         return html`<div class="form-group profile-choice">
             <label class="form-label" for="session-profile">Session profile</label>
             <select id="session-profile" .value=${this.selectedProfile} ?disabled=${this.sessionActive || this.isInitializing || this._configurationLoading} @change=${this._handleProfileChange}>
-                ${profiles.map(([value, label]) => html`<option value=${value}>${label}</option>`)}
+                ${profiles.map(([value, label]) => html`<option value=${value} .selected=${value === this.selectedProfile}>${label}</option>`)}
             </select>
             <span class="form-hint">Applied when the next session connects.</span>
         </div>`;
@@ -1104,11 +1104,11 @@ export class MainView extends LitElement {
         return html`<details class="preparation"><summary>Screen, context &amp; response style</summary>
             <label for="responseMode">Response style (applied next session)</label>
             <select id="responseMode" .value=${responseMode} @change=${event => this._contextAction(() => setResponseMode(event.target.value))}>
-                ${RESPONSE_MODES.map(mode => html`<option value=${mode.id}>${mode.label} - ${mode.description}</option>`)}
+                ${RESPONSE_MODES.map(mode => html`<option value=${mode.id} .selected=${mode.id === responseMode}>${mode.label} - ${mode.description}</option>`)}
             </select>
             <label for="captureSource">Screen or window to analyze</label>
             <select id="captureSource" .value=${selectionKey(captureState)} @change=${event => this._contextAction(() => setCaptureSource(event.target.value))}>
-                ${captureSources.map(source => html`<option value=${source.key}>${source.label}</option>`)}
+                ${captureSources.map(source => html`<option value=${source.key} .selected=${source.key === selectionKey(captureState)}>${source.label}</option>`)}
             </select>
             <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(refreshCaptureSources)}>Refresh screens</button></div>
             <label for="contextTitle">Session title</label><input id="contextTitle" maxlength="160" .value=${pack.title} @input=${event => setPackField('title', event.target.value)} />
@@ -1159,6 +1159,7 @@ export class MainView extends LitElement {
                     ? 'Gemini 3.8 Live is the low-latency default. Extended Thinking is mapped but not selectable yet because Google requires interactionStatus lifecycle handling rather than turnComplete alone.'
                     : 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
             { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all: catalog?.screen || [],
+                currentModel: all.find(model => model.id === this._geminiHttpModel),
                 allowAdvanced: false, onSave: this._saveGeminiHttpModel,
                 helper: 'Text and screenshots use documented stable Gemini Flash models. Gemini 3.8 Flash is the default; screen analysis uses low thinking and bounded 503 backoff.' },
         ] : [
@@ -1221,8 +1222,8 @@ export class MainView extends LitElement {
                             .value=${this._useCustomLocalLlmModel ? 'custom' : this._localLlmModel}
                             @change=${event => this._selectLocalLlmModel(event.target.value)}
                         >
-                            ${LOCAL_LLM_PRESETS.map(preset => html`<option value=${preset.value}>${preset.label}</option>`)}
-                            <option value="custom">Custom Hugging Face model or local GGUF…</option>
+                            ${LOCAL_LLM_PRESETS.map(preset => html`<option value=${preset.value} .selected=${!this._useCustomLocalLlmModel && preset.value === this._localLlmModel}>${preset.label}</option>`)}
+                            <option value="custom" .selected=${this._useCustomLocalLlmModel}>Custom Hugging Face model or local GGUF…</option>
                         </select>
                         ${
                             this._useCustomLocalLlmModel

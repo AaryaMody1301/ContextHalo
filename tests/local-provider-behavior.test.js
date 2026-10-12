@@ -41,6 +41,40 @@ test('Local AI bounds repeated prompt work and output for interactive latency', 
     requests.closeSessionRequests();api.closeLocalSession();
 });
 
+test('concurrent Local AI text and screen requests retain both successful turns', async t => {
+    const bodies = [], pending = new Map();
+    const native = { ensureNativeBinary: async () => '/runner', ensureWhisperModel: async () => '/whisper',
+        ensureLlamaModel: async () => ({ modelPath: '/model', projectorPath: '/projector' }), getAvailablePort: async () => 1234,
+        startNativeServer: () => ({}), stopNativeServer() {}, waitForServer: async () => {} };
+    const api = loadMain('src/utils/localai.js', {
+        fs: { existsSync: () => true }, './native-ai-runtime': native, './sessionRequests': requests,
+        './gemini': { sendToRenderer() {}, initializeNewSession: () => requests.resetSessionRequests(), saveConversationTurn() {} },
+    }, { console: { log() {}, warn() {} }, fetch: async (_url, init) => {
+        const body = JSON.parse(init.body); bodies.push(body);
+        const question = body.messages.at(-1).content;
+        if (question !== 'follow-up') await new Promise(resolve => pending.set(Array.isArray(question) ? 'screen' : 'text', resolve));
+        return new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+    } });
+    t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
+    assert.equal(await api.initializeLocalSession('model', 'tiny.en', 'interview', '', 'en-US'), true);
+    const text = requests.runSessionRequest('text', () => api.sendLocalText('typed question'));
+    const screen = requests.runSessionRequest('screen', () => api.sendLocalImage('aW1hZ2U=', 'screen question'));
+    await new Promise(resolve => setImmediate(resolve));
+    pending.get('screen')(); assert.equal((await screen).success, true);
+    pending.get('text')(); assert.equal((await text).success, true);
+    assert.equal((await requests.runSessionRequest('text', () => api.sendLocalText('follow-up'))).success, true);
+    assert.ok(bodies.at(-1).messages.some(message => message.content === 'screen question'));
+    assert.ok(bodies.at(-1).messages.some(message => message.content === 'typed question'));
+    const secondText = requests.runSessionRequest('text', () => api.sendLocalText('second typed question'));
+    const secondScreen = requests.runSessionRequest('screen', () => api.sendLocalImage('aW1hZ2U=', 'second screen question'));
+    await new Promise(resolve => setImmediate(resolve));
+    pending.get('text')(); assert.equal((await secondText).success, true);
+    pending.get('screen')(); assert.equal((await secondScreen).success, true);
+    await requests.runSessionRequest('text', () => api.sendLocalText('follow-up'));
+    assert.ok(bodies.at(-1).messages.some(message => message.content === 'second typed question'));
+    assert.ok(bodies.at(-1).messages.some(message => message.content === 'second screen question'));
+});
+
 test('a Vulkan startup failure falls back once to the verified CPU runner without changing the selected model', async t => {
     const started = [], stopped = [], binaries = [], bodies = [];
     const native = {

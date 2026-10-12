@@ -61,6 +61,29 @@ test('request retrieval loads enabled documents once and reuses them for ranking
     assert.equal(reads, 1);
 });
 
+test('Gemini knowledge retrieval uses the current question after a long unrelated history', () => {
+    const rag = loadMain('src/utils/knowledgeRagMain.js', {
+        '../storage': { getPreferences: () => ({}) },
+        './knowledgeStore': { getEnabledDocuments: () => [
+            { id: 'old', title: 'Gardening', enabled: true, chunks: [{ id: 'a', text: 'Orchids need careful watering.' }] },
+            { id: 'new', title: 'Database', enabled: true, chunks: [{ id: 'b', text: 'PostgreSQL MVCC provides transaction isolation.' }] },
+        ] },
+    });
+    const question = { role: 'user', parts: [{ text: 'Explain PostgreSQL MVCC transaction isolation.' }] };
+    const params = { contents: [
+        { role: 'user', parts: [{ text: 'orchids watering '.repeat(1000) }] },
+        { role: 'model', parts: [{ text: 'orchids watering '.repeat(1000) }] },
+        question,
+    ], config: { systemInstruction: 'Answer the question.' } };
+    const augmented = rag.augmentGenerateParams(params);
+    assert.match(augmented.config.systemInstruction, /PostgreSQL MVCC/);
+    assert.doesNotMatch(augmented.config.systemInstruction, /Orchids need/);
+    assert.equal(augmented.contents, params.contents);
+    assert.equal(params.config.systemInstruction, 'Answer the question.');
+    const screenshot = rag.augmentGenerateParams({ contents: [{ inlineData: { data: 'image' } }, ...question.parts] });
+    assert.match(screenshot.config.systemInstruction.parts[0].text, /PostgreSQL MVCC/);
+});
+
 test('practice questions and grading work without a provider', () => {
     const source = {
         id: 'doc-1',

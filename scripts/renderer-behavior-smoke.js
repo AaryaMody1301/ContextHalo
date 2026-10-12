@@ -190,6 +190,33 @@ async function rendererBehaviorSmoke() {
     verify((await ipc.invoke('storage:get-session','../escape')).success===false,'IPC rejects invalid session paths');
     app.navigate('main');await settle(app);
     const home=app.shadowRoot.querySelector('main-view'); await settle(home);
+    const { renderModelPicker } = await import('./utils/dynamicModelRegistryRenderer.js');
+    const { render } = await import('./assets/lit-core-3.3.3.min.js');
+    const picker = document.createElement('div');
+    render(renderModelPicker({}, { label: 'Model selection fixture', value: 'second',
+        preferred: [{ id: 'first' }, { id: 'second' }], onSave() { throw new Error('Rendering must not save a model'); } }), picker);
+    verify(picker.querySelector('select').value === 'second', 'Initial model picker displays the saved model rather than the first catalog option');
+    const deprecated = { id: 'gemini-3.7-flash', capabilityLabel: 'Deprecated · Google routes requests to gemini-3.8-flash; select a current model explicitly' };
+    render(renderModelPicker({}, { label: 'Model selection fixture', value: deprecated.id, currentModel: deprecated,
+        preferred: [{ id: 'gemini-3.8-flash' }], onSave() { throw new Error('Rendering must not save a model'); } }), picker);
+    verify(picker.querySelector('select').value === deprecated.id && picker.textContent.includes('Selected model: Deprecated'), 'Deprecated saved model stays selected and shows its provider redirect warning');
+    render(home._renderProfileSelector.call({ selectedProfile: 'meeting', _handleProfileChange() {} }), picker);
+    verify(picker.querySelector('select').value === 'meeting', 'Initial profile picker displays a saved nondefault profile');
+    render(home.renderPreparation(), picker);
+    const { getRealtimeState } = await import('./utils/realtimeContextRenderer.js');
+    verify(picker.querySelector('#responseMode').value === getRealtimeState().responseMode, 'Initial response style picker matches the actual saved request mode');
+    const customModel = home._useCustomLocalLlmModel;
+    try {
+        home._useCustomLocalLlmModel = true;
+        render(home._renderLocalMode(), picker);
+        verify(picker.querySelector('#local-model').value === 'custom', 'Initial Local AI picker preserves a custom model selection');
+    } finally { home._useCustomLocalLlmModel = customModel; }
+    const settingsPrototype = customElements.get('customize-view').prototype;
+    render(settingsPrototype.renderLanguageSection.call({ selectedLanguage: 'fr-FR', getLanguages: settingsPrototype.getLanguages }), picker);
+    verify(picker.querySelector('#speech-language').value === 'fr-FR', 'Initial language picker displays the saved nondefault language');
+    const theme = settingsPrototype.getThemes().at(-1).value;
+    render(settingsPrototype.renderAppearanceSection.call({ theme, getThemes: settingsPrototype.getThemes, backgroundTransparency: 0.8, fontSize: 20 }), picker);
+    verify(picker.querySelector('#theme').value === theme, 'Initial theme picker displays the saved nondefault theme');
     await waitUntil(()=>home.shadowRoot.querySelector('.page-title')?.getBoundingClientRect().top>=40);
     verify(home.shadowRoot.querySelector('.page-title').getBoundingClientRect().top>=40,'Home heading is below the draggable caption');
     verify(getComputedStyle(app.shadowRoot.querySelector('.sidebar-nav')).overflowY==='auto','Sidebar navigation remains scrollable in short windows');

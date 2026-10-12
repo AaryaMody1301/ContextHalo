@@ -12,12 +12,10 @@ const {
     screenThinkingConfigForModel,
 } = require('../src/utils/geminiModelPolicy');
 
-test('Gemini model policy matches the audited September 2026 stable model families', () => {
+test('Gemini model policy matches the audited October 2026 stable model families', () => {
     assert.deepEqual(GEMINI_SCREEN_MODEL_IDS, [
         'gemini-3.8-flash',
-        'gemini-3.7-flash',
         'gemini-3.6-flash',
-        'gemini-3.5-flash',
         'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
     ]);
@@ -38,7 +36,18 @@ test('Gemini model policy matches the audited September 2026 stable model famili
     }
 });
 
-test('Gemini 3.8 and 3.7 Flash exclude minimal thinking while older mapped stable Flash models allow it', () => {
+test('deprecated Gemini aliases disclose provider redirects without changing saved selections', () => {
+    for (const [id, replacement] of [['gemini-3.7-flash', 'gemini-3.8-flash'], ['gemini-3.5-flash', 'gemini-3.6-flash']]) {
+        assert.equal(geminiModelPolicy(id).lifecycle, 'deprecated');
+        assert.equal(geminiModelPolicy(id).replacement, replacement);
+        assert.match(geminiCapabilityLabel(id), /Deprecated/);
+        assert.ok(geminiCapabilityLabel(id).includes(replacement));
+        assert.ok(!GEMINI_SCREEN_MODEL_IDS.includes(id));
+        assert.deepEqual(screenThinkingConfigForModel(id), { thinkingConfig: { thinkingLevel: 'low' } });
+    }
+});
+
+test('mapped Flash thinking options stay compatible with documented provider redirects', () => {
     for (const id of ['gemini-3.8-flash', 'gemini-3.7-flash']) {
         assert.deepEqual(geminiModelPolicy(id).thinkingLevels, ['low', 'medium', 'high']);
     }

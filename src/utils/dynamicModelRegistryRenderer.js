@@ -30,6 +30,7 @@ function renderModelPicker(view, options) {
         helper = '',
         allowAdvanced = true,
         stale = false,
+        currentModel,
     } = options;
 
     const preferredModels = uniqueModels(preferred);
@@ -38,7 +39,7 @@ function renderModelPicker(view, options) {
     const catalogModels = [...preferredModels, ...advancedModels];
     const hasCatalog = catalogModels.length > 0;
     const currentKnown = catalogModels.some(model => model.id === value);
-    const selected = catalogModels.find(model => model.id === value);
+    const selected = catalogModels.find(model => model.id === value) || (currentModel?.id === value ? currentModel : null);
     const selectedStatus = selected?.capabilityLabel || (selected?.preview ? 'Preview' : '');
 
     if (!hasCatalog) {
@@ -46,6 +47,7 @@ function renderModelPicker(view, options) {
             <div class="form-group">
                 <label class="form-label" for=${label}>${label}</label>
                 <input id=${label} type="text" spellcheck="false" .value=${value || ''} @input=${event => onSave.call(view, event.target.value)} />
+                ${selectedStatus ? html`<div class="form-hint" role="status">Selected model: ${selectedStatus}.</div>` : ''}
                 ${helper ? html`<div class="form-hint">${helper}</div>` : ''}
             </div>
         `;
@@ -55,11 +57,11 @@ function renderModelPicker(view, options) {
         <div class="form-group">
             <label class="form-label" for=${label}>${label}</label>
             <select id=${label} .value=${value || ''} @change=${event => onSave.call(view, event.target.value)}>
-                ${!currentKnown && value ? html`<option value=${value}>${value} — current/manual</option>` : ''}
+                ${!currentKnown && value ? html`<option value=${value} .selected=${true}>${value} — current/manual</option>` : ''}
                 ${preferredModels.length ? html`
                     <optgroup label="Compatible / recommended">
                         ${preferredModels.map(model => html`
-                            <option value=${model.id}>
+                            <option value=${model.id} .selected=${model.id === value}>
                                 ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}${model.capabilityLabel ? ` · ${model.capabilityLabel}` : ''}
                             </option>
                         `)}
@@ -68,7 +70,7 @@ function renderModelPicker(view, options) {
                 ${advancedModels.length ? html`
                     <optgroup label="All provider models (advanced)">
                         ${advancedModels.map(model => html`
-                            <option value=${model.id}>
+                            <option value=${model.id} .selected=${model.id === value}>
                                 ${model.displayName || model.id}${model.preview ? ' · Preview' : ''}${model.capabilityLabel ? ` · ${model.capabilityLabel}` : ''}
                             </option>
                         `)}

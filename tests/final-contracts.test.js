@@ -258,6 +258,15 @@ test('the selected model shows its Preview and cached-catalog status without cha
     assert.match(output, /Selected model: Preview/);
     assert.match(output, /Cached catalog/);
     assert.ok(output.includes(id));
+    const deprecated = { id: 'gemini-3.7-flash', lifecycle: 'deprecated',
+        capabilityLabel: 'Deprecated · Google routes requests to gemini-3.8-flash; select a current model explicitly' };
+    for (const preferred of [[], [{ id: 'gemini-3.8-flash' }]]) {
+        const warning = scope.renderModelPicker({}, { label: 'Screen', value: deprecated.id, currentModel: deprecated,
+            preferred, onSave() { assert.fail('Rendering must preserve the saved selection'); } });
+        assert.match(warning, /Selected model: Deprecated/);
+        assert.ok(warning.includes(deprecated.id));
+        assert.match(warning, /Google routes requests to gemini-3.8-flash/);
+    }
 });
 
 test('setup messages emitted before SDK connect resolves retain the safe resumption handle', async t => {

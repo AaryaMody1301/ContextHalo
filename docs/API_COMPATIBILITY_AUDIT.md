@@ -1,6 +1,6 @@
 # API compatibility and release gates - 2026-09-21
 
-Current implementation and dependency versions: [API compatibility implementation, October 9](API_COMPATIBILITY_IMPLEMENTATION_2026-10-09.md). The September results below are historical; their recorded versions and validation results are preserved.
+Latest review: [API documentation and code deep check, October 12](API_DEEP_CHECK_2026-10-12.md). Earlier implementation and dependency changes: [API compatibility implementation, October 9](API_COMPATIBILITY_IMPLEMENTATION_2026-10-09.md). The September results below are historical; their recorded versions and validation results are preserved.
 
 ## Product and scope
 

@@ -14,7 +14,8 @@ const GEMINI_MODEL_POLICY = Object.freeze({
         contextHaloCompatibility: 'supported',
     }),
     'gemini-3.7-flash': Object.freeze({
-        lifecycle: 'stable',
+        lifecycle: 'deprecated',
+        replacement: 'gemini-3.8-flash',
         route: 'generate',
         roles: Object.freeze(['text', 'screen']),
         inputs: Object.freeze(['text', 'image', 'video', 'audio', 'pdf']),
@@ -42,7 +43,8 @@ const GEMINI_MODEL_POLICY = Object.freeze({
         contextHaloCompatibility: 'supported',
     }),
     'gemini-3.5-flash': Object.freeze({
-        lifecycle: 'stable',
+        lifecycle: 'deprecated',
+        replacement: 'gemini-3.6-flash',
         route: 'generate',
         roles: Object.freeze(['text', 'screen']),
         inputs: Object.freeze(['text', 'image', 'video', 'audio', 'pdf']),
@@ -140,6 +142,7 @@ function geminiModelPolicy(model) {
 function geminiCapabilityLabel(model) {
     const policy = geminiModelPolicy(model);
     if (!policy) return '';
+    if (policy.lifecycle === 'deprecated') return `Deprecated · Google routes requests to ${policy.replacement}; select a current model explicitly`;
     if (policy.route === 'live') {
         if (policy.contextHaloCompatibility !== 'supported') {
             return 'Stable · Live audio · Search · Extended Thinking mapped, not enabled';

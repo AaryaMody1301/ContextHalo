@@ -116,8 +116,9 @@ function appendContextToInstruction(systemInstruction, context) {
 function extractContentsText(contents) {
     if (typeof contents === 'string') return contents;
     if (!Array.isArray(contents)) return '';
+    const currentQuestion = contents.findLast(content => content?.role === 'user');
     const text = [];
-    for (const content of contents) {
+    for (const content of currentQuestion ? [currentQuestion] : contents) {
         if (typeof content === 'string') text.push(content);
         if (typeof content?.text === 'string') text.push(content.text);
         for (const part of Array.isArray(content?.parts) ? content.parts : []) {

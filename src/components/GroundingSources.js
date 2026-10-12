@@ -10,7 +10,8 @@ function safeSourceUrl(value) {
 
 // Google supplies Search Suggestions as compliant HTML/CSS. Do not parse,
 // sanitize, rewrite, or persist that provider fragment. It is rendered verbatim
-// inside an opaque sandboxed iframe so it never joins the privileged app DOM.
+// in a nested shadow root; the application CSP blocks provider scripts and
+// limits resource loading, while source navigation uses the validated IPC path.
 class GoogleSearchSuggestions extends HTMLElement {
     constructor() {
         super();

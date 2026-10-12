@@ -295,7 +295,7 @@ async function sendToLlama(transcription) {
 
         assertCurrentRequest();
         if (fullText.trim()) {
-            localConversationHistory = [...requestHistory, { role: 'assistant', content: fullText.trim() }];
+            localConversationHistory = [...trimLocalHistory([...localConversationHistory, requestHistory.at(-1)]), { role: 'assistant', content: fullText.trim() }];
             saveConversationTurn(transcription, fullText);
         }
 
@@ -603,7 +603,7 @@ async function sendLocalImage(base64Data, prompt) {
 
         assertCurrentRequest();
         if (fullText.trim()) {
-            localConversationHistory = [...requestHistory, { role: 'assistant', content: fullText.trim() }];
+            localConversationHistory = [...trimLocalHistory([...localConversationHistory, requestHistory.at(-1)]), { role: 'assistant', content: fullText.trim() }];
             saveConversationTurn(prompt, fullText);
         }
 

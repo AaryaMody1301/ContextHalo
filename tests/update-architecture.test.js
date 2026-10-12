@@ -147,6 +147,7 @@ test('packaged update check returns sanitized notification metadata and shares o
     assert.equal(request.url, LATEST_RELEASE_API);
     assert.equal(request.options.method, 'GET');
     assert.equal(request.options.redirect, 'error');
+    assert.equal(request.options.headers['X-GitHub-Api-Version'], '2026-03-10');
     assert.equal(first.status, 'update-available');
     assert.equal(first.currentTag, 'v0.8.0-portable.367');
     assert.equal(first.latestTag, 'v0.8.0-portable.368');

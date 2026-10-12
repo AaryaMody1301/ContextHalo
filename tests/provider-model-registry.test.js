@@ -59,11 +59,11 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     assert.deepEqual(catalog.screen.map(model => model.id).sort(), [
         'gemini-3.1-flash-lite',
         'gemini-3.5-flash-lite',
-        'gemini-3.7-flash',
         'gemini-3.8-flash',
     ]);
     assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
+    assert.equal(catalog.all.find(model => model.id === 'gemini-3.7-flash').lifecycle, 'deprecated');
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');
     assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
     assert.match(catalog.screen.find(model => model.id === 'gemini-3.8-flash').capabilityLabel, /Thinking low\/medium\/high/);

@@ -666,7 +666,7 @@ export class CustomizeView extends LitElement {
                     <div class="form-group">
                         <label class="form-label" for="speech-language">Speech Language</label>
                         <select id="speech-language" class="control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
-                            ${this.getLanguages().map(language => html`<option value=${language.value}>${language.name}</option>`)}
+                            ${this.getLanguages().map(language => html`<option value=${language.value} .selected=${language.value === this.selectedLanguage}>${language.name}</option>`)}
                         </select>
                     </div>
                 </div>
@@ -682,7 +682,7 @@ export class CustomizeView extends LitElement {
                     <div class="form-group">
                         <label class="form-label" for="theme">Theme</label>
                         <select id="theme" class="control" .value=${this.theme} @change=${this.handleThemeChange}>
-                            ${this.getThemes().map(theme => html`<option value=${theme.value}>${theme.name}</option>`)}
+                            ${this.getThemes().map(theme => html`<option value=${theme.value} .selected=${theme.value === this.theme}>${theme.name}</option>`)}
                         </select>
                     </div>
                     <div class="form-group slider-wrap">
