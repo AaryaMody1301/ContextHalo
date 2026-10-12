@@ -1,6 +1,6 @@
 # API compatibility and release gates - 2026-09-21
 
-Current runtime corrections: [Final runtime repair, September 23](FINAL_RUNTIME_REPAIR_2026-09-23.md). Model/dependency versions below are intentionally unchanged.
+Current implementation and dependency versions: [API compatibility implementation, October 9](API_COMPATIBILITY_IMPLEMENTATION_2026-10-09.md). The September results below are historical; their recorded versions and validation results are preserved.
 
 ## Product and scope
 

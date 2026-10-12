@@ -1,9 +1,7 @@
 const { getModelSnapshot, selectProjector } = require('./hubMetadata');
-const crypto = require('node:crypto');
+const { fileMatchesChecksum: matchesChecksum, installVerifiedFile } = require('./native-ai-runtime');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Readable, Transform } = require('node:stream');
-const { pipeline } = require('node:stream/promises');
 const { execFile } = require('node:child_process');
 const runFile = require('node:util').promisify(execFile);
 
@@ -67,60 +65,6 @@ async function getHuggingFaceFileSha256(repository, revision, filePath, signal) 
         throw new Error(`Hugging Face did not expose a SHA-256 ETag for ${filePath}`);
     }
     return sha256;
-}
-
-async function calculateSha256(filePath) {
-    return new Promise((resolve, reject) => {
-        const hash = crypto.createHash('sha256');
-        const input = fs.createReadStream(filePath);
-        input.on('error', reject);
-        input.on('data', chunk => hash.update(chunk));
-        input.on('end', () => resolve(hash.digest('hex')));
-    });
-}
-
-async function matchesChecksum(filePath, sha256) {
-    if (!fs.existsSync(filePath)) return false;
-    return (await calculateSha256(filePath)) === sha256;
-}
-
-async function downloadVerifiedFile(url, destinationPath, sha256, onProgress, signal) {
-    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-    if (await matchesChecksum(destinationPath, sha256)) return destinationPath;
-
-    const temporaryPath = `${destinationPath}.download-${process.pid}-${Date.now()}`;
-    const timeout = AbortSignal.timeout(30 * 60 * 1000);
-    signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const response = await fetch(url, { redirect: 'follow', signal });
-    if (!response.ok || !response.body) {
-        throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
-    }
-
-    const expectedBytes = Number(response.headers.get('content-length')) || 0;
-    let downloadedBytes = 0;
-    try {
-        const input = Readable.fromWeb(response.body);
-        const progress = new Transform({
-            transform(chunk, encoding, callback) {
-                downloadedBytes += chunk.length;
-                onProgress?.({ downloadedBytes, expectedBytes });
-                callback(null, chunk);
-            },
-        });
-        await pipeline(input, progress, fs.createWriteStream(temporaryPath, { flags: 'wx' }), { signal });
-
-        const actualSha256 = await calculateSha256(temporaryPath);
-        if (actualSha256 !== sha256) {
-            throw new Error(`Checksum verification failed for ${path.basename(destinationPath)}`);
-        }
-
-        signal?.throwIfAborted();
-        fs.renameSync(temporaryPath, destinationPath);
-        return destinationPath;
-    } catch (error) {
-        fs.rmSync(temporaryPath, { force: true });
-        throw error;
-    }
 }
 
 function findRuntimeFile(directory, fileName) {
@@ -195,7 +139,8 @@ async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
 
     const acceleratorTimeout = AbortSignal.timeout(120000);
     const acceleratorSignal = signal ? AbortSignal.any([signal, acceleratorTimeout]) : acceleratorTimeout;
-    await downloadVerifiedFile(VULKAN_LLAMA_RELEASE.url, archivePath, VULKAN_LLAMA_RELEASE.sha256, onProgress, acceleratorSignal);
+    await installVerifiedFile({ url: VULKAN_LLAMA_RELEASE.url, destinationPath: archivePath,
+        sha256: VULKAN_LLAMA_RELEASE.sha256, onProgress, signal: acceleratorSignal });
     signal?.throwIfAborted();
     return extractVulkanRuntime(archivePath, runtimeDirectory, runFile, acceleratorSignal);
 }

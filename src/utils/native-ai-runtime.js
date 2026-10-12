@@ -441,6 +441,8 @@ function stopNativeServer(childProcess) {
 }
 
 module.exports = {
+    fileMatchesChecksum,
+    installVerifiedFile,
     ensureNativeBinary,
     ensureLlamaModel,
     ensureWhisperModel,

@@ -67,7 +67,7 @@ test('screen 503 retry does not reconnect or end the Live interview', async t =>
         generate: async () => {
             calls += 1;
             if (calls === 1) throw Object.assign(new Error('service unavailable'), { status: 503, headers: { 'retry-after': '0' } });
-            return { text: 'Recovered screen answer' };
+            return { text: 'Recovered screen answer', candidates: [{ finishReason: 'STOP' }] };
         },
     });
     t.after(() => f.close());
@@ -87,7 +87,7 @@ test('screen 504 retry does not reconnect or end the Live interview', async t =>
         generate: async () => {
             calls += 1;
             if (calls === 1) throw Object.assign(new Error('deadline exceeded'), { status: 504, headers: { 'retry-after': '0' } });
-            return { text: 'Recovered after deadline' };
+            return { text: 'Recovered after deadline', candidates: [{ finishReason: 'STOP' }] };
         },
     });
     t.after(() => f.close());

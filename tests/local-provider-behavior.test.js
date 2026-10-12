@@ -10,7 +10,7 @@ test('Local AI text and vision use successful history only and forward cancellat
     const api=loadMain('src/utils/localai.js',{
         fs:{existsSync:()=>true,readdirSync:()=>[]},'./native-ai-runtime':native,'./sessionRequests':requests,
         './gemini':{sendToRenderer(){},initializeNewSession:()=>requests.resetSessionRequests(),saveConversationTurn:(question,answer)=>turns.push([question,answer])}
-    },{console:{log(){},warn(){}},fetch:async(_url,init)=>{assert.ok(init.signal);bodies.push(JSON.parse(init.body));return new Response(status===200?'data: {"choices":[{"delta":{"content":"Local answer"}}]}\n\ndata: [DONE]\n\n':'private response body',{status});}});
+    },{console:{log(){},warn(){}},fetch:async(_url,init)=>{assert.ok(init.signal);bodies.push(JSON.parse(init.body));return new Response(status===200?'data: {"choices":[{"delta":{"content":"Local answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n':'private response body',{status});}});
     assert.equal(await api.initializeLocalSession('existing-model','tiny.en','interview','','en-US'),true);
     const run=fn=>requests.runSessionRequest('text',fn);
     const first=await run(()=>api.sendLocalText('first'));assert.equal(first.text,'Local answer');
@@ -27,7 +27,7 @@ test('Local AI bounds repeated prompt work and output for interactive latency', 
     const api=loadMain('src/utils/localai.js',{
         fs:{existsSync:()=>true,readdirSync:()=>[]},'./native-ai-runtime':native,'./sessionRequests':requests,
         './gemini':{sendToRenderer(){},initializeNewSession:()=>requests.resetSessionRequests(),saveConversationTurn(){}}
-    },{console:{log(){},warn(){}},fetch:async(_url,init)=>{bodies.push(JSON.parse(init.body));return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',{status:200});}});
+    },{console:{log(){},warn(){}},fetch:async(_url,init)=>{bodies.push(JSON.parse(init.body));return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{status:200});}});
     assert.equal(await api.initializeLocalSession('existing-model','tiny.en','interview','','en-US'),true);
     for (let index=0; index<12; index++) {
         const result=await requests.runSessionRequest('text',()=>api.sendLocalText('question-'+index+' '+('x'.repeat(1200))));
@@ -59,7 +59,7 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
         './gemini': { sendToRenderer() {}, initializeNewSession: () => requests.resetSessionRequests(), saveConversationTurn() {} },
     }, { console: { log() {}, warn() {} }, fetch: async (_url, init) => {
         bodies.push(JSON.parse(init.body));
-        return new Response('data: {"choices":[{"delta":{"content":"Answer"}}]}\n\ndata: [DONE]\n\n');
+        return new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
     } });
     t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
     assert.equal(await api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US'), true);

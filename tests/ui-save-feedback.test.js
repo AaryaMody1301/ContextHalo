@@ -132,6 +132,15 @@ test('Home loading, unsaved changes and initialization gate Start; active sessio
     await f.view._saveMode('groq'); assert.equal(f.view._mode, 'byok');
 });
 
+test('Home explains English-only Local AI before Start and permits a compatible language', async () => {
+    const f = home();
+    Object.assign(f.view, { _mode: 'local', _localLlmModel: 'selected-model', _whisperModel: 'tiny.en', selectedLanguage: 'hi-IN' });
+    await f.view._handleStart();
+    assert.equal(f.started(), 0); assert.match(f.view.startError, /English-only/);
+    assert.match(f.view._readinessSummary(), /English-only/);
+    f.view.selectedLanguage = 'en-GB'; await f.view._handleStart(); assert.equal(f.started(), 1);
+});
+
 test('all appearance palettes retain readable text and native control contrast without whole-window opacity', () => {
     const f = rendererFixture();
     const luminance = color => {

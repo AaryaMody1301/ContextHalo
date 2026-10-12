@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, getRequestMetadata, requestIsCurrent } = require('../src/utils/sessionRequests');
+const { cancelSessionRequests } = require('../src/utils/sessionRequests');
 
 test('conversation requests serialize history changes and keep per-request metadata', async () => {
     resetSessionRequests();
@@ -70,4 +71,22 @@ test('nested provider calls retain the parent request instead of deadlocking', a
     resetSessionRequests();
     const id = await runSessionRequest('text', () => runSessionRequest('voice', () => getRequestMetadata().requestId), { requestId: 'typed-1' });
     assert.equal(id, 'typed-1');
+});
+
+test('message cancellation targets its request and leaves voice and screen work active', async t => {
+    resetSessionRequests(); t.after(closeSessionRequests);
+    let releaseVoice, releaseScreen;
+    const voice = runSessionRequest('voice', () => new Promise(resolve => { releaseVoice = resolve; }));
+    const screen = runSessionRequest('screen', () => new Promise(resolve => { releaseScreen = resolve; }));
+    let typedRan = false;
+    const typed = runSessionRequest('text', () => { typedRan = true; }, { requestId: 'cancel-me' });
+    const cancelled = assert.rejects(typed, /text request cancelled/);
+    await delay(0);
+    cancelSessionRequests('text', 'old-request');
+    cancelSessionRequests('text', 'cancel-me');
+    await cancelled;
+    releaseVoice('voice'); releaseScreen('screen');
+    assert.deepEqual(await Promise.all([voice, screen]), ['voice', 'screen']);
+    await delay(0); assert.equal(typedRan, false);
+    assert.equal(await runSessionRequest('text', () => 'next'), 'next');
 });

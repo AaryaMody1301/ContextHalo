@@ -21,7 +21,7 @@ test('typed Gemini uses selected HTTP model and session context without muting l
 });
 test('typed Gemini streams partial text immediately and keeps balanced mode at low thinking', async () => {
     const f=fixture({ model:'gemini-3.8-flash', generate: async () => ({ chunks:[
-        { text:'First ' }, { text:'token' },
+        { text:'First ' }, { text:'token', candidates: [{ finishReason: 'STOP' }] },
     ] }) });
     const start=await f.handlers.get('initialize-gemini')(f.event,'','meeting','en-US','byok');
     assert.equal(start.success,true);

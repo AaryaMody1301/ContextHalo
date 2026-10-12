@@ -6,7 +6,7 @@ const { GoogleGenAI, Modality } = require('@google/genai');
 const { geminiFixture } = require('./helpers/gemini-fixture');
 const transport = require('../src/utils/windowsProviderTransport');
 
-for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS', 'SAFETY']) {
+for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS', 'SAFETY', 'missing-terminal', 'stop-before-usage']) {
     test(`real SDK screen stream handles ${scenario}`, { timeout: 7000 }, async t => {
         const requests = [];
         const server = http.createServer(async (request, response) => {
@@ -27,9 +27,12 @@ for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS'
                 response.end(error.slice(18));
             } else if (scenario === 'SAFETY') {
                 response.end(event({ promptFeedback: { blockReason: 'SAFETY' } }));
+            } else if (scenario === 'missing-terminal') {
+                response.end(event({ candidates: [{ content: { parts: [{ text: 'Partial answer' }] } }] }));
             } else {
-                response.end(event({ candidates: [{ content: { parts: [{ text: 'Screen answer' }] },
+                response.write(event({ candidates: [{ content: { parts: [{ text: 'Screen answer' }] },
                     finishReason: scenario === 'MAX_TOKENS' ? 'MAX_TOKENS' : 'STOP' }] }));
+                response.end(scenario === 'stop-before-usage' ? event({ usageMetadata: { totalTokenCount: 10 } }) : '');
             }
         });
         server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -61,15 +64,15 @@ for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS'
         assert.equal(requests[0].body.generationConfig.thinkingConfig.thinkingLevel, 'low');
         assert.ok(requests[0].body.tools.some(tool => tool.googleSearch));
         assert.ok(requests[0].body.contents[0].parts.some(part => part.inlineData?.mimeType === 'image/jpeg'));
-        if (scenario === '503-before-text') {
+        if (scenario === '503-before-text' || scenario === 'stop-before-usage') {
             assert.equal(result.success, true, result.error);
-            assert.equal(requests.length, 2);
-            assert.deepEqual(requests[0].body, requests[1].body);
+            assert.equal(requests.length, scenario === '503-before-text' ? 2 : 1);
+            if (requests.length === 2) assert.deepEqual(requests[0].body, requests[1].body);
             assert.equal(f.events.filter(([channel]) => channel === 'save-screen-analysis').length, 1);
         } else {
             assert.equal(result.success, false);
             assert.equal(result.failure.category, { '503-after-text': 'transient', '401': 'authentication',
-                MAX_TOKENS: 'output-limit', SAFETY: 'content-blocked' }[scenario]);
+                MAX_TOKENS: 'output-limit', SAFETY: 'content-blocked', 'missing-terminal': 'generation-failed' }[scenario]);
             assert.equal(requests.length, 1);
             assert.equal(f.events.filter(([channel]) => channel === 'save-screen-analysis').length, 0);
             assert.doesNotMatch(JSON.stringify(result), /private provider content/);

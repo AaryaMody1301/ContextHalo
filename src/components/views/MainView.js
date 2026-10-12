@@ -694,6 +694,7 @@ export class MainView extends LitElement {
         _localLlmModel: { state: true },
         _useCustomLocalLlmModel: { state: true },
         _whisperModel: { state: true },
+        selectedLanguage: { type: String },
         _showLocalHelp: { state: true },
     };
 
@@ -734,6 +735,7 @@ export class MainView extends LitElement {
         this._localLlmModel = 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
         this._useCustomLocalLlmModel = false;
         this._whisperModel = 'tiny.en';
+        this.selectedLanguage = 'en-US';
 
         this._catalogEpochs = { gemini: 0, groq: 0 };
         this._catalogTimers = {};
@@ -774,6 +776,7 @@ export class MainView extends LitElement {
             this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
             this._useCustomLocalLlmModel = !LOCAL_LLM_PRESETS.some(preset => preset.value === this._localLlmModel);
             this._whisperModel = prefs.whisperModel || 'tiny.en';
+            this.selectedLanguage = prefs.selectedLanguage || 'en-US';
             if (this._savedKeys?.gemini) void this._refreshProviderModels('gemini');
             if (this._savedKeys?.groq) void this._refreshProviderModels('groq');
 
@@ -1008,7 +1011,14 @@ export class MainView extends LitElement {
             this.shadowRoot.querySelector('#provider-api-key')?.focus();
             return;
         }
+        const languageError = this._localLanguageError();
+        if (languageError) { this.startError = languageError; this._setupOpen = true; return; }
         return this.onStart();
+    }
+
+    _localLanguageError() {
+        return this._mode === 'local' && /\.en$/.test(this._whisperModel) && !/^en(?:-|$)/i.test(this.selectedLanguage || 'en-US')
+            ? 'The selected local Whisper model is English-only. Select English in Settings or use Gemini/Groq for this language.' : '';
     }
 
     _hasConfiguredProvider() {
@@ -1022,6 +1032,7 @@ export class MainView extends LitElement {
         if (this._configurationLoading) return 'Loading your saved configuration...';
         if (this._saveState === 'saving') return 'Saving configuration. Start will wait for it to finish.';
         if (this._saveError || this._keyError) return 'Resolve the unsaved configuration below before starting.';
+        if (this._localLanguageError()) return this._localLanguageError();
         if (!this._hasConfiguredProvider()) return 'First-time setup: add a provider key below, or choose Local AI.';
         return this._mode === 'local' ? 'Local setup selected. Runners and models are checked on start; first use may require downloads.'
             : 'Provider settings saved locally. Credentials and model access are checked when connecting, not verified by this summary.';
@@ -1184,7 +1195,7 @@ export class MainView extends LitElement {
                         ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
                     <details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
-                        ${fields.map(field => renderModelPicker(this, field))}
+                        ${fields.map(field => renderModelPicker(this, { ...field, stale: catalog?.stale === true }))}
                     </details>
                     <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
                 </div>

@@ -181,7 +181,7 @@ test('grounding metadata stays active-response-only while grounded answer text r
     const metadata = { groundingChunks: [{ web: { uri: 'https://example.org/source', title: 'Source' } }, { web: { uri: 'javascript:alert(1)' } }],
         groundingSupports: [{ segment: { startIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] }],
         searchEntryPoint: { renderedContent: '<div>Provider search suggestions</div>' }, webSearchQueries: ['mock query'] };
-    const f = fixture(t, { search: true, generate: async () => ({ text: 'Answer', candidates: [{ groundingMetadata: metadata }] }) });
+    const f = fixture(t, { search: true, generate: async () => ({ text: 'Answer', candidates: [{ groundingMetadata: metadata, finishReason: 'STOP' }] }) });
     await f.start(); const result = await f.call('send-text-message', 'Question');
     assert.equal(result.success, true);
     assert.ok(JSON.stringify(result.grounding).includes('https://example.org/source'));

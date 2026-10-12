@@ -29,6 +29,7 @@ function renderModelPicker(view, options) {
         onSave,
         helper = '',
         allowAdvanced = true,
+        stale = false,
     } = options;
 
     const preferredModels = uniqueModels(preferred);
@@ -37,6 +38,8 @@ function renderModelPicker(view, options) {
     const catalogModels = [...preferredModels, ...advancedModels];
     const hasCatalog = catalogModels.length > 0;
     const currentKnown = catalogModels.some(model => model.id === value);
+    const selected = catalogModels.find(model => model.id === value);
+    const selectedStatus = selected?.capabilityLabel || (selected?.preview ? 'Preview' : '');
 
     if (!hasCatalog) {
         return html`
@@ -72,6 +75,7 @@ function renderModelPicker(view, options) {
                     </optgroup>
                 ` : ''}
             </select>
+            ${selectedStatus || stale ? html`<div class="form-hint" role="status">${selectedStatus ? `Selected model: ${selectedStatus}. ` : ''}${stale ? 'Cached catalog; refresh to check current access.' : ''}</div>` : ''}
             ${helper ? html`<div class="form-hint">${helper}</div>` : ''}
         </div>
     `;

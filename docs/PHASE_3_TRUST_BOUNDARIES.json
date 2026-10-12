@@ -93,6 +93,7 @@
         "cancel-screen-analysis",
         "retry-session-connection",
         "send-text-message",
+        "cancel-text-message",
         "close-session",
         "get-current-session",
         "start-new-session",

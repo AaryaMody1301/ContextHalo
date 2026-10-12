@@ -1,6 +1,7 @@
 const { requestIsCurrent } = require('./sessionRequests');
 const { BrowserWindow } = require('electron');
 const storage = require('../storage');
+const { formatGroqMessages } = require('./groqRequestPolicy');
 const {
     normalizeResponseMode,
     applyResponseModeInstruction,
@@ -53,6 +54,9 @@ function tuneRequestInit(url, init = {}) {
     try {
         const body = JSON.parse(init.body);
         const tuned = tuneChatRequestBody(body, getResponseMode());
+        if (url.hostname === 'api.groq.com' && Array.isArray(tuned.messages)) {
+            tuned.messages = formatGroqMessages(tuned.model, tuned.messages);
+        }
         return { ...init, body: JSON.stringify(tuned) };
     } catch {
         return init;

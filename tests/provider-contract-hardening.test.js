@@ -54,10 +54,10 @@ test('typed Gemini sends prior thought signatures back in bounded working contex
         generate: async (params, count) => {
             if (count === 1) return { chunks: [
                 { text: 'First answer', candidates: [{ content: { role: 'model', parts: [{ text: 'First answer' }] } }] },
-                { text: '', candidates: [{ content: { role: 'model', parts: [{ text: '', thoughtSignature: 'sig-first' }] } }] },
+                { text: '', candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ text: '', thoughtSignature: 'sig-first' }] } }] },
             ] };
             secondRequest = params;
-            return { text: 'Second answer', candidates: [{ content: { role: 'model', parts: [{ text: 'Second answer' }] } }] };
+            return { text: 'Second answer', candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ text: 'Second answer' }] } }] };
         },
     });
     t.after(() => f.close());

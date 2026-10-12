@@ -47,6 +47,19 @@ test('composition, newline, and shortcut Enter do not accidentally send', () => 
     assert.equal(sent,0); assert.equal(prevented,0);
     view.handleTextKeydown(event); assert.equal(sent,1); assert.equal(prevented,1);
 });
+
+test('Cancel message keeps the draft and does not cancel a concurrent screen request', async () => {
+    let resolve, cancelled = 0, screenCancelled = 0;
+    const { view, input } = composer(() => new Promise(done => { resolve = done; }));
+    view.isAnalyzing = true;
+    view.cancelAnalysis = () => screenCancelled++;
+    view.onCancelText = async () => { cancelled++; resolve({ success: false, cancelled: true, error: 'Request cancelled.' }); return { success: true }; };
+    const pending = view.handleSendText();
+    await view.cancelMessage();
+    assert.equal((await pending).cancelled, true);
+    assert.equal(cancelled, 1); assert.equal(screenCancelled, 0);
+    assert.equal(input.value, '  question  '); assert.equal(view.sending, false);
+});
 test('interleaved response streams update their own cards and preserve navigation', () => {
     const App=loadClass('src/components/app/ContextHaloApp.js','ContextHaloApp');
     const app=Object.assign(Object.create(App.prototype),{responses:[],_responseIds:[],_responseRequestIndex:new Map(),currentResponseIndex:-1,requestUpdate(){}});

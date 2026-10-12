@@ -14,7 +14,7 @@ test('Analyze Screen remains usable while Gemini Live reconnect is pending', asy
     const reconnectGate = new Promise(resolve => { releaseReconnect = resolve; });
     const liveSessions = [];
     const fixture = geminiFixture({
-        generate: async () => ({ text: 'Screen answer during reconnect' }),
+        generate: async () => ({ text: 'Screen answer during reconnect', candidates: [{ finishReason: 'STOP' }] }),
         live: async (_params, count) => {
             const session = { close() {}, sendRealtimeInput() {} };
             liveSessions.push(session);
@@ -41,7 +41,7 @@ test('Analyze Screen remains usable while Gemini Live reconnect is pending', asy
 });
 
 test('six Live connection rotations preserve context with interleaved screen analysis', async t => {
-    const fixture = geminiFixture({ generate: async (_params, count) => ({ text: `Screen answer ${count}` }) });
+    const fixture = geminiFixture({ generate: async (_params, count) => ({ text: `Screen answer ${count}`, candidates: [{ finishReason: 'STOP' }] }) });
     t.after(() => fixture.close());
 
     assert.equal((await fixture.start()).success, true);

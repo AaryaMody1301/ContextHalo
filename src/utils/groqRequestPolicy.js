@@ -21,11 +21,16 @@ function prependInstruction(content, instruction) {
 function buildGroqMessages(model, systemPrompt, messages = [], maxInstructionChars) {
     const instruction = normalizedInstruction(systemPrompt, maxInstructionChars);
     const input = Array.isArray(messages) ? messages : [];
-    if (!QWEN_REASONING_MODELS.test(String(model || ''))) {
-        return [{ role: 'system', content: instruction }, ...input];
-    }
+    return formatGroqMessages(model, [{ role: 'system', content: instruction }, ...input]);
+}
 
-    const output = [...input];
+function formatGroqMessages(model, messages) {
+    if (!QWEN_REASONING_MODELS.test(String(model || ''))) {
+        return messages;
+    }
+    const instruction = messages.filter(message => message?.role === 'system').map(message => message.content).join('\n\n');
+    if (!instruction) return messages;
+    const output = messages.filter(message => message?.role !== 'system');
     for (let index = output.length - 1; index >= 0; index--) {
         if (output[index]?.role !== 'user') continue;
         output[index] = { ...output[index], content: prependInstruction(output[index].content, instruction) };
@@ -54,6 +59,7 @@ function getGroqReasoningOptions(model, disableThinking) {
 
 module.exports = {
     buildGroqMessages,
+    formatGroqMessages,
     getGroqReasoningOptions,
     _test: { prependInstruction, normalizedInstruction },
 };

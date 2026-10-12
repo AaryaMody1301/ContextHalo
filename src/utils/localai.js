@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { readSseJson } = require('./sse');
 const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
-const { runSessionRequest, assertCurrentRequest, requestIsCurrent, getRequestSignal } = require('./sessionRequests');
+const { runSessionRequest, assertCurrentRequest, requestIsCurrent, getRequestSignal, markFirstResponse, recordRequestUsage } = require('./sessionRequests');
 const { getSystemPrompt } = require('./prompts');
 const { sendToRenderer, initializeNewSession, saveConversationTurn } = require('./gemini');
 const {
@@ -213,12 +213,17 @@ async function handleSpeechEndNow(audioData) {
 
 async function readStreamingResponse(response, onText) {
     let fullText = '';
+    let finishReason;
     for await (const event of readSseJson(response.body, getRequestSignal())) {
         assertCurrentRequest();
-        assertChatCompletionOutcome(event.choices?.[0]?.finish_reason, 'local');
+        finishReason = event.choices?.[0]?.finish_reason || finishReason;
+        recordRequestUsage({ inputTokens: event.usage?.prompt_tokens, outputTokens: event.usage?.completion_tokens, totalTokens: event.usage?.total_tokens });
+        assertChatCompletionOutcome(finishReason, 'local');
         const token = event.choices?.[0]?.delta?.content || '';
-        if (token) { fullText += token; onText(fullText); }
+        if (token) { markFirstResponse(); fullText += token; onText(fullText); }
     }
+    assertCurrentRequest();
+    assertChatCompletionOutcome(finishReason, 'local', true);
     if (!fullText.trim()) throw new Error('Local model returned no text. Try a shorter prompt or another model.');
     return fullText;
 }

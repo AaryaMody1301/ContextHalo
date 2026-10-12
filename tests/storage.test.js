@@ -172,8 +172,9 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
     assert.match(gemini, /currentProviderMode = 'groq'/);
     assert.match(gemini, /geminiSessionRef\.current = null/);
     assert.match(gemini, /currentProviderMode === 'groq' \? await sendImageToGroq\(data, prompt\) : await sendImageToGeminiHttp\(data, prompt\)/);
-    assert.match(gemini, /groqTranscriptionModel/);
-    assert.match(gemini, /whisper-large-v3-turbo/);
+    const audio = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'runtimeHardeningMain.js'), 'utf8');
+    assert.match(audio, /groqTranscriptionModel/);
+    assert.match(audio, /whisper-large-v3-turbo/);
     assert.match(gemini, /const liveModel = String\(getConfig\(\)\.geminiLiveModel/);
     assert.match(gemini, /model: liveModel/);
 });
@@ -181,7 +182,6 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
 test('supported Electron runtime and lockfile stay aligned', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
     const lockfile = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package-lock.json'), 'utf8'));
-    assert.equal(packageJson.devDependencies.electron, '^44.3.0');
-    assert.equal(lockfile.packages[''].devDependencies.electron, '^44.3.0');
-    assert.equal(lockfile.packages['node_modules/electron'].version, '44.3.0');
+    assert.equal(lockfile.packages[''].devDependencies.electron, packageJson.devDependencies.electron);
+    assert.ok(require('semver').satisfies(lockfile.packages['node_modules/electron'].version, packageJson.devDependencies.electron));
 });

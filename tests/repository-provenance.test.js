@@ -85,7 +85,7 @@ test('vendored and native provenance records point to owned artifacts', () => {
 
     assert.match(notices, /GPL-3\.0/);
     assert.match(notices, /Lit 3\.3\.3/);
-    assert.match(notices, /Marked[^\n]*18\.0\.13/);
+    assert.ok(notices.includes(`Marked | ${JSON.parse(read('package.json')).dependencies.marked} locked`));
     assert.match(notices, /highlight\.js 11\.9\.0[^\n]*removed/i);
     assert.match(notices, /b10964/);
     assert.match(notices, /b5130/);

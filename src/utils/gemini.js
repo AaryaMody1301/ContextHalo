@@ -14,7 +14,7 @@ const { getResponseMode, applyResponseModeInstruction } = require('./realtimeCon
 const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
-    assertCurrentRequest, getRequestMetadata, getRequestSignal } = require('./sessionRequests');
+    assertCurrentRequest, getRequestMetadata, getRequestSignal, markFirstResponse, recordRequestUsage, getRequestMetrics } = require('./sessionRequests');
 const { createGeminiLiveRuntime } = require('./geminiLiveRuntime');
 const { SCREEN_PROVIDER_BUDGET_MS, SCREEN_SESSION_TIMEOUT_MS, screenThinkingConfig } = require('./geminiScreenReliability');
 const { classifyGeminiFailure } = require('./geminiFailure');
@@ -79,11 +79,8 @@ const GROQ_MAX_COMPLETION_TOKENS = 2048;
 const GROQ_MAX_HISTORY_MESSAGES = 8;
 const GROQ_MAX_HISTORY_CHARS = 12000;
 const GROQ_MAX_SYSTEM_PROMPT_CHARS = 6000;
-const GROQ_AUDIO_CHUNK_SECONDS = 8;
 const LIVE_RECONNECT_CONTEXT_MAX_CHARS = 16000;
 const LIVE_RECONNECT_TURN_PART_MAX_CHARS = 2500;
-let groqSystemAudioBuffer = Buffer.alloc(0);
-let groqTranscriptionInFlight = false;
 let groqRateLimitState = null;
 let geminiLiveRuntime = null;
 let lastGeminiInitializationError = '';
@@ -97,6 +94,7 @@ let sessionParams = null;
 function sendToRenderer(channel, data, metadata = getRequestMetadata()) {
     metadata = { uiEpoch: providerUiEpoch, ...metadata };
     if (!requestIsCurrent()) return;
+    if (['new-response', 'update-response'].includes(channel) && typeof data === 'string' && data.trim()) markFirstResponse();
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
         if (!windows[0].isDestroyed()) windows[0].webContents.send(channel, data, metadata);
@@ -353,6 +351,7 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
         let groundingState;
         let modelParts = [];
         let emitted = false;
+        let finishReason;
         try {
             const stream = await ai.models.generateContentStream({
                 ...params, config: { ...params.config, abortSignal: operationSignal,
@@ -361,6 +360,10 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
             for await (const chunk of stream) {
                 operationSignal.throwIfAborted();
                 assertGeminiGenerationOutcome(chunk);
+                const usage = chunk?.usageMetadata;
+                recordRequestUsage({ inputTokens: usage?.promptTokenCount, outputTokens: usage?.candidatesTokenCount,
+                    thinkingTokens: usage?.thoughtsTokenCount, totalTokens: usage?.totalTokenCount });
+                finishReason = chunk?.candidates?.[0]?.finishReason || finishReason;
                 const piece = String(chunk?.text || '');
                 groundingState = mergeGrounding(groundingState, groundingFragmentFromResponse(chunk));
                 modelParts = appendModelParts(modelParts, chunk);
@@ -370,6 +373,7 @@ async function generateGeminiStream(ai, params, requestOptions, onText) {
                 emitted = true;
                 onText?.(text, grounding);
             }
+            assertGeminiGenerationOutcome({ candidates: [{ finishReason }] }, true);
             if (!text.trim()) throw new Error('Gemini returned no text. Check model availability and safety feedback, then retry.');
             return { text: text.trim(), grounding: publicGrounding(groundingState), modelParts };
         } catch (error) {
@@ -394,7 +398,8 @@ function trimConversationHistory(history, maxChars = 42000) {
         const turn = history[i];
         const turnChars = (turn.content || '').length;
 
-        if (totalChars + turnChars > maxChars) break;
+        // The history budget is soft for the newest, IPC-bounded question.
+        if (trimmed.length && totalChars + turnChars > maxChars) break;
         totalChars += turnChars;
         trimmed.unshift(turn);
     }
@@ -514,102 +519,6 @@ function formatGroqError(status, body, headers) {
     return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
 }
 
-// Groq-only voice path. This deliberately avoids opening Gemini Live when a
-// Groq key is selected, so Gemini quota exhaustion cannot block Groq chats.
-function pcmToWavBuffer(pcm, sampleRate = 24000, channels = 1) {
-    const bitsPerSample = 16;
-    const blockAlign = channels * bitsPerSample / 8;
-    const byteRate = sampleRate * blockAlign;
-    const header = Buffer.alloc(44);
-    header.write('RIFF', 0);
-    header.writeUInt32LE(36 + pcm.length, 4);
-    header.write('WAVE', 8);
-    header.write('fmt ', 12);
-    header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20);
-    header.writeUInt16LE(channels, 22);
-    header.writeUInt32LE(sampleRate, 24);
-    header.writeUInt32LE(byteRate, 28);
-    header.writeUInt16LE(blockAlign, 32);
-    header.writeUInt16LE(bitsPerSample, 34);
-    header.write('data', 36);
-    header.writeUInt32LE(pcm.length, 40);
-    return Buffer.concat([header, pcm]);
-}
-
-function getPcmSampleRate(mimeType) {
-    const match = String(mimeType || '').match(/rate=(\d+)/i);
-    return match ? Number(match[1]) : 24000;
-}
-
-async function sendGroqSystemAudio(data, mimeType, language = 'en-US') {
-    const sampleRate = getPcmSampleRate(mimeType);
-    const pcm = Buffer.from(data, 'base64');
-
-    // Always enqueue audio first. The previous implementation returned while a
-    // transcription was in flight and silently discarded every chunk that arrived
-    // during the request.
-    groqSystemAudioBuffer = Buffer.concat([groqSystemAudioBuffer, pcm]);
-
-    if (groqTranscriptionInFlight) return { success: true, queued: true };
-
-    return processGroqAudioQueue(sampleRate, language);
-}
-
-async function processGroqAudioQueue(sampleRate, language) {
-    const minBytes = sampleRate * 2 * GROQ_AUDIO_CHUNK_SECONDS;
-    if (groqSystemAudioBuffer.length < minBytes) return { success: true };
-
-    const chunk = groqSystemAudioBuffer.subarray(0, minBytes);
-    groqSystemAudioBuffer = groqSystemAudioBuffer.subarray(minBytes);
-    groqTranscriptionInFlight = true;
-
-    try {
-        const wav = pcmToWavBuffer(chunk, sampleRate, 1);
-        const form = new FormData();
-        form.append('model', getConfig().groqTranscriptionModel || 'whisper-large-v3-turbo');
-        form.append('language', String(language).split('-')[0]);
-        form.append('response_format', 'json');
-        form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav');
-
-        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${getGroqApiKey()}` },
-            body: form,
-        });
-
-        captureGroqRateLimitHeaders(response.headers);
-        const body = await response.text();
-        if (!response.ok) {
-            const message = formatGroqError(response.status, body, response.headers);
-            console.warn('Groq transcription error:');
-            sendToRenderer('update-status', message);
-            return { success: false, error: message };
-        }
-
-        const transcript = JSON.parse(body)?.text?.trim();
-        if (transcript) {
-            currentTranscription = transcript;
-            sendToRenderer('update-status', 'Generating Groq response...');
-            const groqResult = await sendToGroq(transcript);
-            currentTranscription = '';
-            return groqResult;
-        }
-        return { success: true };
-    } catch (error) {
-        console.warn('Groq audio transcription failed:');
-        sendToRenderer('update-status', 'Groq transcription error: ' + error.message);
-        return { success: false, error: error.message };
-    } finally {
-        groqTranscriptionInFlight = false;
-        // Drain queued audio after the active request finishes. Keep this
-        // asynchronous so the IPC caller is never blocked by the next chunk.
-        if (groqSystemAudioBuffer.length >= sampleRate * 2 * GROQ_AUDIO_CHUNK_SECONDS) {
-            void processGroqAudioQueue(sampleRate, language);
-        }
-    }
-}
-
 function sendToGroq(transcription) {
     return runSessionRequest('voice', () => sendToGroqNow(transcription));
 }
@@ -654,7 +563,8 @@ async function sendToGroqNow(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                messages: buildGroqMessages(modelToUse, currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
+                // Apply the model role policy after context middleware assembles all instructions.
+                messages: buildGroqMessages('', currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -686,6 +596,8 @@ async function sendToGroqNow(transcription) {
         for await (const event of readSseJson(response.body, getRequestSignal())) {
             assertCurrentRequest();
             finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            const usage = event.usage || event.x_groq?.usage;
+            recordRequestUsage({ inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens, totalTokens: usage?.total_tokens });
             assertChatCompletionOutcome(finishReason, 'groq');
             fullText += event.choices?.[0]?.delta?.content || '';
             const displayText = stripThinkingTags(fullText);
@@ -696,6 +608,7 @@ async function sendToGroqNow(transcription) {
         }
 
         assertCurrentRequest();
+        assertChatCompletionOutcome(finishReason, 'groq', true);
         const cleanedResponse = stripThinkingTags(fullText);
         const modelKey = modelToUse.split('/').pop();
 
@@ -761,7 +674,7 @@ async function sendImageToGroq(base64Data, prompt) {
             },
             body: JSON.stringify({
                 model,
-                messages: buildGroqMessages(model, currentSystemPrompt, [
+                messages: buildGroqMessages('', currentSystemPrompt, [
                     {
                         role: 'user',
                         content: [
@@ -803,6 +716,8 @@ async function sendImageToGroq(base64Data, prompt) {
         for await (const event of readSseJson(response.body, getRequestSignal())) {
             assertCurrentRequest();
             finishReason = event.choices?.[0]?.finish_reason || finishReason;
+            const usage = event.usage || event.x_groq?.usage;
+            recordRequestUsage({ inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens, totalTokens: usage?.total_tokens });
             assertChatCompletionOutcome(finishReason, 'groq');
             fullText += event.choices?.[0]?.delta?.content || '';
             const displayText = stripThinkingTags(fullText);
@@ -812,6 +727,8 @@ async function sendImageToGroq(base64Data, prompt) {
             }
         }
 
+        assertCurrentRequest();
+        assertChatCompletionOutcome(finishReason, 'groq', true);
         const cleanedResponse = stripThinkingTags(fullText);
         if (!cleanedResponse) {
             logTransportEvent('groq.image.empty_response', {
@@ -1238,7 +1155,7 @@ function reportUserRequestResult(result, operation) {
         result = { ...result, success: false, error: failure.message, failure };
         if (failure.category !== 'cancelled') sendToRenderer('provider-request-error', failure);
     }
-    return { ...result, request: getRequestMetadata() };
+    return { ...result, request: getRequestMetadata(), metrics: getRequestMetrics() };
 }
 
 function setupGeminiIpcHandlers(geminiSessionRef) {
@@ -1324,7 +1241,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
             initializeNewSession(profile, customPrompt);
             sessionParams = { language, profile, customPrompt, provider: 'groq' };
-            groqSystemAudioBuffer = Buffer.alloc(0);
             sendToRenderer('update-status', 'Groq ready');
             publishProviderState('ready');
             return { success: true, provider: 'groq', search: { ...searchState } };
@@ -1381,7 +1297,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             }
         }
         if (currentProviderMode === 'groq') {
-            return await sendGroqSystemAudio(data, mimeType, sessionParams?.language || 'en-US');
+            // The installed runtime wrapper owns Groq VAD and transcription.
+            return { success: false, error: 'Groq audio capture is not initialized' };
         }
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
@@ -1411,8 +1328,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: error.message };
             }
         }
-        // Candidate microphone audio is not sent back as a new Groq question.
-        if (currentProviderMode === 'groq') return { success: true };
+        // Groq microphone capture is also owned by the runtime VAD wrapper.
+        if (currentProviderMode === 'groq') return { success: false, error: 'Groq audio capture is not initialized' };
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
         try {
             process.stdout.write(',');
@@ -1439,6 +1356,13 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     register('cancel-screen-analysis', async () => {
         cancelSessionRequests('screen');
         require('./contextCaptureMain').cancelRegionSelection();
+        return { success: true };
+    });
+
+    register('cancel-text-message', async (_event, options) => {
+        if (!options) return { success: false, error: 'A current request context is required' };
+        const request = validateUserRequestContext(options);
+        cancelSessionRequests('text', request.requestId);
         return { success: true };
     });
 
@@ -1501,7 +1425,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             }
 
             if (currentProviderMode === 'groq') {
-                groqSystemAudioBuffer = Buffer.alloc(0);
                 groqConversationHistory = [];
                 currentProviderMode = 'byok';
                 closeTransportLog();

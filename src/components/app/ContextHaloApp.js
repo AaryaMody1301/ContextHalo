@@ -327,6 +327,8 @@ export class ContextHaloApp extends LitElement {
     _finishRequest(owner, result) {
         if (!this._requestIsCurrent(owner)) return;
         owner.outcome = result?.success === true ? 'success' : result?.cancelled ? 'cancelled' : 'failed';
+        owner.metrics = result?.metrics;
+        owner.model = result?.model || result?.failure?.model;
         if (result?.success === true || result?.cancelled || result?.failure?.category === 'cancelled') {
             if (this._detailMessage?.operation === owner.operation && this._detailMessage.uiEpoch === owner.uiEpoch) this._detailMessage = null;
             if ((this._requestErrors[owner.operation]?.sequence || 0) <= owner.sequence) delete this._requestErrors[owner.operation];
@@ -649,8 +651,16 @@ export class ContextHaloApp extends LitElement {
         } catch { result = { success: false, error: 'The request could not be completed. Your draft is retained; retry.' }; }
         if (owner.uiEpoch !== (this._uiSessionEpoch || 0)) return { success: false, cancelled: true, error: 'Session ended' };
         this._finishRequest(owner, result);
-        if (this._requestIsCurrent(owner)) this.setStatus(result?.success === true ? 'Response received' : 'Text request needs attention');
+        if (this._requestIsCurrent(owner)) this.setStatus(result?.success === true ? 'Response received' : result?.cancelled ? 'Message cancelled. Your draft is kept.' : 'Text request needs attention');
         return result;
+    }
+
+    async handleCancelText() {
+        const owner = this._requestOwners.text;
+        if (!this._requestIsCurrent(owner) || owner.outcome) return { success: false, error: 'No active message' };
+        try {
+            return await window.electronAPI.invoke('cancel-text-message', { requestId: owner.requestId, uiEpoch: owner.uiEpoch });
+        } catch { return { success: false, error: 'Message cancellation failed. Try again.' }; }
     }
 
     async handleAnalyzeScreen(options = {}) {
@@ -719,6 +729,7 @@ export class ContextHaloApp extends LitElement {
                         .selectedProfile=${this.selectedProfile}
                         .onProfileChange=${p => this.handleProfileChange(p)}
                         .onStart=${() => this.handleStart()}
+                        .selectedLanguage=${this.selectedLanguage}
                         .onExternalLink=${url => this.handleExternalLinkClick(url)}
                         .isInitializing=${this.isInitializing}
                         .onCancelStart=${() => this.endSession()}
@@ -784,6 +795,7 @@ export class ContextHaloApp extends LitElement {
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
                         .onSendText=${msg => this.handleSendText(msg)}
+                        .onCancelText=${() => this.handleCancelText()}
                         .onAnalyzeScreen=${options => this.handleAnalyzeScreen(options)}
                         .onEndSession=${() => this.endSession()}
                         .onHideWindow=${() => this.handleHideToggle()}
@@ -996,6 +1008,14 @@ export class ContextHaloApp extends LitElement {
                     <details class="error-details"><summary>Read connection error</summary><p>${this.providerError.message}</p></details>` : ''}
                 ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
                 <h3>Session connection</h3>
+                ${['text', 'screen'].map(operation => {
+                    const owner = this._requestOwners[operation];
+                    const metrics = owner?.metrics;
+                    if (!metrics || owner.uiEpoch !== this._uiSessionEpoch) return '';
+                    return html`<h3>${operation === 'text' ? 'Latest message' : 'Latest screen analysis'}</h3>
+                        <p>${owner.model || 'Selected model'} · ${owner.outcome}. First text: ${metrics.firstTextMs === null ? 'unavailable' : `${(metrics.firstTextMs / 1000).toFixed(2)} s`}. Total: ${(metrics.totalMs / 1000).toFixed(2)} s (including queue and retries).</p>
+                        <p>Provider-reported tokens: ${Object.entries(metrics.usage || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || 'unavailable'}. Token counts are not a billing estimate.</p>`;
+                })}
                 <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
                 ${this.searchState.liveReason ? html`<p>Live Search: ${this.searchState.liveReason}</p>` : ''}
                 ${this.searchState.httpReason ? html`<p>Text/screen Search: ${this.searchState.httpReason}</p>` : ''}

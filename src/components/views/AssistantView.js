@@ -380,6 +380,7 @@ export class AssistantView extends LitElement {
         currentResponseIndex: { type: Number },
         selectedProfile: { type: String },
         onSendText: { type: Function },
+        onCancelText: { attribute: false },
         onAnalyzeScreen: { type: Function },
         onEndSession: { attribute:false }, onHideWindow: { attribute:false }, onShowError: { attribute:false },
         toolsTab: { state:true }, toolsOpen: { state:true },
@@ -521,6 +522,7 @@ export class AssistantView extends LitElement {
         window.removeEventListener('realtime-context-changed', this._contextChanged);
         document.removeEventListener('selectionchange', this._selectionChanged);
         this.cancelAnalysis();
+        if (this.sending) void this.cancelMessage();
         this.shadowRoot.querySelector('.tools-dialog')?.close();
 
 
@@ -538,11 +540,13 @@ export class AssistantView extends LitElement {
         if (!message) return { success: false, error: 'Enter a message' };
         this.draft = input.value;
         this.sending = true;
+        this._sendingScreen = message === '/screen' || message === '/region';
         this.sendError = '';
         try {
             const result = message === '/screen' ? await this.handleScreenAnswer()
                 : message === '/region' ? await selectAndAnalyzeRegion(this)
                     : await this.onSendText(expandQuickCommand(message) || message);
+            if (result?.cancelled) { this.sendError = result.error || 'Message cancelled. Your draft is kept.'; return result; }
             if (result?.success !== true) throw new Error(result?.error || 'Message could not be sent');
             if (input.value.trim() === message) { input.value = ''; this.draft = ''; this._publishDraft(); }
             return result;
@@ -551,6 +555,7 @@ export class AssistantView extends LitElement {
             return { success: false, error: this.sendError };
         } finally {
             this.sending = false;
+            this._sendingScreen = false;
         }
     }
 
@@ -568,6 +573,16 @@ export class AssistantView extends LitElement {
 
     cancelAnalysis() {
         this._analysisController?.abort();
+    }
+
+    async cancelMessage() {
+        if (this._sendingScreen) {
+            this.cancelAnalysis();
+            if (this.regionSelecting) await window.electronAPI.invoke('cancel-screen-analysis');
+            return;
+        }
+        const result = await this.onCancelText?.();
+        if (result?.success === false) this.sendError = result.error || 'Message cancellation failed. Try again.';
     }
 
     async handleScreenAnswer(options = {}) {
@@ -765,8 +780,9 @@ export class AssistantView extends LitElement {
                         aria-label="Ask about this live session" placeholder="Ask about this live session..."
                         .value=${this.draft} @input=${event => { this.draft = event.target.value; this.sendError = ''; this._publishDraft(); }}
                         @keydown=${this.handleTextKeydown}></textarea>
-                    <button type="button" class="send-btn" aria-label="Send message"
-                        ?disabled=${this.sending || this.retryBlocked || !this.draft.trim()} @click=${this.handleSendText}>${this.sending ? 'Sending...' : 'Send'}</button>
+                    <button type="button" class="send-btn" aria-label=${this.sending ? 'Cancel message' : 'Send message'}
+                        ?disabled=${!this.sending && (this.retryBlocked || !this.draft.trim())}
+                        @click=${() => this.sending ? this.cancelMessage() : this.handleSendText()}>${this.sending ? 'Cancel message' : 'Send'}</button>
                 </div>
             </div>
             <div class="composer-state ${this.sendError || this.analysisError ? 'error' : ''}">

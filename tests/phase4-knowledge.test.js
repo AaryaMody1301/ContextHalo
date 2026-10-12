@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { loadMain } = require('./helpers/native-boundary');
 
 const {
     chunkText,
@@ -47,6 +48,17 @@ test('disabled knowledge sources do not participate in retrieval', () => {
     ];
     const results = retrieveChunks(docs, 'zebra migration violet', { limit: 5 });
     assert.equal(results.some(result => result.documentId === 'off'), false);
+});
+
+test('request retrieval loads enabled documents once and reuses them for ranking', () => {
+    let reads = 0;
+    const rag = loadMain('src/utils/knowledgeRagMain.js', {
+        '../storage': { getPreferences: () => ({}) },
+        './knowledgeStore': { getEnabledDocuments: () => { reads++; return [{ id: 'db', title: 'Database', enabled: true,
+            chunks: [{ id: 'c', text: 'Database indexes reduce query scan cost.' }] }]; } },
+    });
+    assert.match(rag.retrieveContext('database query indexes'), /indexes reduce query/);
+    assert.equal(reads, 1);
 });
 
 test('practice questions and grading work without a provider', () => {
@@ -120,5 +132,44 @@ test('knowledge store persists text sources under the ContextHalo config directo
     assert.equal(knowledge.searchKnowledge('sandboxed renderer provider deadlines').length, 0);
     assert.equal(knowledge.deleteDocument(saved.id), true);
     assert.equal(knowledge.listDocuments().length, 0);
+});
+
+test('failed knowledge writes preserve valid documents, indexes and practice history', t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-atomic-'));
+    t.after(() => fs.rmSync(tempHome, { recursive: true, force: true }));
+    let failure = '';
+    const boundaryFs = { ...fs,
+        writeFileSync(file, ...args) {
+            if (failure === 'write') { fs.writeFileSync(file, '{'); throw new Error('Disk full'); }
+            return fs.writeFileSync(file, ...args);
+        },
+        renameSync(...args) {
+            if (failure === 'rename') throw new Error('File locked');
+            return fs.renameSync(...args);
+        },
+    };
+    const mocks = { fs: boundaryFs, 'node:fs': boundaryFs, os: { ...os, homedir: () => tempHome } };
+    const globals = { console: { warn() {}, error() {} } };
+    const storage = loadMain('src/storage.js', mocks, globals);
+    const knowledge = loadMain('src/utils/knowledgeStore.js', { ...mocks, '../storage': storage }, globals);
+    const source = knowledge.addText('Atomic notes', 'Atomic writes preserve the original document when a disk or rename operation fails.');
+    knowledge.recordPracticeAttempt({ question: 'Original question', score: 1 });
+    // Resolve the store's configured directory rather than assuming a platform path.
+    const files = [];
+    function collect(directory) {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+            const file = path.join(directory, entry.name);
+            if (entry.isDirectory()) collect(file); else files.push(file);
+        }
+    }
+    collect(tempHome);
+    const originals = files.map(file => [file, fs.readFileSync(file, 'utf8')]);
+    for (failure of ['write', 'rename']) {
+        assert.throws(() => knowledge.setDocumentEnabled(source.id, false), /Could not save knowledge data/);
+        assert.equal(storage.writeJsonFile(path.join(storage.getConfigDir(), 'knowledge', 'index.json'), { documents: [] }), false);
+        assert.throws(() => knowledge.recordPracticeAttempt({ question: 'Lost question' }), /Could not save knowledge data/);
+        for (const [file, original] of originals) assert.equal(fs.readFileSync(file, 'utf8'), original);
+        for (const [file] of originals) assert.equal(fs.readdirSync(path.dirname(file)).some(name => name.endsWith('.tmp')), false);
+    }
 });
 

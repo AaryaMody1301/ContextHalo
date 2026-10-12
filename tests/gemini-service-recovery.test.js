@@ -118,7 +118,7 @@ test('Gemini HTTP transport keeps Retry-After and structured error details with 
 test('typed 503 recovery saves one answer and keeps the original HTTP payload', async t => {
     const f = geminiFixture({ search: true, model: 'gemini-3.8-flash', generate: async (_params, attempt) => {
         if (attempt < 3) throw { status: 503, headers: { 'retry-after': '0' } };
-        return { text: 'Recovered' };
+        return { text: 'Recovered', candidates: [{ finishReason: 'STOP' }] };
     } }); t.after(() => f.close());
     await f.start();
     const result = await f.call('send-text-message', 'Original question');

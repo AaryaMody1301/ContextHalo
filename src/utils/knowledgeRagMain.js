@@ -1,6 +1,6 @@
 const storage = require('../storage');
-const { formatRetrievedContext, normalizeText } = require('./knowledgeCore');
-const { getEnabledDocuments, searchKnowledge } = require('./knowledgeStore');
+const { formatRetrievedContext, normalizeText, retrieveChunks } = require('./knowledgeCore');
+const { getEnabledDocuments } = require('./knowledgeStore');
 
 const KNOWLEDGE_MARKER = '[ContextHalo knowledge]';
 let installed = false;
@@ -50,7 +50,7 @@ function retrieveContext(query, options = {}) {
     if (!documents.length) return '';
     const effectiveQuery = normalizeText(query, 12_000) || sessionSeed();
     const results = effectiveQuery
-        ? searchKnowledge(effectiveQuery, { limit: options.limit || 5, maxChars: options.maxChars || 7200 })
+        ? retrieveChunks(documents, effectiveQuery, { limit: options.limit || 5, maxChars: options.maxChars || 7200 })
         : documents.slice(0, 4).flatMap(document => (document.chunks || []).slice(0, 1).map(chunk => ({
             documentId: document.id,
             title: document.title,

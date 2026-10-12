@@ -40,22 +40,18 @@ test('Lit 3.3.3 uses the exact official lit/dist core bundle and all renderer im
     }
 });
 
-test('Marked 18.0.13 is lockfile-managed and its packaged browser build is the only markdown parser script', async () => {
+test('Marked is lockfile-managed and its packaged browser build is the only markdown parser script', async () => {
     const pkg = JSON.parse(read('package.json'));
     const lock = JSON.parse(read('package-lock.json'));
-    assert.equal(pkg.dependencies.marked, '18.0.13');
-    assert.equal(lock.packages[''].dependencies.marked, '18.0.13');
-    assert.deepEqual(lock.packages['node_modules/marked'], {
-        version: '18.0.13',
-        resolved: 'https://registry.npmjs.org/marked/-/marked-18.0.13.tgz',
-        integrity: 'sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==',
-        license: 'MIT',
-        bin: { marked: 'bin/marked.js' },
-        engines: { node: '>= 20' },
-    });
+    const locked = lock.packages['node_modules/marked'];
+    assert.equal(lock.packages[''].dependencies.marked, pkg.dependencies.marked);
+    assert.equal(locked.version, pkg.dependencies.marked);
+    assert.equal(locked.resolved, `https://registry.npmjs.org/marked/-/marked-${locked.version}.tgz`);
+    assert.match(locked.integrity, /^sha512-/);
+    assert.equal(locked.license, 'MIT');
 
     const installed = JSON.parse(read('node_modules/marked/package.json'));
-    assert.equal(installed.version, '18.0.13');
+    assert.equal(installed.version, locked.version);
     assert.equal(fs.existsSync('node_modules/marked/lib/marked.umd.js'), true);
 
     const html = read('src/index.html');

@@ -30,9 +30,9 @@ function closeSessionRequests() {
     resetQueues();
 }
 
-function cancelSessionRequests(kind) {
-    for (const [controller, requestKind] of controllers) {
-        if (requestKind === kind) controller.abort(abortError(`${kind} request cancelled`));
+function cancelSessionRequests(kind, requestId) {
+    for (const [controller, request] of controllers) {
+        if (request.kind === kind && (!requestId || request.requestId === requestId)) controller.abort(abortError(`${kind} request cancelled`));
     }
 }
 
@@ -59,6 +59,27 @@ function getRequestSignal() {
     return context.getStore()?.signal;
 }
 
+function markFirstResponse() {
+    const request = context.getStore();
+    if (request && request.firstResponseAt === undefined) request.firstResponseAt = performance.now();
+}
+
+function recordRequestUsage(usage) {
+    const request = context.getStore();
+    if (!request || !usage) return;
+    for (const key of ['inputTokens', 'outputTokens', 'thinkingTokens', 'totalTokens']) {
+        if (Number.isSafeInteger(usage[key]) && usage[key] >= 0) request.usage[key] = usage[key];
+    }
+}
+
+function getRequestMetrics() {
+    const request = context.getStore();
+    if (!request) return undefined;
+    return { totalMs: Math.round(performance.now() - request.startedAt),
+        firstTextMs: request.firstResponseAt === undefined ? null : Math.round(request.firstResponseAt - request.startedAt),
+        usage: { ...request.usage } };
+}
+
 // Serialize work only where shared state requires it. Screen analysis uses an
 // independent lane so it stays responsive during long-running voice activity.
 // Deadlines still include queue time within each lane. Closing a session
@@ -70,12 +91,13 @@ function runSessionRequest(kind, work, options = {}) {
     }
     if (!active) return Promise.reject(abortError('Start a session before sending a request'));
     const controller = new AbortController();
-    controllers.set(controller, kind);
     const timeoutMs = options.timeoutMs || 65000;
     const request = {
         requestId: options.requestId || randomUUID(), kind, epoch, uiEpoch: options.uiEpoch,
         signal: controller.signal,
+        startedAt: performance.now(), usage: {},
     };
+    controllers.set(controller, request);
     let timer;
     let onAbort;
     const interrupted = new Promise((_, reject) => {
@@ -104,4 +126,5 @@ function runSessionRequest(kind, work, options = {}) {
 module.exports = {
     closeSessionRequests, cancelSessionRequests, resetSessionRequests, runSessionRequest,
     requestIsCurrent, assertCurrentRequest, getRequestMetadata, getRequestSignal,
+    markFirstResponse, recordRequestUsage, getRequestMetrics,
 };

@@ -53,6 +53,7 @@ const allowedChannels = {
         'retry-session-connection',
         'disable-http-search',
         'send-text-message',
+        'cancel-text-message',
         'close-session',
         'get-current-session',
         'start-new-session',

@@ -548,6 +548,7 @@ function clearAllData() {
 }
 
 module.exports = {
+    writeJsonFile,
     initializeStorage,
     initializeCredentialStorage,
     getConfigDir,

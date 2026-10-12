@@ -93,7 +93,7 @@ test('quota diagnosis uses structured scope while keeping provider secrets out o
 for (const operation of ['text', 'screen']) test(`${operation}: explicit HTTP Search opt-out neither reconnects nor disables Live`, async t => {
     const f = geminiFixture({ search: true, generate: async params => {
         if (params.config.tools) throw { status: 429, message: 'Quota exceeded' };
-        return { text: 'Answer without Search' };
+        return { text: 'Answer without Search', candidates: [{ finishReason: 'STOP' }] };
     } }); t.after(() => f.close());
     await f.start('byok', { uiEpoch: 9 });
     const send = () => operation === 'text' ? f.call('send-text-message', 'Question')

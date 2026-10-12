@@ -248,6 +248,18 @@ test('Qwen preview status is explicit even when its model ID does not contain pr
     assert.equal(catalog.chat.find(model => model.id === 'openai/gpt-oss-120b').preview, false);
 });
 
+test('the selected model shows its Preview and cached-catalog status without changing selection', () => {
+    const source = fs.readFileSync('src/utils/dynamicModelRegistryRenderer.js', 'utf8')
+        .replace(/^import .*;\r?\n/gm, '').replace(/^export .*;\r?$/gm, '');
+    const scope = { html: (strings, ...values) => strings.reduce((result, text, index) => result + text + (values[index] ?? ''), '') };
+    vm.runInNewContext(source, scope);
+    const id = 'qwen/qwen3.8-27b';
+    const output = scope.renderModelPicker({}, { label: 'Vision', value: id, preferred: [{ id, preview: true }], stale: true, onSave() {} });
+    assert.match(output, /Selected model: Preview/);
+    assert.match(output, /Cached catalog/);
+    assert.ok(output.includes(id));
+});
+
 test('setup messages emitted before SDK connect resolves retain the safe resumption handle', async t => {
     const f = geminiFixture({ live: async params => {
         params.callbacks.onopen();

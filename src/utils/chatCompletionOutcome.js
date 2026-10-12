@@ -1,7 +1,7 @@
 // Both Groq and llama.cpp use the OpenAI-compatible finish_reason contract.
 // A nonempty delta is not proof that the answer completed successfully.
-function assertChatCompletionOutcome(reason, provider) {
-    if (!reason || reason === 'stop') return;
+function assertChatCompletionOutcome(reason, provider, completed = false) {
+    if (reason === 'stop' || (!completed && !reason)) return;
     const label = provider === 'groq' ? 'Groq' : 'Local AI';
     if (reason === 'length') {
         throw new Error(`${label} reached the output-token limit before completing the answer. Try a narrower question or smaller screen region. This incomplete answer was not saved.`);

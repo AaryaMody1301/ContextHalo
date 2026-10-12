@@ -5,11 +5,11 @@ const { loadMain } = require('./helpers/native-boundary');
 const requests = require('../src/utils/sessionRequests');
 
 function response(reason) {
-    return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Incomplete answer' }, finish_reason: reason }] })
-        + '\n\ndata: [DONE]\n\n');
+    return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Incomplete answer' }, finish_reason: reason === 'EOF' ? null : reason }] })
+        + (reason === 'EOF' ? '\n\n' : '\n\ndata: [DONE]\n\n'));
 }
 
-for (const reason of ['length', 'content_filter', 'tool_calls']) {
+for (const reason of ['length', 'content_filter', 'tool_calls', null, 'EOF']) {
     test(`Groq ${reason} is not saved as a successful text or screen answer`, async t => {
         const f = geminiFixture({ fetch: async () => response(reason) });
         t.after(() => f.close()); await f.start('groq');
@@ -21,7 +21,7 @@ for (const reason of ['length', 'content_filter', 'tool_calls']) {
     });
 }
 
-test('local length completion does not enter conversation history', async t => {
+for (const reason of ['length', null, 'EOF']) test(`local ${reason} completion does not enter conversation history`, async t => {
     const saved = [];
     const native = { ensureNativeBinary: async () => '/runner', ensureWhisperModel: async () => '/whisper',
         ensureLlamaModel: async () => ({ modelPath: '/model', projectorPath: '/projector' }),
@@ -31,7 +31,7 @@ test('local length completion does not enter conversation history', async t => {
         fs: { existsSync: () => true, readdirSync: () => [] }, './native-ai-runtime': native, './sessionRequests': requests,
         './gemini': { sendToRenderer() {}, initializeNewSession: () => requests.resetSessionRequests(),
             saveConversationTurn: (...args) => saved.push(args) },
-    }, { console: { log() {}, warn() {} }, fetch: async () => response('length') });
+    }, { console: { log() {}, warn() {} }, fetch: async () => response(reason) });
     t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
     await api.initializeLocalSession('existing-model', 'tiny.en', 'interview', '', 'en-US');
     assert.equal((await requests.runSessionRequest('text', () => api.sendLocalText('Explain'))).success, false);

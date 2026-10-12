@@ -6,9 +6,9 @@ ContextHalo is GPL-3.0 licensed. This file records third-party components that a
 
 | Component | Version | Role | License | Upstream |
 | --- | --- | --- | --- | --- |
-| Electron | 44.3.0 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
-| @google/genai | 2.22.0 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
-| Marked | 18.0.13 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
+| Electron | 44.7.0 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
+| @google/genai | 2.28.0 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
+| Marked | 18.1.0 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
 
 Transitive production npm packages are recorded with exact version, registry URL, integrity and declared license in `docs/THIRD_PARTY_PROVENANCE.json`.
 
@@ -42,7 +42,7 @@ Model licenses are defined by their individual upstream repositories; ContextHal
 
 ## Build and release tooling
 
-The Windows workflow pins GitHub Actions by full commit SHA. electron-builder 26.15.3 is a build-time dependency and is MIT licensed. Exact npm package resolution is recorded in `package-lock.json`.
+The Windows workflow pins GitHub Actions by full commit SHA. electron-builder 26.17.0 is a build-time dependency and is MIT licensed. Exact npm package resolution is recorded in `package-lock.json`.
 
 ## ContextHalo source availability
 

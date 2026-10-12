@@ -5,7 +5,7 @@ const { loadMain } = require('./helpers/native-boundary');
 
 function compositorFixture(options = {}) {
     const captures = [], protection = [], evaluations = [], files = new Map(), zOrder = [], backdropScripts = [];
-    let alpha = 0.37, background = 0, destroyed = false, created = 0;
+    let alpha = 0.37, background = 0, destroyed = false, created = 0, backdropOptions;
     const output = path.resolve('compositor-test-output');
     const display = { id: 77, bounds: { x: -1280, y: 0, width: 1280, height: 800 }, workArea: { x: -1280, y: 0, width: 1280, height: 760 } };
     const windowBounds = options.fullscreen ? { x: -1280, y: 0, width: 1280, height: 760 } : { x: -900, y: 40, width: 640, height: 320 };
@@ -33,7 +33,8 @@ function compositorFixture(options = {}) {
         show() {}, moveTop() { zOrder.push('top'); }, moveAbove(id) { if (options.moveAboveError) throw new Error('unsupported'); zOrder.push(id); },
     };
     class Backdrop {
-        constructor() {
+        constructor(options) {
+            backdropOptions = options;
             created++;
             this.webContents = { executeJavaScript: async code => {
                 backdropScripts.push(code);
@@ -100,6 +101,7 @@ function compositorFixture(options = {}) {
     return {
         api, captures, protection, evaluations, zOrder, backdropScripts,
         get created() { return created; }, get destroyed() { return destroyed; },
+        get backdropOptions() { return backdropOptions; },
         report: () => JSON.parse(files.get(path.join(output, 'compositor.json'))),
         pngs: () => [...files.keys()].filter(file => file.endsWith('.png')),
         run: () => api.verifyWindowsCompositor(window, output),
@@ -118,6 +120,7 @@ test('compositor proves backdrop control and app alpha in the same Electron scre
     const f = compositorFixture();
     const result = await f.run();
     assert.equal(result.success, true);
+    assert.equal(f.backdropOptions.alwaysOnTop, true, 'Backdrop remains in the same topmost band as the HUD');
     assert.equal(f.captures.length, 10);
     assert.equal(f.pngs().length, 30);
     assert.ok(f.zOrder.every(id => id === 'window:fixture:0'));

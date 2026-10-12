@@ -70,7 +70,7 @@ async function rendererBehaviorSmoke() {
         verify(app.currentResponseIndex===app.responses.length-1,'New typed question returns to the newest response');
         await waitUntil(()=>root.querySelector('#responseContainer').clientHeight>=100);
         verify(root.querySelector('#responseContainer').clientHeight>=100,'Default HUD reserves a usable answer area');
-        verify(assistant.sending && button.disabled && calls===1,'Pending send is disabled');
+        verify(assistant.sending && !button.disabled && button.textContent.trim()==='Cancel message' && calls===1,'Pending send exposes Cancel message');
         app.addNewResponse('Unrelated voice answer',{requestId:'voice-smoke',kind:'voice'});
         await settle(app);
         verify(assistant.sending,'Voice output does not complete a typed request');
@@ -78,10 +78,17 @@ async function rendererBehaviorSmoke() {
         verify(calls===1,'Repeated Enter cannot duplicate an active request');
         await setDraft('Next unsent draft'); release({success:true,text:'Response'}); await waitUntil(()=>!assistant.sending);await settle(assistant);
         verify(input.value==='Next unsent draft','In-flight response preserves a newer draft');
+        const originalCancel = assistant.onCancelText;
+        try {
+            button.click(); await settle(assistant);
+            assistant.onCancelText = async () => { release({ success:false, cancelled:true, error:'Request cancelled.' }); return { success:true }; };
+            button.click(); await waitUntil(()=>!assistant.sending); await settle(assistant);
+            verify(input.value==='Next unsent draft' && app._requestOwners.text.outcome==='cancelled' && !app.requestError, 'Cancel message preserves the draft and clears owned recovery');
+        } finally { assistant.onCancelText = originalCancel; }
         api.sendTextMessage=async()=>({success:false,error:'Mock quota exceeded'});
         button.click();await waitUntil(()=>assistant.sendError);await settle(assistant);
         verify(input.value==='Next unsent draft' && assistant.sendError.includes('Mock quota exceeded') && app.requestError?.message.includes('Mock quota exceeded'),'Failed send retains draft and exposes its owned recovery error');
-        api.sendTextMessage=async()=>{calls++;return {success:true,text:'Done'};};
+        api.sendTextMessage=async()=>{calls++;return {success:true,text:'Done',model:'controlled-test-model',metrics:{firstTextMs:10,totalMs:50,usage:{inputTokens:7,outputTokens:3}}};};
         const before=calls;
         input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true}));
         input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}));
@@ -89,6 +96,10 @@ async function rendererBehaviorSmoke() {
         button.click();await waitUntil(()=>!assistant.sending && !assistant.draft);await settle(assistant);
         verify(input.value==='','Successful send clears the submitted draft');
         verify(!app.requestError && !assistant.sendError, 'Successful text retry removes the obsolete banner and Retry action');
+        await app.openSessionDetails(); await settle(app);
+        const diagnostics = app.shadowRoot.querySelector('.session-details').textContent;
+        verify(diagnostics.includes('controlled-test-model') && diagnostics.includes('First text: 0.01 s') && diagnostics.includes('Provider-reported tokens:'), 'Session details show actual request timings and provider token metadata');
+        app.closeSessionDetails(); await settle(app);
         const originalCapture = api.captureManualScreenshot;
         try {
             api.captureManualScreenshot = async () => ({success:false,error:'Controlled screen failure'});

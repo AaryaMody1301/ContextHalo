@@ -86,7 +86,8 @@ async function verifyWindowsCompositor(window, directory) {
         htmlBackground:getComputedStyle(document.documentElement).backgroundColor,
         bodyBackground:getComputedStyle(document.body).backgroundColor})`);
     if (canvasState.colorScheme) throw new Error(`Root color-scheme must stay unset for a transparent canvas; found ${canvasState.colorScheme}`);
-    const backdrop = new BrowserWindow({ ...area, frame: false, show: false, resizable: false, focusable: false,
+    // Keep both fixture surfaces in the HUD's topmost band, above other desktop apps.
+    const backdrop = new BrowserWindow({ ...area, frame: false, show: false, resizable: false, focusable: false, alwaysOnTop: true,
         skipTaskbar: true, backgroundColor: '#000000', webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
     const evidence = { scope: 'Electron screen-source capture of the Windows desktop compositor with isolated fixture surfaces',
         packaged: app.isPackaged, platform: process.platform, electron: process.versions.electron,

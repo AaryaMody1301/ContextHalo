@@ -53,7 +53,7 @@ for (const scenario of ['recover', 'retry-after']) test(`installed SDK HTTP 503 
             response.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'Service unavailable' } }));
         } else {
             response.setHeader('content-type', 'text/event-stream');
-            response.end('data: ' + JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Recovered answer' }] } }] }) + '\n\n');
+            response.end('data: ' + JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [{ text: 'Recovered answer' }] } }] }) + '\n\n');
         }
     });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');

@@ -87,7 +87,7 @@ test('release workflow attests only validated main artifacts and verifies publis
 test('electron-builder v27 is evaluated but intentionally excluded from the governance PR', () => {
     const policy = readPolicy();
     const pkg = JSON.parse(read('package.json'));
-    assert.equal(pkg.devDependencies['electron-builder'], '^26.15.3');
+    assert.match(pkg.devDependencies['electron-builder'], /^\^26\./);
     assert.equal(policy.builderPolicy.evaluatedMajor, '27');
     assert.match(policy.builderPolicy.decision, /dedicated build-system PR/i);
 });

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "auditedAt": "2026-09-21",
+  "auditedAt": "2026-10-09",
   "repository": "AaryaMody1301/ContextHalo",
   "auditBaseline": "1ad6a40decbfb329d6155e9804fbcb3c81db71d2",
   "productionNpm": [
     {
       "package": "@google/genai",
-      "version": "2.22.0",
+      "version": "2.28.0",
       "license": "Apache-2.0",
-      "resolved": "https://registry.npmjs.org/@google/genai/-/genai-2.22.0.tgz",
-      "integrity": "sha512-NE90Nl0AP75YZ2tGxXjQQs6Gkunma7a1JmPCx5g5CxvjHXshmuI2aNoPJ1xLrRixjkNxog898oylM+MyNudUQw==",
+      "resolved": "https://registry.npmjs.org/@google/genai/-/genai-2.28.0.tgz",
+      "integrity": "sha512-hyNAJj+ywu3L46qlZod6KO/JvcT3QONz6VCiPevC/FWOjAD+LQb7DMLUoV8vzoLpt61Q0ruQX99iqbxEjPJWmw==",
       "optional": false
     },
     {
@@ -101,6 +101,14 @@
       "optional": false
     },
     {
+      "package": "agent-base",
+      "version": "7.1.4",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/agent-base/-/agent-base-7.1.4.tgz",
+      "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==",
+      "optional": false
+    },
+    {
       "package": "base64-js",
       "version": "1.5.1",
       "license": "MIT",
@@ -130,6 +138,14 @@
       "license": "MIT",
       "resolved": "https://registry.npmjs.org/data-uri-to-buffer/-/data-uri-to-buffer-4.0.1.tgz",
       "integrity": "sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==",
+      "optional": false
+    },
+    {
+      "package": "debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
       "optional": false
     },
     {
@@ -173,38 +189,6 @@
       "optional": false
     },
     {
-      "package": "gaxios/node_modules/agent-base",
-      "version": "7.1.4",
-      "license": "MIT",
-      "resolved": "https://registry.npmjs.org/agent-base/-/agent-base-7.1.4.tgz",
-      "integrity": "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==",
-      "optional": false
-    },
-    {
-      "package": "gaxios/node_modules/debug",
-      "version": "4.4.3",
-      "license": "MIT",
-      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
-      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
-      "optional": false
-    },
-    {
-      "package": "gaxios/node_modules/https-proxy-agent",
-      "version": "7.0.6",
-      "license": "MIT",
-      "resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-7.0.6.tgz",
-      "integrity": "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==",
-      "optional": false
-    },
-    {
-      "package": "gaxios/node_modules/ms",
-      "version": "2.1.3",
-      "license": "MIT",
-      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
-      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
-      "optional": false
-    },
-    {
       "package": "gaxios/node_modules/node-fetch",
       "version": "3.3.2",
       "license": "MIT",
@@ -234,6 +218,14 @@
       "license": "Apache-2.0",
       "resolved": "https://registry.npmjs.org/google-logging-utils/-/google-logging-utils-1.1.3.tgz",
       "integrity": "sha512-eAmLkjDjAFCVXg7A1unxHsLf961m6y17QFqXqAXGj/gVkKFrEICfStRfwUlGNfeCEjNRa32JEWOUTlYXPyyKvA==",
+      "optional": false
+    },
+    {
+      "package": "https-proxy-agent",
+      "version": "7.0.6",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-7.0.6.tgz",
+      "integrity": "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==",
       "optional": false
     },
     {
@@ -270,10 +262,18 @@
     },
     {
       "package": "marked",
-      "version": "18.0.13",
+      "version": "18.1.0",
       "license": "MIT",
-      "resolved": "https://registry.npmjs.org/marked/-/marked-18.0.13.tgz",
-      "integrity": "sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==",
+      "resolved": "https://registry.npmjs.org/marked/-/marked-18.1.0.tgz",
+      "integrity": "sha512-PamYXWWWg2nboG3oX5Ffzpy3EFZROqZJK9hSlMmUnekp7TxPs5DcT95vwd46m73/exfKCRVMtgXoPMI4FEJL6w==",
+      "optional": false
+    },
+    {
+      "package": "ms",
+      "version": "2.1.3",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
       "optional": false
     },
     {

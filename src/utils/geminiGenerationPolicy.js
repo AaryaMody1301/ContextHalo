@@ -20,7 +20,7 @@ const FINISH_REASONS = new Set([
     'MISSING_THOUGHT_SIGNATURE', 'MALFORMED_RESPONSE',
 ]);
 
-function assertGeminiGenerationOutcome(chunk) {
+function assertGeminiGenerationOutcome(chunk, completed = false) {
     const block = chunk?.promptFeedback?.blockReason;
     const finish = chunk?.candidates?.[0]?.finishReason;
     if (block && block !== 'BLOCK_REASON_UNSPECIFIED') {
@@ -28,7 +28,7 @@ function assertGeminiGenerationOutcome(chunk) {
             code: 'GEMINI_CONTENT_BLOCKED', blockReason: BLOCKED_REASONS.has(block) ? block : 'OTHER',
         });
     }
-    if (!finish || finish === 'STOP' || finish === 'FINISH_REASON_UNSPECIFIED') return;
+    if (finish === 'STOP' || (!completed && (!finish || finish === 'FINISH_REASON_UNSPECIFIED'))) return;
     throw Object.assign(new Error('Gemini did not complete the answer'), {
         code: finish === 'MAX_TOKENS' ? 'GEMINI_OUTPUT_LIMIT'
             : BLOCKED_REASONS.has(finish) ? 'GEMINI_CONTENT_BLOCKED' : 'GEMINI_GENERATION_FAILED',

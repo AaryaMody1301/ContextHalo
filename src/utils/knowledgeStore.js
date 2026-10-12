@@ -44,8 +44,7 @@ function safeReadJson(filePath, fallback) {
 }
 
 function safeWriteJson(filePath, data) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    if (!storage.writeJsonFile(filePath, data)) throw new Error('Could not save knowledge data. Check available disk space and file permissions.');
 }
 
 function initializeKnowledgeStore() {

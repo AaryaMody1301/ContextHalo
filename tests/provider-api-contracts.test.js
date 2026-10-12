@@ -76,15 +76,57 @@ test('Groq model discovery and transcription endpoints keep documented request f
     const hardening = fs.readFileSync('src/utils/runtimeHardeningMain.js', 'utf8');
 
     assert.match(registry, /https:\/\/api\.groq\.com\/openai\/v1\/models/);
-    assert.match(gemini, /https:\/\/api\.groq\.com\/openai\/v1\/audio\/transcriptions/);
-    assert.match(gemini, /form\.append\('model', getConfig\(\)\.groqTranscriptionModel \|\| 'whisper-large-v3-turbo'\)/);
-    assert.match(gemini, /form\.append\('language', String\(language\)\.split\('-'\)\[0\]\)/);
-    assert.match(gemini, /form\.append\('response_format', 'json'\)/);
-    assert.match(gemini, /new Blob\(\[wav\], \{ type: 'audio\/wav' \}\)/);
-
+    assert.doesNotMatch(gemini, /processGroqAudioQueue|GROQ_AUDIO_CHUNK_SECONDS/);
+    assert.match(hardening, /https:\/\/api\.groq\.com\/openai\/v1\/audio\/transcriptions/);
+    assert.match(hardening, /new Blob\(\[pcmToWavBuffer\(pcm, sampleRate\)\], \{ type: 'audio\/wav' \}\)/);
     assert.match(hardening, /groqTranscriptionModel \|\| 'whisper-large-v3-turbo'/);
     assert.match(hardening, /form\.append\('response_format', 'json'\)/);
     assert.match(hardening, /form\.append\('language', language\)/);
+});
+
+test('Groq preserves the complete newest question at the history and IPC boundaries', async t => {
+    const bodies = [];
+    const f = geminiFixture({ fetch: async (_url, init) => { bodies.push(JSON.parse(init.body)); return sseAnswer('Answer'); } });
+    t.after(() => f.close()); await f.start('groq');
+    await f.call('send-text-message', 'Older question');
+    for (const size of [12000, 12001, 32000]) {
+        const question = 'q'.repeat(size);
+        const result = await f.call('send-text-message', question);
+        assert.equal(result.success, true, result.error);
+        assert.deepEqual(bodies.at(-1).messages.filter(message => message.role !== 'system'), [{ role: 'user', content: question }]);
+    }
+    assert.equal((await f.call('send-text-message', 'q'.repeat(32001))).success, false);
+    assert.equal(bodies.length, 4);
+});
+
+test('final Groq requests combine all context before applying Qwen roles', async t => {
+    const bodies = [];
+    const image = Buffer.alloc(1100).toString('base64');
+    const f = geminiFixture({
+        config: { groqModel: 'qwen/qwen3.8-27b', groqImageModel: 'qwen/qwen3.8-27b' },
+        preferences: { sessionPack: { title: 'Database review', goal: 'Explain the query plan' } },
+        knowledgeDocuments: [{ id: 'db', title: 'Database notes', enabled: true,
+            chunks: [{ id: 'chunk', text: 'Query plans use indexes to reduce database scan cost.' }] }],
+        fetch: async (_url, init) => { bodies.push(JSON.parse(init.body)); return sseAnswer('Answer'); },
+    });
+    t.after(() => f.close()); await f.start('groq');
+    for (const responseMode of ['instant', 'balanced', 'detailed']) {
+        f.preferences.responseMode = responseMode;
+        assert.equal((await f.call('send-text-message', 'Explain database query plans')).success, true);
+        assert.equal((await f.call('send-image-content', { data: image, prompt: 'Explain database query plans' })).success, true);
+        for (const body of bodies.slice(-2)) {
+            assert.equal(body.messages.some(message => message.role === 'system'), false);
+            const current = body.messages.at(-1).content;
+            const text = typeof current === 'string' ? current : current.find(part => part.type === 'text').text;
+            for (const marker of ['[ContextHalo knowledge]', '[ContextHalo session pack]', '[ContextHalo response mode:']) {
+                assert.equal(text.split(marker).length - 1, 1, marker);
+            }
+            assert.match(text, /Query plans use indexes/);
+            assert.match(text, /Goal: Explain the query plan/);
+            assert.ok(text.endsWith('Explain database query plans'));
+        }
+        assert.equal(bodies.at(-1).messages.at(-1).content.find(part => part.type === 'image_url').image_url.url, `data:image/jpeg;base64,${image}`);
+    }
 });
 
 test('Local AI HTTP and CLI fields match the audited server contracts where provenance is exact', () => {
@@ -100,4 +142,38 @@ test('Local AI HTTP and CLI fields match the audited server contracts where prov
     assert.match(local, /['"]--alias['"][\s\S]{0,80}['"]local['"]/);
     assert.match(local, /'--mmproj'/);
     assert.match(windowsRuntime, /tag:\s*'b10964'/);
+});
+
+test('typed cancellation validates epoch and suppresses late provider answers', async t => {
+    let release;
+    const f = geminiFixture({ generate: async (_params, count) => count === 1 ? new Promise(resolve => { release = resolve; })
+        : { text: 'Next answer', candidates: [{ finishReason: 'STOP' }] } });
+    t.after(() => f.close()); await f.start('byok', { uiEpoch: 50 });
+    const pending = f.call('send-text-message', 'Keep this draft', { requestId: 'typed-50', uiEpoch: 50 });
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await f.call('cancel-text-message', { requestId: 'typed-50', uiEpoch: 49 })).success, false);
+    assert.equal((await f.call('cancel-text-message')).success, false);
+    assert.equal((await f.call('cancel-text-message', { requestId: 'typed-50', uiEpoch: 50 })).success, true);
+    assert.equal((await pending).cancelled, true);
+    release({ text: 'Late answer', candidates: [{ finishReason: 'STOP' }] });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.events.filter(([channel]) => channel === 'save-conversation-turn').length, 0);
+    assert.equal((await f.call('send-text-message', 'Next question', { requestId: 'typed-51', uiEpoch: 50 })).success, true);
+});
+
+test('request metrics report actual stream timings and provider token metadata only', async t => {
+    const f = geminiFixture({ generate: async () => ({ chunks: [
+        { text: 'First ' },
+        { text: 'answer', candidates: [{ finishReason: 'STOP' }] },
+        { usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 3, thoughtsTokenCount: 2, totalTokenCount: 12, privateField: 'secret' } },
+    ] }) });
+    t.after(() => f.close()); await f.start();
+    const result = await f.call('send-text-message', 'Question');
+    assert.equal(result.success, true, result.error);
+    assert.ok(result.metrics.firstTextMs >= 0 && result.metrics.totalMs >= result.metrics.firstTextMs);
+    assert.deepEqual(result.metrics.usage, { inputTokens: 7, outputTokens: 3, thinkingTokens: 2, totalTokens: 12 });
+    assert.doesNotMatch(JSON.stringify(result.metrics), /secret/);
+    await f.close(); await f.start('groq');
+    const groq = await f.call('send-text-message', 'Question');
+    assert.equal(groq.success, true); assert.deepEqual(groq.metrics.usage, {});
 });

@@ -79,9 +79,9 @@ test('Windows release workflow pins the current audited action releases by commi
     const workflow = read('.github/workflows/build-windows.yml');
     for (const sha of [
         '3d3c42e5aac5ba805825da76410c181273ba90b1', // actions/checkout v7.0.1
-        '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a', // actions/upload-artifact v7.0.1
-        '820762786026740c76f36085b0efc47a31fe5020', // actions/setup-node v7.0.0
-        '3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c', // actions/download-artifact v8.0.1
+        'cf430e030ddbb5b0abf93d22962f4752f3646cd9', // actions/upload-artifact v7.0.2
+        '949feb2413d6458794dcd2491c4babbbce0c15c1', // actions/setup-node v7.1.0
+        '9000827ccba6bdab643e8b6fd33ac0654aef8333', // actions/download-artifact v8.0.2
         'efb35369e0ad2afab669f228072c1b0d510eae64', // softprops/action-gh-release v3.0.3
         '1e69f48acb82d1966a394da916b4c1698aa569d6', // actions/attest v4.2.2
     ]) assert.match(workflow, new RegExp(sha));
@@ -96,10 +96,13 @@ test('Windows release workflow pins the current audited action releases by commi
 
 test('provider package and defaults match the audited 2026 contracts', () => {
     const pkg = JSON.parse(read('package.json'));
-    assert.equal(pkg.dependencies['@google/genai'], '2.22.0');
+    const lock = JSON.parse(read('package-lock.json'));
+    assert.equal(pkg.dependencies['@google/genai'], lock.packages['node_modules/@google/genai'].version);
     assert.equal(pkg.dependencies.ws, undefined, 'ws is supplied transitively by the Gemini SDK and is not an app dependency');
-    assert.equal(pkg.devDependencies.electron, '^44.3.0');
-    assert.equal(pkg.devDependencies['electron-builder'], '^26.15.3');
+    for (const name of ['electron', 'electron-builder']) {
+        assert.equal(lock.packages[''].devDependencies[name], pkg.devDependencies[name]);
+        assert.ok(require('semver').satisfies(lock.packages[`node_modules/${name}`].version, pkg.devDependencies[name]));
+    }
     assert.equal(pkg.scripts.make, undefined);
 
     const storage = read('src/storage.js');

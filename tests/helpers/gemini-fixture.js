@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { createRequire } = require('node:module');
+const { loadMain } = require('./native-boundary');
 
 // Execute the real owning module. Only platform/account boundaries are mocked;
 // request epochs, history, configuration, retry policy and IPC handlers are real.
@@ -39,7 +40,7 @@ function geminiFixture(options = {}) {
             },
             generateContentStream: async params => {
                 generated.push(params);
-                const response = options.generate ? await options.generate(params, generated.length) : { text: 'The answer' };
+                const response = options.generate ? await options.generate(params, generated.length) : { text: 'The answer', candidates: [{ finishReason: 'STOP' }] };
                 if (response && typeof response[Symbol.asyncIterator] === 'function') return response;
                 async function* chunks() {
                     if (Array.isArray(response?.chunks)) { for (const chunk of response.chunks) yield chunk; }
@@ -77,7 +78,7 @@ function geminiFixture(options = {}) {
     const scope = {
         module: { exports: {} }, console: { log() {}, warn() {}, error() {} }, process: options.process || process, Buffer, URL,
         AbortController, AbortSignal, setTimeout, clearTimeout, global: {},
-        fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"}}]}\n\n')),
+        fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"},"finish_reason":"stop"}]}\n\n')),
         require: name => {
             if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
             if (name === '@google/genai') return options.sdk || { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
@@ -110,6 +111,19 @@ function geminiFixture(options = {}) {
             return actual(name);
         },
     };
+    // Exercise the production fetch composition, including final provider role formatting.
+    scope.global.fetch = scope.fetch;
+    const middlewareMocks = {
+        '../storage': storage,
+        electron: { BrowserWindow: { getAllWindows: () => [] } },
+        './knowledgeStore': { getEnabledDocuments: () => options.knowledgeDocuments || [] },
+    };
+    for (const [file, install] of [
+        ['realtimeContextMain', 'installRealtimeContextMain'],
+        ['sessionPackMain', 'installSessionPackMain'],
+        ['knowledgeRagMain', 'installKnowledgeRagMain'],
+    ]) loadMain(`src/utils/${file}.js`, middlewareMocks, { global: scope.global })[install]();
+    scope.fetch = scope.global.fetch;
     vm.runInNewContext(fs.readFileSync(filename, 'utf8'), scope, { filename });
     api = scope.module.exports;
     api.setupGeminiIpcHandlers({ current: null });

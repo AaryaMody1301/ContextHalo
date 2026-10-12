@@ -41,12 +41,12 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
-        "@google/genai": "2.22.0",
-        "marked": "18.0.13"
+        "@google/genai": "2.28.0",
+        "marked": "18.1.0"
     },
     "devDependencies": {
-        "electron": "^44.3.0",
-        "electron-builder": "^26.15.3"
+        "electron": "^44.7.0",
+        "electron-builder": "^26.17.0"
     },
     "build": {
         "appId": "com.aaryamody.contexthalo",
