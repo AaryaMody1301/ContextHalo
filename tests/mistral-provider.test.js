@@ -6,6 +6,108 @@ const { loadMain } = require('./helpers/native-boundary');
 const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(1200)]).toString('base64');
 const completion = text => new Response(`data:${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } })}\n\ndata:[DONE]\n\n`);
 
+test('Mistral spaces concurrent text and screen starts for the 1-RPS evaluation limit', async () => {
+    let now = 0, releaseFirst;
+    const starts = [];
+    const api = loadMain('src/utils/mistral.js', { 'node:timers/promises': { setTimeout: async ms => { now += ms; } } }, {
+        Date: class extends Date { static now() { return now; } },
+        fetch: async () => {
+            starts.push(now);
+            if (starts.length === 1) await new Promise(resolve => { releaseFirst = resolve; });
+            return completion('Answer');
+        },
+    });
+    const text = api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} });
+    const screen = api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'screen', onText() {} });
+    await screen;
+    releaseFirst(); await text;
+    assert.ok(starts[1] - starts[0] >= 1000);
+});
+
+test('Mistral preserves safe 429 metadata, spaces retries, and never invents a reset time', async () => {
+    let now = 0;
+    const starts = [];
+    const api = loadMain('src/utils/mistral.js', { 'node:timers/promises': { setTimeout: async ms => { now += ms; } } }, {
+        Date: class extends Date { static now() { return now; } },
+        fetch: async () => {
+            starts.push(now);
+            return new Response(JSON.stringify({ code: '1300', type: 'rate_limited', message: 'Rate limit exceeded; fixture-private-payload' }), { status: 429 });
+        },
+    });
+    await assert.rejects(api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} }), error => {
+        const failure = api.classifyMistralFailure(error, 'text');
+        assert.equal(failure.category, 'rate-or-quota');
+        assert.equal(failure.providerCode, '1300'); assert.equal(failure.providerType, 'rate_limited');
+        assert.equal(failure.retryAfterMs, null); assert.equal(failure.retryAt, null);
+        assert.match(failure.message, /monthly|included usage/);
+        assert.doesNotMatch(JSON.stringify(failure), /fixture-private-payload/);
+        return true;
+    });
+    assert.equal(starts.length, 2); assert.ok(starts[1] - starts[0] >= 1000);
+});
+
+test('Mistral bounds error bodies and discards unrecognized, malformed or oversized metadata', async () => {
+    for (const kind of ['unrecognized', 'malformed', 'oversized', 'stalled']) {
+        let cancelled = false;
+        const api = loadMain('src/utils/mistral.js', {}, {
+            setTimeout: (fn, ms) => setTimeout(fn, ms === 1000 ? 5 : ms),
+            fetch: async () => new Response(kind === 'stalled' ? new ReadableStream({ cancel() { cancelled = true; } })
+                : kind === 'malformed' ? 'fixture-private-payload'
+                : JSON.stringify(kind === 'oversized' ? { code: '1300', type: 'rate_limited', message: 'x'.repeat(20000) }
+                    : { code: 'fixture-private-code', type: 'fixture-private-type', message: 'fixture-private-payload' }),
+            { status: 429, headers: { 'retry-after': '120' } }),
+        });
+        await assert.rejects(api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} }), error => {
+            const failure = api.classifyMistralFailure(error, 'text');
+            assert.equal(failure.httpStatus, 429); assert.equal(failure.retryAfterMs, 120000);
+            assert.equal(failure.providerCode, undefined); assert.equal(failure.providerType, undefined);
+            assert.doesNotMatch(JSON.stringify(failure), /fixture-private/); return true;
+        });
+        if (kind === 'stalled') assert.equal(cancelled, true);
+    }
+});
+
+test('cancelled Mistral pacing waits never send or reserve a slot for a later request', async () => {
+    let now = 0, calls = 0;
+    const waits = [];
+    const api = loadMain('src/utils/mistral.js', { 'node:timers/promises': {
+        setTimeout: (ms, _value, { signal }) => new Promise((resolve, reject) => {
+            waits.push({ ms, release: () => { now += ms; resolve(); } });
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    } }, { Date: class extends Date { static now() { return now; } }, fetch: async () => { calls++; return completion('Answer'); } });
+    await api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} });
+    const controller = new AbortController();
+    const cancelled = api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'screen', signal: controller.signal, onText() {} });
+    await new Promise(resolve => setImmediate(resolve));
+    controller.abort(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+    await assert.rejects(cancelled, /Cancelled/);
+    assert.equal(calls, 1);
+    const next = api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(waits.map(wait => wait.ms), [1000, 1000]);
+    waits[1].release();
+    assert.equal((await next).text, 'Answer'); assert.equal(calls, 2);
+});
+
+test('Mistral 429 details reach typed and screen IPC without private body or successful history', async () => {
+    const f = geminiFixture({ fetch: async () => new Response(JSON.stringify({ code: '1300', type: 'rate_limited', message: 'fixture-private-payload' }),
+        { status: 429, headers: { 'retry-after': '120' } }) });
+    await f.start('mistral');
+    try {
+        const text = await f.call('send-text-message', 'Public test');
+        const screen = await f.call('send-image-content', { data: jpeg, prompt: 'Public screen fixture' });
+        for (const result of [text, screen]) {
+            assert.equal(result.success, false);
+            assert.equal(result.failure.providerCode, '1300'); assert.equal(result.failure.providerType, 'rate_limited');
+            assert.equal(result.failure.httpStatus, 429); assert.equal(result.failure.retryAfterMs, 120000);
+            assert.equal(result.metrics.firstTextMs, null);
+            assert.doesNotMatch(JSON.stringify(result), /fixture-private-payload/);
+        }
+        assert.equal(f.events.filter(([name]) => ['save-conversation-turn', 'save-screen-analysis', 'new-response'].includes(name)).length, 0);
+    } finally { await f.close(); }
+});
+
 test('Mistral routes text and JPEG screenshots independently with pinned model and context', async () => {
     const requests = [];
     const f = geminiFixture({ search: true, preferences: { responseMode: 'detailed', sessionPack: { goal: 'Mistral test goal' } },
@@ -71,11 +173,12 @@ test('Mistral parses fragmented UTF-8 and text blocks, excluding reasoning from 
 });
 
 test('Mistral retries once before output, honors Retry-After, and sanitizes permanent errors', async () => {
-    let calls = 0;
+    let calls = 0, now = 0;
     const waits = [];
     const api = loadMain('src/utils/mistral.js', {
-        'node:timers/promises': { setTimeout: async ms => waits.push(ms) },
-    }, { fetch: async () => ++calls === 1 ? new Response('secret provider body', { status: 503, headers: { 'retry-after': '2' } }) : completion('Recovered') });
+        'node:timers/promises': { setTimeout: async ms => { waits.push(ms); now += ms; } },
+    }, { Date: class extends Date { static now() { return now; } },
+        fetch: async () => ++calls === 1 ? new Response('secret provider body', { status: 503, headers: { 'retry-after': '2' } }) : completion('Recovered') });
     const result = await api.streamMistral({ apiKey: 'fixture', messages: [], operation: 'text', onText() {} });
     assert.equal(result.text, 'Recovered'); assert.equal(calls, 2); assert.deepEqual(waits, [2000]);
     const denied = loadMain('src/utils/mistral.js', {}, { fetch: async () => { calls++; return new Response('fixture-secret', { status: 403 }); } });
@@ -119,11 +222,12 @@ test('Mistral cancellation stops a stalled request and prevents late history wri
 
 test('Mistral bounds stalled attempts and never retries after visible output', async () => {
     for (const partial of [false, true]) {
-        let calls = 0, cancelled = false;
+        let calls = 0, cancelled = false, now = 0;
         const visible = [];
         const api = loadMain('src/utils/mistral.js', {
-            'node:timers/promises': { setTimeout: async () => {} },
+            'node:timers/promises': { setTimeout: async ms => { now += ms; } },
         }, {
+            Date: class extends Date { static now() { return now; } },
             setTimeout: (fn, ms) => setTimeout(fn, ms === 60000 ? 200 : 10),
             fetch: async (_url, init) => {
                 calls++;
