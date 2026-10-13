@@ -66,7 +66,7 @@ export class OnboardingView extends LitElement {
             ${this.currentSlide === 0 ? html`
                 <h1 tabindex="-1">Welcome to ContextHalo</h1>
                 <p>Prepare for conversations, review your sessions and ask questions about your screen. You choose when to start and stop audio capture.</p>
-                <p>Use Gemini or Groq with your own API key, or run Local AI on this computer. Cloud requests use the selected provider's account and limits.</p>
+                <p>Use Gemini or Groq with your own API key, choose Mistral for text and screenshots, or run Local AI on this computer. Cloud requests use the selected provider's account and limits.</p>
                 <div class="actions"><button class="btn-primary" @click=${() => this.goToSlide(1)}>Continue</button><button @click=${this.onClose}>Close app</button></div>
             ` : html`
                 <h1 tabindex="-1">Add optional context</h1>

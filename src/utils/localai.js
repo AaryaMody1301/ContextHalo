@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { randomBytes } = require('node:crypto');
 const { readSseJson } = require('./sse');
 const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 const { runSessionRequest, assertCurrentRequest, requestIsCurrent, getRequestSignal, markFirstResponse, recordRequestUsage } = require('./sessionRequests');
@@ -18,6 +19,7 @@ const {
 
 let llamaProcess = null;
 let llamaBaseUrl = null;
+let llamaApiKey = null;
 let llamaModel = null;
 let whisperProcess = null;
 let whisperBaseUrl = null;
@@ -26,6 +28,7 @@ let currentSystemPrompt = null;
 let currentLanguage = 'en';
 let isLocalActive = false;
 let initializationController = null;
+let initializationFailure = null;
 
 let isSpeaking = false;
 let speechBuffers = [];
@@ -254,7 +257,7 @@ async function requestLlama(messages, onText) {
     const response = await fetch(`${llamaBaseUrl}/v1/chat/completions`, {
         method: 'POST',
         signal: getRequestSignal(),
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llamaApiKey}` },
         body: JSON.stringify({
             model: 'local',
             messages,
@@ -326,28 +329,37 @@ function sendDownloadProgress(label, progress = null) {
     });
 }
 
-async function prepareNativeFiles(llamaModelReference, whisperModel, signal) {
+async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onStage) {
     const binaryProgress = label => progress => {
+        signal.throwIfAborted();
+        onStage(label);
         sendToRenderer('update-status', formatDownloadStatus(label, progress));
         sendDownloadProgress(label, progress);
     };
 
     sendDownloadProgress('Checking Llama runner');
+    onStage('Llama runner');
     const llamaBinaryPath = await ensureNativeBinary('llama', binaryProgress('Llama runner'), signal);
+    signal.throwIfAborted();
 
     sendDownloadProgress('Checking Whisper runner');
+    onStage('Whisper runner');
     const whisperBinaryPath = await ensureNativeBinary('whisper', binaryProgress('Whisper runner'), signal);
+    signal.throwIfAborted();
 
     let whisperModelPath;
     sendToRenderer('whisper-downloading', true);
     try {
         sendDownloadProgress('Checking Whisper model');
+        onStage('Whisper model');
         whisperModelPath = await ensureWhisperModel(whisperModel, binaryProgress('Whisper model'), signal);
     } finally {
-        sendToRenderer('whisper-downloading', false);
+        if (!signal.aborted) sendToRenderer('whisper-downloading', false);
     }
+    signal.throwIfAborted();
 
     sendDownloadProgress('Checking language model');
+    onStage('Language model');
     const llamaFiles = await ensureLlamaModel(llamaModelReference, binaryProgress('Language model'), binaryProgress('Vision model'), signal);
     return {
         llamaBinaryPath,
@@ -376,14 +388,17 @@ function validatePreparedNativeFiles(nativeFiles) {
 
 async function startWhisperServer(executablePath, modelPath, signal) {
     const port = await getAvailablePort();
-    whisperBaseUrl = `http://127.0.0.1:${port}`;
+    signal.throwIfAborted();
+    // The pinned Whisper server has no authentication; keep all routes behind an unguessable session path.
+    const requestPath = '/' + randomBytes(24).toString('hex');
+    whisperBaseUrl = `http://127.0.0.1:${port}${requestPath}`;
     whisperProcess = startNativeServer({
         executablePath,
-        arguments: ['-m', modelPath, '--host', '127.0.0.1', '--port', String(port)],
+        arguments: ['-m', modelPath, '--host', '127.0.0.1', '--port', String(port), '--request-path', requestPath],
         name: 'Whisper',
     });
 
-    await waitForServer(`${whisperBaseUrl}/`, whisperProcess, 120000, signal);
+    await waitForServer(`${whisperBaseUrl}/health`, whisperProcess, 120000, signal);
 }
 
 function localContextTokens(modelReference) {
@@ -399,11 +414,14 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
     }
 
     const port = await getAvailablePort();
+    signal.throwIfAborted();
     const argumentsList = [
         '--host',
         '127.0.0.1',
         '--port',
         String(port),
+        '--cors-origins',
+        'localhost',
         '--alias',
         'local',
         '-c',
@@ -417,10 +435,12 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
     if (/llama-b10964/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
 
     llamaBaseUrl = `http://127.0.0.1:${port}`;
+    llamaApiKey = randomBytes(32).toString('hex');
     llamaProcess = startNativeServer({
         executablePath,
         arguments: argumentsList,
         name: 'Llama',
+        environment: { LLAMA_API_KEY: llamaApiKey },
     });
 
     await waitForServer(`${llamaBaseUrl}/health`, llamaProcess, 30 * 60 * 1000, signal);
@@ -429,26 +449,30 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
 async function initializeLocalSession(model, whisperModel, profile, customPrompt, language = 'en-US') {
     console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile, language: currentLanguage });
     sendToRenderer('session-initializing', true);
+    closeLocalSession();
+    const controller = new AbortController();
+    initializationController = controller;
+    initializationFailure = null;
+    let stage = 'Configuration';
 
     try {
-        closeLocalSession();
         currentLanguage = String(language || 'en').split('-')[0] || 'en';
         if (/\.en$/.test(whisperModel) && currentLanguage !== 'en') throw new Error('The selected local Whisper model is English-only. Select English or use Gemini/Groq for this language.');
-        initializationController = new AbortController();
-            currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
+        currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
         llamaModel = model;
 
-        const controller = initializationController;
-        const nativeFiles = await prepareNativeFiles(model, whisperModel, controller.signal);
+        const nativeFiles = await prepareNativeFiles(model, whisperModel, controller.signal, value => { stage = value; });
         controller.signal.throwIfAborted();
         validatePreparedNativeFiles(nativeFiles);
 
         sendToRenderer('update-status', 'Starting Whisper...');
+        stage = 'Whisper startup';
         sendDownloadProgress('Starting Whisper');
         await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath, controller.signal);
         controller.signal.throwIfAborted();
 
         const accelerated = /vulkan/i.test(nativeFiles.llamaBinaryPath);
+        stage = accelerated ? 'Vulkan model startup' : 'CPU model startup';
         sendToRenderer('update-status', accelerated
             ? 'Loading the Vulkan-capable local runner; device use depends on your GPU and driver...'
             : 'Loading local language model on CPU. Select a smaller model in Home for faster replies.');
@@ -464,6 +488,7 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
             llamaProcess = null;
             llamaBaseUrl = null;
             sendToRenderer('update-status', 'The Vulkan runner could not start. Loading the same local model with the verified CPU runner.');
+            stage = 'CPU fallback';
             const cpuBinary = await ensureNativeBinary('llama', undefined, controller.signal, { cpuOnly: true });
             controller.signal.throwIfAborted();
             await startLlamaServer(cpuBinary, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
@@ -487,20 +512,39 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
         console.log('[LocalAI] Native session initialized successfully');
         return true;
     } catch (error) {
-        const wasCancelled = error.name === 'AbortError' || initializationController?.signal.aborted;
+        if (initializationController !== controller) return false;
+        const wasCancelled = error.name === 'AbortError' || controller.signal.aborted;
         if (wasCancelled) {
             console.log('[LocalAI] Initialization cancelled');
         } else {
             console.warn('[LocalAI] Initialization error:');
         }
+        if (!wasCancelled) initializationFailure = localInitializationFailure(error, stage);
         closeLocalSession();
         // Verified downloads remain cached. Only this attempt's temporary files
         // are removed by the downloader; cancelling must not delete unrelated files.
         sendToRenderer('local-ai-download-progress', { active: false });
         sendToRenderer('session-initializing', false);
-        sendToRenderer('update-status', wasCancelled ? 'Local AI download cancelled' : 'Local AI error: ' + error.message);
+        sendToRenderer('update-status', wasCancelled ? 'Local AI download cancelled' : initializationFailure.message);
         return false;
     }
+}
+
+function localInitializationFailure(error, stage) {
+    const text = String(error?.message || '');
+    const httpStatus = Number(text.match(/HTTP (\d{3})/)?.[1]) || null;
+    const exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : null;
+    let reason = 'Setup could not finish. Retry setup; verified cached files are retained.';
+    if (/English-only/.test(text)) reason = 'The selected Whisper model is English-only. Select English or a compatible transcription model.';
+    else if (/out of memory|bad_alloc|not enough memory|failed to allocate/i.test(text)) reason = 'Not enough memory. Close other applications or explicitly select a smaller local model.';
+    else if (exitCode !== null) reason = `The native runner exited (0x${(exitCode >>> 0).toString(16).padStart(8, '0')}). Check the verified runner bundle and available memory.`;
+    else if (/checksum/i.test(text)) reason = 'A model or runner failed checksum verification. Retry setup to replace the invalid file.';
+    else if (httpStatus) reason = `A setup download or metadata request failed (HTTP ${httpStatus}). Check network access and retry; verified cached files are retained.`;
+    else if (/fetch failed|network|socket|timeout|timed out|deadline|stalled/i.test(text)) reason = 'A download or startup stalled or timed out. Check network access and available memory, then retry setup.';
+    else if (/ENOENT|EACCES|EPERM/.test(error?.code || text)) reason = 'The native runner could not launch. Check folder permissions and the verified runner bundle.';
+    else if (/projector|mmproj/i.test(text)) reason = 'The selected model needs a compatible vision projector. Retry setup to complete the matching model pair.';
+    else if (/format|unsupported|unsafe|quant|GGUF|model reference/i.test(text)) reason = 'The selected local model is unsupported or invalid. Review the model selection and compatible GGUF files.';
+    return { operation: 'initialization', category: 'local-setup', stage, httpStatus, exitCode, message: `Local AI — ${stage}: ${reason}` };
 }
 
 function processLocalAudio(monoChunk24k) {
@@ -521,6 +565,7 @@ function closeLocalSession() {
     llamaProcess = null;
     whisperProcess = null;
     llamaBaseUrl = null;
+    llamaApiKey = null;
     whisperBaseUrl = null;
     llamaModel = null;
     isSpeaking = false;
@@ -539,12 +584,10 @@ async function cancelLocalInitialization() {
         return false;
     }
 
-    initializationController.abort();
-    stopNativeServer(llamaProcess);
-    stopNativeServer(whisperProcess);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    closeLocalSession();
     sendToRenderer('local-ai-download-progress', { active: false });
     sendToRenderer('session-initializing', false);
+    sendToRenderer('update-status', 'Local AI download cancelled');
     return true;
 }
 
@@ -618,6 +661,7 @@ async function sendLocalImage(base64Data, prompt) {
 
 module.exports = {
     initializeLocalSession,
+    getLocalInitializationFailure: () => initializationFailure,
     cancelLocalInitialization,
     processLocalAudio,
     closeLocalSession,

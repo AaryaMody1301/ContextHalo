@@ -27,6 +27,7 @@ function geminiFixture(options = {}) {
         getConfig: () => config, getPreferences: () => preferences,
         getAvailableModel: () => options.model || 'selected-http-model',
         getApiKey: options.getApiKey || (() => 'test-key-not-a-real-credential'), getGroqApiKey: () => 'groq-test-key',
+        getMistralApiKey: options.getMistralApiKey || (() => 'mistral-test-key'),
         incrementLimitCount() {}, incrementCharUsage() {},
         getSession: () => ({ liveTranscript: [{ text: 'We discussed data pipelines' }] }),
     };
@@ -84,6 +85,9 @@ function geminiFixture(options = {}) {
             if (name === '@google/genai') return options.sdk || { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
             if (name === './localai') return local;
+            if (name === './mistral') return loadMain('src/utils/mistral.js', {
+                './sessionRequests': actual('./sessionRequests'),
+            }, { fetch: scope.fetch });
             if (name === './providerModelRegistry') return { listProviderModels: options.catalog || (async () => ({ live: [{ id: 'gemini-3.8-live' }] })) };
             if (name === './transportLogger') return { startTransportLog() {}, logTransportEvent: (...args) => diagnostics.push(args), closeTransportLog() {} };
             if (name === './sessionPackMain') return { appendSessionPack: text => text + '\nSession pack: mock goal' };
@@ -132,7 +136,9 @@ function geminiFixture(options = {}) {
         api, handlers, event, events, generated, connections, clients, realtime, clientContent, preparations, diagnostics, preferences,
         get callbacks() { return connections.at(-1)?.callbacks; },
         call: (name, ...args) => handlers.get(name)(event, ...args),
-        start: (provider = 'byok', settings = {}) => handlers.get('initialize-gemini')(event, '', 'meeting', 'en-US', provider, settings),
+        start: (provider = 'byok', settings = {}) => provider === 'local'
+            ? handlers.get('initialize-local')(event, 'existing-model', 'tiny.en', 'meeting', '', 'en-US', settings)
+            : handlers.get('initialize-gemini')(event, '', 'meeting', 'en-US', provider, settings),
         close: () => handlers.get('close-session')(event),
     };
 }

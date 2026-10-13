@@ -30,6 +30,7 @@
             },
             async setApiKey(apiKey) { return persistStorage('storage:set-api-key', apiKey); },
             async setGroqApiKey(groqApiKey) { return persistStorage('storage:set-groq-api-key', groqApiKey); },
+            async setMistralApiKey(mistralApiKey) { return persistStorage('storage:set-mistral-api-key', mistralApiKey); },
             async getPreferences() {
                 await persistenceQueue;
                 const result = await ipcRenderer.invoke('storage:get-preferences');

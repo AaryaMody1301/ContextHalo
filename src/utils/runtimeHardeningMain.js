@@ -203,6 +203,7 @@ function wrapIpcHandler(channel, handler) {
 
     if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
         return async (event, payload, ...rest) => {
+            if (runtimeProviderMode === 'mistral') return { success: false, error: 'Mistral supports text and screenshots only.' };
             if (!shouldForwardAudioChannel(channel)) return { success: true, ignored: true };
             if (runtimeProviderMode === 'groq') {
                 return processGroqVadChunk(event, payload?.data || '', payload?.mimeType || 'audio/pcm;rate=24000');

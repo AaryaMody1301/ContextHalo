@@ -144,8 +144,21 @@ async function rendererBehaviorSmoke() {
         home.onStart = () => { starts++; };
         home.shadowRoot.querySelector('.start-button').click();
         await waitUntil(() => starts === 2);
+        const providerChoice = home.shadowRoot.querySelector('#provider-choice');
+        home._groqCatalogError = 'Groq catalog error fixture';
+        providerChoice.value = 'mistral'; providerChoice.dispatchEvent(new Event('change', { bubbles: true }));
+        await home._configurationWrites; await settle(home);
+        verify(home._mode === 'mistral' && (await api.storage.getPreferences()).providerMode === 'mistral', 'Home selects and persists the independent Mistral provider');
+        verify(home.shadowRoot.textContent.includes('mistral-small-2603') && !home.shadowRoot.querySelector('.advanced-models'), 'Mistral shows its fixed text/vision model without a Groq catalog');
+        verify(home.shadowRoot.querySelector('#provider-api-key')?.type === 'password', 'Mistral key input remains masked');
+        verify(!home.shadowRoot.textContent.includes('Groq catalog error fixture'), 'Mistral does not show another provider\'s catalog failure');
+        app.requestError = { operation: 'screen', category: 'transient', model: 'gemini-3.8-flash', httpStatus: 503, message: 'Controlled provider error fixture' };
+        await settle(app);
+        const error = app.shadowRoot.querySelector('.request-error-message');
+        verify(error?.textContent === 'Controlled provider error fixture' && !error.closest('details'), 'Provider request errors are readable without expanding details');
+        app.requestError = null;
     } finally {
-        await api.storage.updatePreference('providerMode', originalMode || 'byok');
+        await api.storage.updatePreference('providerMode', originalMode || 'groq');
         app.currentView = 'assistant'; await settle(app);
     }
     const ipc=window.electronAPI;

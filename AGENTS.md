@@ -1,6 +1,6 @@
 # ContextHalo Repository Guidelines
 
-ContextHalo is a Windows 10/11 x64 Electron desktop AI assistant. The supported application modes are Gemini API, Groq API, and Local AI. macOS and Linux behavior is not a release target unless shared code directly affects Windows.
+ContextHalo is a Windows 10/11 x64 Electron desktop AI assistant. The supported application modes are Gemini API, Groq API, Mistral API (text and screenshots), and Local AI. macOS and Linux behavior is not a release target unless shared code directly affects Windows.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ The GitHub Actions Windows workflow also launches the real Electron renderer wit
 ## Code style
 
 - JavaScript uses four-space indentation, semicolons, and single quotes where practical.
-- Keep provider logic explicit: Gemini, Groq, and Local AI should not silently depend on one another.
+- Keep provider logic explicit: Gemini, Groq, Mistral, and Local AI should not silently depend on one another.
 - Validate and sanitize every value crossing the renderer/main IPC boundary.
 - Keep network requests bounded with cancellation/timeouts; stale provider work must not outlive a session or Analyze Screen request.
 - Keep Windows loopback/microphone audio work off the UI hot path.
@@ -53,6 +53,7 @@ The supported target is Windows x64. Preserve these properties when changing win
 - Gemini Live handles real-time Gemini audio sessions.
 - Gemini Flash handles Gemini screen analysis with a bounded retry policy; model/provider changes require explicit user selection.
 - Groq uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
+- Mistral uses the explicitly selected, pinned Mistral Small model for text and screenshots; audio stays disabled.
 - Local AI uses checksum-verified native whisper.cpp and llama.cpp runners plus GGUF models.
 
 Provider model IDs and request fields can change over time. Check the current official provider documentation before changing models or API schemas.

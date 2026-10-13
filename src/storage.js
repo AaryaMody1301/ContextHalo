@@ -17,13 +17,14 @@ const DEFAULT_CONFIG = {
     groqTranscriptionModel: 'whisper-large-v3-turbo',
     disableGroqThinking: true,
 };
-const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '' };
+const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '', mistralApiKey: '' };
 let credentialCache = { ...DEFAULT_CREDENTIALS };
 let credentialStorageReady = false;
 let credentialStorageLocked = false;
+let credentialWriteQueue = Promise.resolve();
 const DEFAULT_PREFERENCES = {
     customPrompt: '',
-    providerMode: 'byok',
+    providerMode: 'groq',
     selectedProfile: 'interview',
     selectedLanguage: 'en-US',
     selectedScreenshotInterval: '5',
@@ -62,7 +63,7 @@ const LEGACY_WHISPER_MODELS = {
     'Xenova/whisper-base': 'base.en',
     'Xenova/whisper-small': 'small.en',
 };
-const VALID_PROVIDER_MODES = new Set(['byok', 'groq', 'local']);
+const VALID_PROVIDER_MODES = new Set(['byok', 'groq', 'local', 'mistral']);
 
 function getConfigDir() {
     if (os.platform() === 'win32') return path.join(os.homedir(), 'AppData', 'Roaming', 'ContextHalo');
@@ -121,6 +122,7 @@ function normalizeCredentials(credentials) {
     return {
         apiKey: String(credentials?.apiKey || '').trim(),
         groqApiKey: String(credentials?.groqApiKey || '').trim(),
+        mistralApiKey: String(credentials?.mistralApiKey || '').trim(),
     };
 }
 
@@ -168,13 +170,14 @@ async function decodeStoredCredentialsAsync(raw, safeStorage) {
     if (!safeStorage) return null;
 
     try {
-        const [apiKey, groqApiKey] = await Promise.all([
+        const [apiKey, groqApiKey, mistralApiKey] = await Promise.all([
             decryptCredentialAsync(raw.encrypted.apiKey, safeStorage),
             decryptCredentialAsync(raw.encrypted.groqApiKey, safeStorage),
+            decryptCredentialAsync(raw.encrypted.mistralApiKey, safeStorage),
         ]);
         return {
-            credentials: normalizeCredentials({ apiKey: apiKey.result, groqApiKey: groqApiKey.result }),
-            shouldReEncrypt: apiKey.shouldReEncrypt || groqApiKey.shouldReEncrypt,
+            credentials: normalizeCredentials({ apiKey: apiKey.result, groqApiKey: groqApiKey.result, mistralApiKey: mistralApiKey.result }),
+            shouldReEncrypt: apiKey.shouldReEncrypt || groqApiKey.shouldReEncrypt || mistralApiKey.shouldReEncrypt,
         };
     } catch (error) {
         console.error('Could not decrypt Windows credentials:', error.message);
@@ -187,13 +190,14 @@ async function writeCredentialsFileAsync(credentials, safeStorageOverride) {
     const safeStorage = safeStorageOverride === undefined ? await getWindowsAsyncSafeStorage() : safeStorageOverride;
 
     if (safeStorage) {
-        const [apiKey, groqApiKey] = await Promise.all([
+        const [apiKey, groqApiKey, mistralApiKey] = await Promise.all([
             encryptCredentialAsync(normalized.apiKey, safeStorage),
             encryptCredentialAsync(normalized.groqApiKey, safeStorage),
+            encryptCredentialAsync(normalized.mistralApiKey, safeStorage),
         ]);
         const saved = writeJsonFile(getCredentialsPath(), {
             format: CREDENTIAL_FORMAT,
-            encrypted: { apiKey, groqApiKey },
+            encrypted: { apiKey, groqApiKey, mistralApiKey },
         });
         if (saved) {
             credentialCache = normalized;
@@ -368,19 +372,24 @@ function getConfig() { return migrateConfig(readJsonFile(getConfigPath(), {})); 
 function setConfig(config) { return writeJsonFile(getConfigPath(), migrateConfig({ ...getConfig(), ...config })); }
 function updateConfig(key, value) { return setConfig({ [key]: value }); }
 function getCredentials() { return { ...credentialCache }; }
-async function setCredentials(credentials) {
-    if (os.platform() === 'win32' && !credentialStorageReady) {
-        await initializeCredentialStorage();
-        if (!credentialStorageReady && credentialStorageLocked) {
-            throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
+function setCredentials(credentials) {
+    credentialWriteQueue = credentialWriteQueue.catch(() => {}).then(async () => {
+        if (os.platform() === 'win32' && !credentialStorageReady) {
+            await initializeCredentialStorage();
+            if (!credentialStorageReady && credentialStorageLocked) {
+                throw new Error('Windows credential encryption is unavailable. Existing keys were not changed.');
+            }
         }
-    }
-    return writeCredentialsFileAsync({ ...credentialCache, ...credentials });
+        return writeCredentialsFileAsync({ ...credentialCache, ...credentials });
+    });
+    return credentialWriteQueue;
 }
 function getApiKey() { return credentialCache.apiKey || ''; }
 function setApiKey(apiKey) { return setCredentials({ apiKey }); }
 function getGroqApiKey() { return credentialCache.groqApiKey || ''; }
 function setGroqApiKey(groqApiKey) { return setCredentials({ groqApiKey }); }
+function getMistralApiKey() { return credentialCache.mistralApiKey || ''; }
+function setMistralApiKey(mistralApiKey) { return setCredentials({ mistralApiKey }); }
 function getPreferences() { return migratePreferences(readJsonFile(getPreferencesPath(), {})); }
 function setPreferences(preferences) { return writeJsonFile(getPreferencesPath(), migratePreferences({ ...getPreferences(), ...preferences })); }
 function updatePreference(key, value) { return setPreferences({ [key]: value }); }
@@ -534,17 +543,20 @@ function deleteAllSessions() {
     }
 }
 function clearAllData() {
-    try {
-        fs.rmSync(getConfigDir(), { recursive: true, force: true });
-        credentialCache = { ...DEFAULT_CREDENTIALS };
-        credentialStorageReady = os.platform() !== 'win32';
-        credentialStorageLocked = false;
-        initializeStorage();
-        return true;
-    } catch (error) {
-        console.error('Error clearing data:', error.message);
-        return false;
-    }
+    credentialWriteQueue = credentialWriteQueue.catch(() => {}).then(() => {
+        try {
+            fs.rmSync(getConfigDir(), { recursive: true, force: true });
+            credentialCache = { ...DEFAULT_CREDENTIALS };
+            credentialStorageReady = os.platform() !== 'win32';
+            credentialStorageLocked = false;
+            initializeStorage();
+            return true;
+        } catch (error) {
+            console.error('Error clearing data:', error.message);
+            return false;
+        }
+    });
+    return credentialWriteQueue;
 }
 
 module.exports = {
@@ -558,6 +570,8 @@ module.exports = {
     setApiKey,
     getGroqApiKey,
     setGroqApiKey,
+    getMistralApiKey,
+    setMistralApiKey,
     getPreferences,
     updatePreference,
     getKeybinds,

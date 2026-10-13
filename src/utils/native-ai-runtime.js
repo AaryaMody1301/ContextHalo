@@ -8,6 +8,7 @@ const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const { promisify } = require('util');
 const { getConfigDir } = require('../storage');
+const { abortable } = require('./requestDeadline');
 
 const runFile = promisify(execFile);
 
@@ -78,31 +79,44 @@ async function fileMatchesChecksum(filePath, expectedSha256) {
 async function downloadFile(url, destinationPath, onProgress, signal) {
     const temporaryPath = `${destinationPath}.download-${process.pid}-${Date.now()}`;
     const timeout = AbortSignal.timeout(30 * 60 * 1000);
-    signal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const response = await fetch(url, { redirect: 'follow', signal });
-
-    if (!response.ok || !response.body) {
-        throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
-    }
-
-    const expectedBytes = Number(response.headers.get('content-length')) || 0;
-    let downloadedBytes = 0;
+    const idle = new AbortController();
+    signal = AbortSignal.any([...(signal ? [signal] : []), timeout, idle.signal]);
+    let idleTimer;
+    const resetIdle = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => idle.abort(Object.assign(new Error('Download stalled for 30 seconds. Check network access and retry setup.'), {
+            name: 'TimeoutError', code: 'DOWNLOAD_STALLED',
+        })), 30000);
+    };
 
     try {
+        resetIdle();
+        // Explicit byte-zero ranges avoid stalled full-file Hub CDN responses.
+        const headers = new URL(url).hostname === 'huggingface.co' ? { Range: 'bytes=0-', 'Accept-Encoding': 'identity' } : undefined;
+        const response = await abortable(() => fetch(url, { redirect: 'follow', signal, headers }), signal);
+        if (!response.ok || !response.body) {
+            try { void response.body?.cancel().catch(() => {}); } catch {}
+            throw new Error(`Download failed with HTTP ${response.status}`);
+        }
+        const expectedBytes = Number(response.headers.get('content-length')) || 0;
+        let downloadedBytes = 0;
         const input = Readable.fromWeb(response.body);
         const progressStream = new Transform({
             transform(chunk, encoding, callback) {
                 downloadedBytes += chunk.length;
+                resetIdle();
                 onProgress?.({ downloadedBytes, expectedBytes });
                 callback(null, chunk);
             },
         });
-        await pipeline(input, progressStream, fs.createWriteStream(temporaryPath, { flags: 'wx' }), { signal });
+        await abortable(() => pipeline(input, progressStream, fs.createWriteStream(temporaryPath, { flags: 'wx' }), { signal }), signal);
 
         return temporaryPath;
     } catch (error) {
         fs.rmSync(temporaryPath, { force: true });
-        throw error;
+        throw signal.aborted ? signal.reason : error;
+    } finally {
+        clearTimeout(idleTimer);
     }
 }
 
@@ -342,8 +356,12 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
         };
     }
 
-    const model = await resolveHuggingFaceGguf(modelReference, signal);
-    const repositoryDirectory = path.join(getModelsDirectory(), 'llama', model.repository);
+    const { repository, quant } = parseHuggingFaceModelReference(modelReference);
+    const repositoryDirectory = path.join(getModelsDirectory(), 'llama', repository);
+    const model = readModelProvenance(repositoryDirectory, repository, quant) || await resolveHuggingFaceGguf(modelReference, signal);
+    // Pin both artifacts before downloading so an interrupted setup resumes the same revision.
+    persistModelProvenance(repositoryDirectory, { schemaVersion: 1, ...model });
+    onModelProgress?.({ phase: 'checking' });
     const modelPath = await installVerifiedFile({
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.model.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.model.path)),
@@ -351,6 +369,7 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
         onProgress: onModelProgress,
         signal,
     });
+    onProjectorProgress?.({ phase: 'checking' });
     const projectorPath = await installVerifiedFile({
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.projector.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.projector.path)),
@@ -359,19 +378,24 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
         signal,
     });
 
-    persistModelProvenance(repositoryDirectory, {
-        schemaVersion: 1,
-        repository: model.repository,
-        revision: model.revision,
-        quant: model.quant,
-        model: model.model,
-        projector: model.projector,
-    });
-
     return {
         modelPath,
         projectorPath,
     };
+}
+
+function readModelProvenance(directory, repository, quant) {
+    try {
+        const source = JSON.parse(fs.readFileSync(path.join(directory, `.source-${quant}.json`), 'utf8'));
+        const validArtifact = artifact => typeof artifact?.path === 'string'
+            && /^[A-Za-z0-9._/-]+\.gguf$/i.test(artifact.path)
+            && artifact.path.split('/').every(part => part && part !== '.' && part !== '..')
+            && !path.isAbsolute(artifact.path) && /^[a-f0-9]{64}$/i.test(artifact.sha256);
+        if (source.schemaVersion === 1 && source.repository === repository && source.quant === quant
+            && /^[a-f0-9]{40}$/i.test(source.revision) && validArtifact(source.model) && validArtifact(source.projector)
+            && !path.basename(source.model.path).startsWith('mmproj-') && path.basename(source.projector.path).startsWith('mmproj-')) return source;
+    } catch {}
+    return null;
 }
 
 function persistModelProvenance(repositoryDirectory, source) {
@@ -399,6 +423,7 @@ function attachProcessLogging(childProcess, name) {
         process.stdout.write(`[${name}] ${data}`);
     });
     childProcess.stderr.on('data', data => {
+        if (!childProcess.startupReady) childProcess.startupDiagnostics = ((childProcess.startupDiagnostics || '') + data).slice(-8192);
         process.stderr.write(`[${name}] ${data}`);
     });
 }
@@ -420,12 +445,18 @@ async function waitForServer(url, childProcess, timeoutMs, signal) {
     while (Date.now() < deadline) {
         signal?.throwIfAborted();
         if (childProcess.launchError) throw new Error(`Native server could not start (${childProcess.launchError.code || 'spawn failed'})`);
-        if (childProcess.exitCode !== null || childProcess.killed) throw new Error('Native server stopped before becoming ready');
+        if (childProcess.exitCode !== null || childProcess.killed) {
+            const exit = Number.isInteger(childProcess.exitCode) ? `0x${(childProcess.exitCode >>> 0).toString(16).padStart(8, '0')}` : 'terminated';
+            const hint = /out of memory|bad_alloc|not enough memory|failed to allocate/i.test(childProcess.startupDiagnostics || '') ? ' Not enough memory; close other applications or explicitly select a smaller model.'
+                : /unsupported|unknown model architecture|invalid model/i.test(childProcess.startupDiagnostics || '') ? ' The runner rejected the selected model format.'
+                : exit === '0xc0000135' ? ' A required Windows runtime DLL is missing; reinstall the verified runner bundle.' : '';
+            throw Object.assign(new Error(`Native server stopped before becoming ready (exit ${exit}).${hint}`), { code: 'NATIVE_EXIT', exitCode: childProcess.exitCode });
+        }
         const timeout = AbortSignal.timeout(Math.max(1, Math.min(5000, deadline - Date.now())));
         try {
             const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
             await response.body?.cancel();
-            if (response.ok) return;
+            if (response.ok) { childProcess.startupReady = true; childProcess.startupDiagnostics = ''; return; }
         } catch (error) { if (signal?.aborted) throw signal.reason; }
         await require('node:timers/promises').setTimeout(250, undefined, { signal });
     }

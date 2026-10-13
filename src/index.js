@@ -149,7 +149,7 @@ function setupStorageIpcHandlers() {
     });
 
     handle('storage:credential-status', () => ({ success: true, data: {
-        gemini: Boolean(storage.getApiKey()), groq: Boolean(storage.getGroqApiKey()),
+        gemini: Boolean(storage.getApiKey()), groq: Boolean(storage.getGroqApiKey()), mistral: Boolean(storage.getMistralApiKey()),
     } }));
     handle('storage:set-api-key', async apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
@@ -158,6 +158,10 @@ function setupStorageIpcHandlers() {
     handle('storage:set-groq-api-key', async groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
         saved(await storage.setGroqApiKey(groqApiKey)); return { success: true };
+    });
+    handle('storage:set-mistral-api-key', async mistralApiKey => {
+        if (!validateString(mistralApiKey, 10000)) throw new Error('Invalid Mistral API key');
+        saved(await storage.setMistralApiKey(mistralApiKey)); return { success: true };
     });
 
     handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
@@ -186,7 +190,7 @@ function setupStorageIpcHandlers() {
         saved(storage.deleteSession(sessionId)); return { success: true };
     });
     handle('storage:delete-all-sessions', () => ({ success: storage.deleteAllSessions() }));
-    handle('storage:clear-all', () => ({ success: storage.clearAllData() }));
+    handle('storage:clear-all', async () => ({ success: await storage.clearAllData() }));
 }
 
 function setupGeneralIpcHandlers() {

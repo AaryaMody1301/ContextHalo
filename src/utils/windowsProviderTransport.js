@@ -18,6 +18,9 @@ const POLICIES = {
     'groq-transcription': { totalMs: 30000, attemptMs: 14000, idleMs: 10000, attempts: 2 },
     'groq-image': { totalMs: 52000, attemptMs: 24000, idleMs: 12000, attempts: 2 },
     'groq-text': { totalMs: 60000, attemptMs: 28000, idleMs: 15000, attempts: 2 },
+    // Mistral owns its single retry; transport only bounds and cancels its work.
+    'mistral-image': { totalMs: 52000, attemptMs: 52000, idleMs: 12000, attempts: 1 },
+    'mistral-text': { totalMs: 60000, attemptMs: 60000, idleMs: 15000, attempts: 1 },
     'local-image': { totalMs: 55000, attemptMs: 54000, idleMs: 45000, attempts: 1 },
     'local-text': { totalMs: 180000, attemptMs: 179000, idleMs: 60000, attempts: 1 },
     'local-whisper': { totalMs: 60000, attemptMs: 59000, idleMs: 30000, attempts: 1 },
@@ -53,6 +56,10 @@ function classifyProviderRequest(input, init = {}) {
             return bodyContainsImage(init.body) ? 'groq-image' : 'groq-text';
         }
         return null;
+    }
+
+    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') {
+        return bodyContainsImage(init.body) ? 'mistral-image' : 'mistral-text';
     }
 
     if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') {

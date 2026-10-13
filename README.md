@@ -10,7 +10,7 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 
 ## Features
 
-- Gemini Live, Groq, and optional fully local AI with dynamic provider model discovery
+- Gemini Live, Groq, Mistral text/screenshots, and optional fully local AI
 - Low-latency Windows system-audio loopback and microphone capture
 - Protected Windows Live HUD with always-on-top, click-through, taskbar hiding, and capture protection
 - Adjustable HUD background opacity with opaque text and controls
@@ -31,7 +31,7 @@ The app window stays out of the taskbar from launch, including Home, Settings, H
 
 - Windows 10 or Windows 11 x64
 - Node.js 22.16+ (Node.js 24 LTS recommended) and npm 10+ for development
-- A Gemini API key, Groq API key, or Local AI model depending on the selected provider
+- A Gemini, Groq or Mistral API key, or Local AI models depending on the selected provider
 - Screen/audio permissions required by Windows
 
 ## Quick start
@@ -74,6 +74,8 @@ For physical long-session validation, start the packaged EXE with `--reliability
 
 ## Provider modes
 
+Fresh installations select Groq. Existing saved provider selections are preserved; a failed request never switches providers automatically.
+
 ### Gemini API
 
 Uses Gemini Live for real-time audio. Typed prompts and screen analysis use the selected Gemini text/analysis model through separate bounded HTTP requests. Typed questions include recent saved transcript, conversation, session-pack, knowledge, and screen-analysis context; they do not pause audio capture. Live and HTTP models are separate selections because not every model supports both APIs.
@@ -86,6 +88,16 @@ Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for 
 
 Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No cloud API key is required.
 
+Setup verifies both the language model and its matching vision projector before starting. Interrupted setup retains its immutable model revision and verified cached files for retry. A stalled download fails after 30 seconds without data; startup errors identify the failing stage. Vulkan startup can fall back to the verified CPU runner with the same model.
+
+Native servers bind to loopback. The language-model server requires a fresh session key held by the main process, and Whisper routes use a fresh unguessable session prefix. Neither is returned to the renderer or saved as a provider credential.
+
+### Mistral API
+
+Uses the pinned Mistral Small 4 model (`mistral-small-2603`) for streamed text and JPEG screenshot answers with reasoning off. Add a Mistral key in Home and explicitly select Mistral. This mode captures the selected screen without microphone or system audio; saved audio preferences remain available for the other providers. Google Search is unavailable in this mode. Mistral's free account limits apply, and benchmark measurements do not guarantee free-tier latency or availability.
+
+Text and screen failures show their sanitized explanation directly in Session details, including the model, known HTTP status and retry availability.
+
 ## Security and privacy
 
 - API credentials are never committed to the repository.
@@ -96,6 +108,8 @@ Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No 
 - See [SECURITY.md](SECURITY.md) for security reporting guidance.
 
 Saved API keys are not returned to renderer code. Home shows credential-presence flags and accepts explicit key replacement/removal; provider initialization reads credentials in the main process.
+
+See the [provider implementation recheck](docs/PROVIDER_DEEP_RECHECK_2026-10-12.md) for the plan comparison, current official API references, concurrency repairs, Windows verification and remaining live-account/device acceptance limits.
 
 Transport logs are off by default. `CONTEXTHALO_DIAGNOSTICS=1` enables size-limited, metadata-only diagnostic logs; prompts, API keys, audio and full responses are not recorded by this logger. Local history remains user data and can be deleted through Settings.
 

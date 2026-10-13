@@ -92,16 +92,22 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
         fs: { existsSync: () => true, readdirSync: () => [] }, './native-ai-runtime': native, './sessionRequests': requests,
         './gemini': { sendToRenderer() {}, initializeNewSession: () => requests.resetSessionRequests(), saveConversationTurn() {} },
     }, { console: { log() {}, warn() {} }, fetch: async (_url, init) => {
+        assert.equal(init.headers.Authorization, `Bearer ${started.at(-1).environment.LLAMA_API_KEY}`);
         bodies.push(JSON.parse(init.body));
         return new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
     } });
     t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
     assert.equal(await api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US'), true);
     assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/binaries/llama-b10964-vulkan/llama-server.exe', '/binaries/llama-b10964-cpu/llama-server.exe']);
-    assert.deepEqual(started[0].arguments, ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
+    assert.deepEqual(started[0].arguments.slice(0, 6), ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
+    assert.equal(started[0].arguments[6], '--request-path');
+    assert.match(started[0].arguments[7], /^\/[a-f0-9]{48}$/);
     assert.ok(started[1].arguments.includes('--alias') && started[1].arguments.includes('local'));
     assert.ok(started[1].arguments.includes('-m') && started[1].arguments.includes('/model'));
     assert.ok(started[1].arguments.includes('--mmproj') && started[1].arguments.includes('/projector'));
+    assert.equal(started[1].arguments[started[1].arguments.indexOf('--cors-origins') + 1], 'localhost');
+    assert.match(started[1].environment.LLAMA_API_KEY, /^[a-f0-9]{64}$/);
+    assert.notEqual(started[1].environment.LLAMA_API_KEY, started[2].environment.LLAMA_API_KEY);
     assert.ok(started[1].arguments.includes('--cache-reuse') && started[1].arguments.includes('256'));
     assert.ok(started[2].arguments.includes('--cache-reuse') && started[2].arguments.includes('256'), 'official b10964 CPU fallback shares the audited CLI contract');
     assert.equal(stopped[0], started[1]);

@@ -600,7 +600,7 @@ export class CustomizeView extends LitElement {
         return html`
             <section class="surface">
                 <div class="surface-title">AI Provider & Models</div>
-                <div class="surface-subtitle">Gemini, Groq, Local AI, API keys, and model choices are shared with Home.</div>
+                <div class="surface-subtitle">Provider choices, API keys, and model settings are shared with Home.</div>
                 <div class="form-group">
                     <div class="form-help">Use one provider editor so credentials and model selections cannot drift between pages.</div>
                     <button class="control" style="width:auto;cursor:pointer;" @click=${() => this.onOpenProviderSettings()}>Open provider setup</button>
