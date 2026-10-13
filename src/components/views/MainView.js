@@ -2,6 +2,7 @@ import { RESPONSE_MODES, getRealtimeState, setResponseMode } from '../../utils/r
 import { loadContextState, getContextState, selectionKey, refreshCaptureSources, setCaptureSource, setPackField, captureClipboardText, clearClipboardContext } from '../../utils/contextCaptureRenderer.js';
 import { GEMINI_DEFAULTS, GROQ_DEFAULTS, renderModelPicker } from '../../utils/dynamicModelRegistryRenderer.js';
 import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
+import MISTRAL_MODELS from '../../utils/mistralModels.json' with { type: 'json' };
 
 const LOCAL_LLM_PRESETS = [
     { value: 'unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M', label: 'Qwen 3.5 0.8B Q4 — 0.74 GB · Fastest' },
@@ -686,6 +687,7 @@ export class MainView extends LitElement {
         _geminiKey: { state: true },
         _groqKey: { state: true },
         _mistralKey: { state: true },
+        _mistralModel: { state: true },
         _geminiLiveModel: { state: true },
         _groqModel: { state: true },
         _groqImageModel: { state: true },
@@ -728,6 +730,7 @@ export class MainView extends LitElement {
         this._geminiKey = '';
         this._groqKey = '';
         this._mistralKey = '';
+        this._mistralModel = MISTRAL_MODELS.find(model => model.recommended).id;
         this._geminiLiveModel = GEMINI_DEFAULTS.live;
         this._groqModel = GROQ_DEFAULTS.chat;
         this._groqImageModel = GROQ_DEFAULTS.vision;
@@ -772,6 +775,7 @@ export class MainView extends LitElement {
             this._groqTranscriptionModel = config.groqTranscriptionModel || GROQ_DEFAULTS.transcription;
             this._groqModel = config.groqModel || GROQ_DEFAULTS.chat;
             this._groqImageModel = config.groqImageModel || GROQ_DEFAULTS.vision;
+            this._mistralModel = config.mistralModel || MISTRAL_MODELS.find(model => model.legacyDefault).id;
             this._disableGroqThinking = config.disableGroqThinking === true;
 
             // Load local AI settings
@@ -936,6 +940,13 @@ export class MainView extends LitElement {
         return this._persistConfiguration('config', 'groqTranscriptionModel', value);
     }
 
+    _saveMistralModel(value) {
+        if (this.sessionActive || this.isInitializing || !MISTRAL_MODELS.some(model => model.id === value)) return;
+        this._mistralModel = value;
+        this.requestUpdate();
+        return this._persistConfiguration('config', 'mistralModel', value);
+    }
+
     _saveGeminiLiveModel(value) {
         this._geminiLiveModel = value;
         this.requestUpdate();
@@ -1030,7 +1041,7 @@ export class MainView extends LitElement {
 
     _hasConfiguredProvider() {
         if (this._mode === 'local') return Boolean(this._localLlmModel.trim() && this._whisperModel.trim());
-        if (this._mode === 'mistral') return Boolean(this._savedKeys?.mistral || this._mistralKey.trim());
+        if (this._mode === 'mistral') return Boolean(this._savedKeys?.mistral || this._mistralKey.trim()) && MISTRAL_MODELS.some(model => model.id === this._mistralModel);
         return this._mode === 'groq' ? Boolean((this._savedKeys?.groq || this._groqKey.trim()) && this._groqModel.trim() && this._groqImageModel.trim() && this._groqTranscriptionModel.trim())
             : Boolean((this._savedKeys?.gemini || this._geminiKey.trim()) && this._geminiLiveModel.trim() && this._geminiHttpModel.trim());
     }
@@ -1206,7 +1217,11 @@ export class MainView extends LitElement {
                         </div>
                         ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
-                    ${mistral ? html`<p>Text and screenshots: Mistral Small 4 (mistral-small-2603). Reasoning off. Account rate limits and included usage apply; a saved key does not confirm API access.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
+                    ${mistral ? html`<label for="mistral-model">Text and screenshot model</label>
+                        <select id="mistral-model" .value=${this._mistralModel} ?disabled=${this.sessionActive || this.isInitializing} @change=${event => this._saveMistralModel(event.target.value)}>
+                            ${MISTRAL_MODELS.map(model => html`<option value=${model.id} ?selected=${model.id === this._mistralModel}>${model.displayName}${model.recommended ? ' (recommended)' : ''} · ${model.id}</option>`)}
+                        </select>
+                        <p>All choices support text and screenshots. Ministral 3 8B is recommended for free evaluation. Model access, rate limits and included usage depend on your Mistral account. Small 4 reasoning is off. End the session before changing models.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
                         ${fields.map(field => renderModelPicker(this, { ...field, stale: catalog?.stale === true }))}
                     </details>`}
                     <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : `Google Search is not available in ${label} mode. Its saved preference is retained for Gemini.`}</div>

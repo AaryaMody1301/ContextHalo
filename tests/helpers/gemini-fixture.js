@@ -133,7 +133,7 @@ function geminiFixture(options = {}) {
     api.setupGeminiIpcHandlers({ current: null });
     const event = { sender: webContents, senderFrame: frame };
     return {
-        api, handlers, event, events, generated, connections, clients, realtime, clientContent, preparations, diagnostics, preferences,
+        api, handlers, event, events, generated, connections, clients, realtime, clientContent, preparations, diagnostics, preferences, config,
         get callbacks() { return connections.at(-1)?.callbacks; },
         call: (name, ...args) => handlers.get(name)(event, ...args),
         start: (provider = 'byok', settings = {}) => provider === 'local'

@@ -6,6 +6,65 @@ const { loadMain } = require('./helpers/native-boundary');
 const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(1200)]).toString('base64');
 const completion = text => new Response(`data:${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } })}\n\ndata:[DONE]\n\n`);
 
+test('explicit Ministral models use compatible payloads and the selected session model stays pinned', async () => {
+    const bodies = [];
+    const f = geminiFixture({ config: { mistralModel: 'ministral-8b-2512' }, fetch: async (_url, init) => {
+        bodies.push(JSON.parse(init.body)); return completion('Answer');
+    } });
+    try {
+        assert.equal((await f.start('mistral')).success, true);
+        f.config.mistralModel = 'ministral-14b-2512';
+        assert.equal((await f.call('send-text-message', 'Question')).model, 'ministral-8b-2512');
+        assert.equal((await f.call('send-image-content', { data: jpeg, prompt: 'Screen' })).model, 'ministral-8b-2512');
+        await f.close();
+        for (const model of ['ministral-14b-2512', 'ministral-3b-2512']) {
+            f.config.mistralModel = model;
+            assert.equal((await f.start('mistral')).success, true);
+            assert.equal((await f.call('send-text-message', 'Question')).model, model);
+            await f.close();
+        }
+        assert.deepEqual(bodies.map(body => body.model), ['ministral-8b-2512', 'ministral-8b-2512', 'ministral-14b-2512', 'ministral-3b-2512']);
+        assert.ok(bodies.every(body => !Object.hasOwn(body, 'reasoning_effort') && body.stream === true));
+        f.config.mistralModel = 'untrusted-model';
+        assert.equal((await f.start('mistral')).success, false);
+        assert.equal(bodies.length, 4);
+    } finally { await f.close(); }
+});
+
+test('zero runtime RPM stops retries, preserves safe numeric limits and reports the selected model', async () => {
+    let calls = 0;
+    const api = loadMain('src/utils/mistral.js', {}, { fetch: async () => {
+        calls++;
+        return new Response('private-invalid-body', { status: 429, headers: {
+            'x-ratelimit-limit-req-minute': '0', 'x-ratelimit-remaining-req-minute': '-1',
+            'x-ratelimit-limit-tokens-minute': '625000', 'x-ratelimit-remaining-tokens-minute': '999999999999999999999',
+            'x-private-header': 'private-value',
+        } });
+    } });
+    await assert.rejects(api.streamMistral({ apiKey: 'fixture', model: 'ministral-8b-2512', messages: [], operation: 'text', onText() {} }), error => {
+        const failure = api.classifyMistralFailure(error, 'text', 'ministral-8b-2512');
+        assert.equal(failure.model, 'ministral-8b-2512');
+        assert.deepEqual(failure.rateLimits, { requestsPerMinute: 0, tokensPerMinute: 625000 });
+        assert.equal(failure.retryable, false); assert.equal(failure.retryAt, null);
+        assert.match(failure.message, /zero requests per minute/);
+        assert.doesNotMatch(JSON.stringify(failure), /private/);
+        return true;
+    });
+    assert.equal(calls, 1);
+    await assert.rejects(api.streamMistral({ apiKey: 'fixture', model: 'untrusted', messages: [], operation: 'text', onText() {} }), /Unsupported/);
+    assert.equal(calls, 1);
+});
+
+test('Ministral 14B concurrent starts respect its lower free request limit', async () => {
+    let now = 0;
+    const starts = [];
+    const api = loadMain('src/utils/mistral.js', { 'node:timers/promises': { setTimeout: async ms => { now += ms; } } }, {
+        Date: class extends Date { static now() { return now; } }, fetch: async () => { starts.push(now); return completion('Answer'); },
+    });
+    await Promise.all(['text', 'screen'].map(operation => api.streamMistral({ apiKey: 'fixture', model: 'ministral-14b-2512', messages: [], operation, onText() {} })));
+    assert.ok(starts[1] - starts[0] >= 2200);
+});
+
 test('Mistral spaces concurrent text and screen starts for the 1-RPS evaluation limit', async () => {
     let now = 0, releaseFirst;
     const starts = [];

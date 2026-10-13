@@ -79,7 +79,7 @@ These are separate account allowances, not one combined pool. Availability, quot
 ## Recommendation for ContextHalo
 
 1. Keep Groq as the working default while evaluating alternatives. Its free GPT-OSS-120B quota is substantially larger in daily requests than SambaNova's current offer, although token limits also apply. [Groq limits](https://console.groq.com/docs/rate-limits)
-2. Evaluate **Mistral Small 4 first** for responsive text and screenshots. Use a specific model version and an explicit reasoning setting; do not claim that the published measurements guarantee free-plan performance.
+2. Original research recommendation: evaluate **Mistral Small 4 first** for responsive text and screenshots. The [October 13 live follow-up](MISTRAL_FREE_MODEL_VALIDATION_2026-10-13.md) supersedes this evaluation order: Small reported zero runtime RPM, while Ministral 3 8B, 14B and 3B passed text and screenshot tests on the same Free account. Use pinned versions and explicit model selection; published measurements do not guarantee free-plan access or performance.
 3. Evaluate **Z.ai second**, using the correct separate free text and vision models. Actual free-endpoint latency is still an evidence gap.
 4. Consider **SambaNova for occasional text requests** and **Cloudflare or Vercel for another limited provider option**. Kilo offers an additional experimental gateway, subject to model stability and its data-collection requirements.
 5. Preserve explicit provider/model selection and separate audio configuration. A text/vision API is not a drop-in replacement for Gemini Live. Reuse existing bounded HTTP streaming and cancellation patterns if integration is requested; do not add every provider merely because it has a free offer.

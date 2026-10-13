@@ -4,7 +4,30 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-test('storage v9 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
+test('Mistral model migration preserves old selections and defaults new installs to Ministral 8B', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-mistral-models-'));
+    const originalHomedir = os.homedir;
+    os.homedir = () => tempHome;
+    const storagePath = require.resolve('../src/storage');
+    delete require.cache[storagePath];
+    const storage = require(storagePath);
+    t.after(() => { delete require.cache[storagePath]; os.homedir = originalHomedir; fs.rmSync(tempHome, { recursive: true, force: true }); });
+    storage.initializeStorage();
+    assert.equal(storage.getConfig().mistralModel, 'ministral-8b-2512');
+    const configFile = path.join(storage.getConfigDir(), 'config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ configVersion: 9, onboarded: true }));
+    assert.equal(storage.getConfig().mistralModel, 'mistral-small-2603');
+    for (const model of ['ministral-3b-2512', 'ministral-8b-2512', 'ministral-14b-2512', 'mistral-small-2603']) {
+        storage.updateConfig('mistralModel', model);
+        assert.equal(storage.getConfig().mistralModel, model);
+    }
+    assert.throws(() => storage.updateConfig('mistralModel', { id: 'ministral-8b-2512' }), /supported Mistral model/);
+    assert.equal(storage.getConfig().mistralModel, 'mistral-small-2603');
+    fs.writeFileSync(configFile, JSON.stringify({ configVersion: 10, mistralModel: 'unknown' }));
+    assert.equal(storage.getConfig().mistralModel, 'mistral-small-2603');
+});
+
+test('storage v10 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -53,7 +76,7 @@ test('storage v9 migration upgrades provider models without deleting user data',
     storage.initializeStorage();
 
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 9);
+    assert.equal(config.configVersion, 10);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live');
     assert.equal(config.geminiHttpModel, 'gemini-3.8-flash');
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
@@ -77,7 +100,7 @@ test('storage v9 migration upgrades provider models without deleting user data',
     assert.equal(storage.getPreferences().providerMode, 'byok');
 });
 
-test('storage v9 migrates persisted Gemini 2.5 defaults and the old Local AI default', { concurrency: false }, t => {
+test('storage v10 migrates persisted Gemini 2.5 defaults and the old Local AI default', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-v8-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -137,13 +160,13 @@ test('storage preserves a supported explicitly configured Gemini 3.7 model', { c
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 9);
+    assert.equal(config.configVersion, 10);
     assert.equal(config.geminiLiveModel, 'gemini-3.8-live', 'legacy Live selections migrate to the current stable low-latency model');
     assert.equal(config.geminiHttpModel, 'gemini-3.7-flash');
 });
 
 
-test('storage v9 preserves an explicitly reselected enterprise Qwen 3.6 vision model', { concurrency: false }, t => {
+test('storage v10 preserves an explicitly reselected enterprise Qwen 3.6 vision model', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-storage-enterprise-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;

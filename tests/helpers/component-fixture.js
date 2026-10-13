@@ -8,6 +8,7 @@ function componentClass(file, name, overrides = {}) {
     const source = fs.readFileSync(file, 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class ', 'class ');
     const context = {
         contextHaloAppStyles: '',
+        MISTRAL_MODELS: require('../../src/utils/mistralModels.json'),
         LitElement: class {
             constructor() { this.updateComplete = Promise.resolve(); this.isConnected = true; }
             requestUpdate() {} connectedCallback() {} disconnectedCallback() {} toggleAttribute() {}
