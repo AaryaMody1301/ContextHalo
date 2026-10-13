@@ -1206,7 +1206,7 @@ export class MainView extends LitElement {
                         </div>
                         ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
-                    ${mistral ? html`<p>Text and screenshots: Mistral Small 4 (mistral-small-2603). Reasoning off. Free account limits apply.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
+                    ${mistral ? html`<p>Text and screenshots: Mistral Small 4 (mistral-small-2603). Reasoning off. Account rate limits and included usage apply; a saved key does not confirm API access.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
                         ${fields.map(field => renderModelPicker(this, { ...field, stale: catalog?.stale === true }))}
                     </details>`}
                     <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : `Google Search is not available in ${label} mode. Its saved preference is retained for Gemini.`}</div>

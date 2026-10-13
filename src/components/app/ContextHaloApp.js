@@ -999,11 +999,15 @@ export class ContextHaloApp extends LitElement {
                         <button @click=${() => { this.closeSessionDetails(); this.retryRequest(); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'message'}</button>
                         ${this.requestError.canDisableSearch && this.searchState.httpEffective ? html`<button @click=${() => { this.closeSessionDetails(); this.retryRequest(true); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry request without Search</button>` : ''}
                         <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button>
+                        ${this.providerMode === 'mistral' ? html`<button @click=${() => this.handleExternalLinkClick('https://admin.mistral.ai/plateforme/limits')}>Open Mistral limits</button>` : ''}
                     </div>
                     ${this.requestError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.requestError.retryAt).toLocaleTimeString()}.</p>` : ''}
                     ${this.requestError.model ? html`<p>Model: ${this.requestError.model}</p>` : ''}
                     <p class="request-error-message" role="alert">${this.requestError.message}</p>
-                    <details class="error-details"><summary>Request diagnostics</summary><p>${this.requestError.operation} · ${this.requestError.category}${this.requestError.httpStatus ? ` · HTTP ${this.requestError.httpStatus}` : ''}</p></details>
+                    <details class="error-details"><summary>Request diagnostics</summary><p>${this.requestError.operation} · ${this.requestError.category}${this.requestError.httpStatus ? ` · HTTP ${this.requestError.httpStatus}` : ''}</p>
+                        ${this.requestError.providerCode ? html`<p>Provider code: ${this.requestError.providerCode}</p>` : ''}
+                        ${this.requestError.providerType ? html`<p>Provider type: ${this.requestError.providerType}</p>` : ''}
+                        ${this.providerMode === 'mistral' && this.requestError.httpStatus === 429 && this.requestError.retryAfterMs == null ? html`<p>Mistral did not supply a retry delay. The reset time is unknown.</p>` : ''}</details>
                 ` : this._detailMessage?.uiEpoch === this._uiSessionEpoch ? html`<p>${this._detailMessage.message}</p>` : ''}
                 ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">
                     <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
@@ -1024,7 +1028,7 @@ export class ContextHaloApp extends LitElement {
                 <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
                 ${this.searchState.liveReason ? html`<p>Live Search: ${this.searchState.liveReason}</p>` : ''}
                 ${this.searchState.httpReason ? html`<p>Text/screen Search: ${this.searchState.httpReason}</p>` : ''}
-                <p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Live audio Search: ${this.searchState.liveEffective ? 'enabled' : 'off'}. Text and screen Search: ${this.searchState.httpEffective ? 'enabled' : 'off'}. Your saved preference is unchanged. Enabled means the tool is available; Google decides whether a request needs a search.</p>
+                ${this.providerMode === 'mistral' ? html`<p>Google Search is unavailable for Mistral. Your saved Gemini Search preference is unchanged.</p>` : html`<p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Live audio Search: ${this.searchState.liveEffective ? 'enabled' : 'off'}. Text and screen Search: ${this.searchState.httpEffective ? 'enabled' : 'off'}. Your saved preference is unchanged. Enabled means the tool is available; Google decides whether a request needs a search.</p>`}
                 <h3>Window visibility</h3>
                 <p>Restore with ${this.visibilityShortcut} or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Hiding and minimizing do not stop capture.</p>
                 ${this.shortcutWarning ? html`<p>${this.shortcutWarning}</p>` : ''}

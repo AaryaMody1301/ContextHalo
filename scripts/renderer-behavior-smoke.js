@@ -157,6 +157,25 @@ async function rendererBehaviorSmoke() {
         const error = app.shadowRoot.querySelector('.request-error-message');
         verify(error?.textContent === 'Controlled provider error fixture' && !error.closest('details'), 'Provider request errors are readable without expanding details');
         app.requestError = null;
+        const originalProvider = app.providerMode;
+        const originalOpenLink = app.handleExternalLinkClick;
+        try {
+            app.providerMode = 'mistral';
+            app.requestError = { operation: 'screen', category: 'rate-or-quota', httpStatus: 429, providerCode: '1300', providerType: 'rate_limited', message: 'Controlled Mistral limit fixture' };
+            let openedUrl = '';
+            app.handleExternalLinkClick = async url => { openedUrl = url; };
+            await settle(app);
+            const details = app.shadowRoot.querySelector('.session-details');
+            verify(details.textContent.includes('Provider code: 1300') && details.textContent.includes('rate_limited') && details.textContent.includes('reset time is unknown'), 'Mistral limit diagnostics preserve safe code and unknown retry time');
+            verify(details.textContent.includes('Google Search is unavailable for Mistral') && !details.textContent.includes('Google decides'), 'Mistral session details exclude Gemini-only Search instructions');
+            [...details.querySelectorAll('button')].find(button => button.textContent === 'Open Mistral limits').click();
+            await settle(app);
+            verify(openedUrl === 'https://admin.mistral.ai/plateforme/limits', 'Mistral limit recovery opens the official account limits page');
+        } finally {
+            app.providerMode = originalProvider;
+            app.handleExternalLinkClick = originalOpenLink;
+            app.requestError = null;
+        }
     } finally {
         await api.storage.updatePreference('providerMode', originalMode || 'groq');
         app.currentView = 'assistant'; await settle(app);

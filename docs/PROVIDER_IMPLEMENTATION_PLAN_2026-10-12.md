@@ -1,6 +1,6 @@
 # ContextHalo provider implementation and repair plan
 
-Updated: October 12, 2026. Target: Windows 10/11 x64. Status: application changes implemented; acceptance results and remaining external dependencies are recorded below.
+Original implementation: October 12, 2026; Mistral follow-up: October 13. Target: Windows 10/11 x64. Status: application changes implemented; acceptance results and remaining external dependencies are recorded below. October 12 results and artifact metadata are historical snapshots.
 
 ## Decisions and delivery order
 
@@ -135,3 +135,9 @@ The local development artifact is `dist/ContextHalo-Windows-x64.exe` (version 0.
 Local acceptance evidence is stored in ignored `.cache` files, including `local-runtime.log`, `local-cpu-runtime.log`, `gemini-ipc-probe.log`, `final-tests.log`, `windows-qa/`, `portable-*/` and `portable-final/`. Public test text/images/audio were used; credentials were read only through supported encrypted storage and were never printed.
 
 Remaining acceptance limits: Gemini's current account quota prevents another successful typed/screen IPC inference check; an early typed IPC probe had incomplete request metadata and is not counted as a product failure or a successful acceptance result. No Mistral key was available, so its live account inference remains unverified. Audio fixtures validate the native pipeline, while physical microphone/loopback devices and GPU offload still need device acceptance. Deferred scope remains Z.ai and other providers, new-provider audio, automatic failover and unrelated window/compositor changes.
+
+## October 13 Mistral follow-up
+
+Mistral's official guidance distinguishes organization/model request and token limits from included usage and spending caps. A 429 alone does not establish the exact enforced limit or whether payment, a Labs setting or a model change would resolve it. Account-specific diagnosis requires private inspection of the relevant Admin pages and, when necessary, support.
+
+The focused repair conservatively spaces app-local Mistral text/screen/retry starts by at least one second, retains only recognized provider diagnostic codes/types from a bounded error-body read, preserves unknown retry time when no delay was supplied, links the official Limits page and removes Gemini-only Search instructions from Mistral Session details. The model remains explicitly selected and pinned; token and account budgets still apply. See [current validation, artifact and remaining acceptance](MISTRAL_429_DIAGNOSIS_2026-10-13.md).

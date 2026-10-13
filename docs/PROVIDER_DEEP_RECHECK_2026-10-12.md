@@ -59,3 +59,7 @@ Z.ai and additional providers, new-provider audio, automatic failover, native ru
 `dist/ContextHalo-Windows-x64.exe`, version 0.8.0, **110,575,034 bytes**. SHA-256: `b5de651b55c42caf93b251660f83283521831aafcd9eb718eb3c23aa767818e7`, also recorded in `dist/SHA256SUMS.txt`.
 
 This is the final locally validated development artifact, with no published release tag/commit metadata or signing certificate. The four-scale packaged launch matrix validates this executable; earlier executable hashes in historical audits refer to earlier builds. Packaging, mocked regression tests and fixture acceptance do not close the remaining real-account, physical-device or release-governance gates.
+
+## October 13 follow-up
+
+The results and artifact above describe the October 12 snapshot, subsequently merged in PR #77. The [October 13 troubleshooting guide](MISTRAL_429_DIAGNOSIS_2026-10-13.md) records subsequent request-spacing and diagnostic repairs, current validation and replacement artifact metadata. Its controlled-fixture and packaged checks do not establish live provider/account access; the October 12 hash does not identify the follow-up build.

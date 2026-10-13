@@ -310,6 +310,19 @@ test('request and setup errors are visible outside collapsed details', () => {
     assert.match(rendered, /HTTP 503/);
 });
 
+test('Mistral failure details link account limits and exclude Gemini-only Search guidance', () => {
+    const { app } = appFixture();
+    app.providerMode = 'mistral';
+    app.requestError = { operation: 'screen', category: 'rate-or-quota', httpStatus: 429,
+        providerCode: '1300', providerType: 'rate_limited', message: 'Sanitized limit explanation' };
+    const rendered = app.renderSessionDetails();
+    assert.match(rendered, /Open Mistral limits/);
+    assert.match(rendered, /Provider code: 1300/);
+    assert.match(rendered, /rate_limited/);
+    assert.match(rendered, /Google Search is unavailable for Mistral/);
+    assert.doesNotMatch(rendered, /Google decides/);
+});
+
 test('Mistral key drafts are saved through their own setter before Start', async () => {
     const writes = [];
     const { Target } = componentClass('src/components/views/MainView.js', 'MainView', { contextHalo: { storage: { setMistralApiKey: async value => { writes.push(value); return { success: true }; } } } });

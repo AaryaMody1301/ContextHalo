@@ -94,7 +94,9 @@ Native servers bind to loopback. The language-model server requires a fresh sess
 
 ### Mistral API
 
-Uses the pinned Mistral Small 4 model (`mistral-small-2603`) for streamed text and JPEG screenshot answers with reasoning off. Add a Mistral key in Home and explicitly select Mistral. This mode captures the selected screen without microphone or system audio; saved audio preferences remain available for the other providers. Google Search is unavailable in this mode. Mistral's free account limits apply, and benchmark measurements do not guarantee free-tier latency or availability.
+Uses the pinned Mistral Small 4 model (`mistral-small-2603`) for streamed text and JPEG screenshot answers with reasoning off. Add a Studio API key in Home and explicitly select Mistral. This mode captures the selected screen without microphone or system audio; saved audio preferences remain available for the other providers. Google Search is unavailable in this mode.
+
+Mistral applies organization/model request and token limits, included monthly usage, and spending caps. ContextHalo conservatively spaces its Mistral request starts by at least one second, including text, screenshots and retries; this does not enforce token budgets or account for traffic from other applications. A saved key does not establish working API access. Session details preserves recognized error codes and any supplied retry delay, with a link to Mistral Admin. See the [429 troubleshooting guide](docs/MISTRAL_429_DIAGNOSIS_2026-10-13.md) for official guidance and validation of the request-spacing and diagnostic repairs. Published benchmarks do not guarantee free-tier availability.
 
 Text and screen failures show their sanitized explanation directly in Session details, including the model, known HTTP status and retry availability.
 
