@@ -2,7 +2,7 @@
 // A nonempty delta is not proof that the answer completed successfully.
 function assertChatCompletionOutcome(reason, provider, completed = false) {
     if (reason === 'stop' || (!completed && !reason)) return;
-    const label = provider === 'groq' ? 'Groq' : 'Local AI';
+    const label = { groq: 'Groq', local: 'Local AI', mistral: 'Mistral' }[provider] || 'Local AI';
     if (reason === 'length') {
         throw new Error(`${label} reached the output-token limit before completing the answer. Try a narrower question or smaller screen region. This incomplete answer was not saved.`);
     }

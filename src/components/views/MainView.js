@@ -685,6 +685,7 @@ export class MainView extends LitElement {
         _savedKeys: { state: true },
         _geminiKey: { state: true },
         _groqKey: { state: true },
+        _mistralKey: { state: true },
         _geminiLiveModel: { state: true },
         _groqModel: { state: true },
         _groqImageModel: { state: true },
@@ -722,10 +723,11 @@ export class MainView extends LitElement {
         this.downloadProgress = { active: false, label: '', percentage: null };
         this.onCancelDownload = () => {};
 
-        this._mode = 'byok';
-        this._savedKeys = { gemini: false, groq: false };
+        this._mode = 'groq';
+        this._savedKeys = { gemini: false, groq: false, mistral: false };
         this._geminiKey = '';
         this._groqKey = '';
+        this._mistralKey = '';
         this._geminiLiveModel = GEMINI_DEFAULTS.live;
         this._groqModel = GROQ_DEFAULTS.chat;
         this._groqImageModel = GROQ_DEFAULTS.vision;
@@ -737,7 +739,7 @@ export class MainView extends LitElement {
         this._whisperModel = 'tiny.en';
         this.selectedLanguage = 'en-US';
 
-        this._catalogEpochs = { gemini: 0, groq: 0 };
+        this._catalogEpochs = { gemini: 0, groq: 0, mistral: 0 };
         this._catalogTimers = {};
         this._keySavePromise = Promise.resolve();
         this._geminiHttpModel = GEMINI_DEFAULTS.screen;
@@ -757,14 +759,14 @@ export class MainView extends LitElement {
 
             this._audioMode = prefs.audioMode || 'speaker_only';
             this._searchRequested = prefs.googleSearchEnabled === true;
-            const storedMode = prefs.providerMode || 'byok';
+            const storedMode = prefs.providerMode || 'groq';
             this._mode = storedMode === 'cloud' ? 'byok' : storedMode;
 
             if (storedMode === 'cloud') {
                 await contextHalo.storage.updatePreference('providerMode', this._mode);
             }
 
-            this._savedKeys = { gemini: credentialStatus.gemini === true, groq: credentialStatus.groq === true };
+            this._savedKeys = { gemini: credentialStatus.gemini === true, groq: credentialStatus.groq === true, mistral: credentialStatus.mistral === true };
             this._geminiLiveModel = config.geminiLiveModel || GEMINI_DEFAULTS.live;
             this._geminiHttpModel = config.geminiHttpModel || GEMINI_DEFAULTS.screen;
             this._groqTranscriptionModel = config.groqTranscriptionModel || GROQ_DEFAULTS.transcription;
@@ -819,7 +821,7 @@ export class MainView extends LitElement {
     // ── Persistence ──
 
     async _saveMode(mode) {
-        if (this.sessionActive || this.isInitializing || !['byok', 'groq', 'local'].includes(mode)) return;
+        if (this.sessionActive || this.isInitializing || !['byok', 'groq', 'local', 'mistral'].includes(mode)) return;
         this._mode = mode;
         this._keyError = false;
         this._setupOpen = !this._hasConfiguredProvider();
@@ -866,24 +868,27 @@ export class MainView extends LitElement {
         this._keyDraftDirty = false;
         value = String(value || '').trim();
         const gemini = provider === 'gemini';
-        this[gemini ? '_geminiKey' : '_groqKey'] = value;
+        const keyField = { gemini: '_geminiKey', groq: '_groqKey', mistral: '_mistralKey' }[provider];
+        if (!keyField) return Promise.resolve();
+        this[keyField] = value;
         this._keyError = false;
         this._catalogEpochs[provider]++;
-        this[gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading'] = false;
+        if (provider !== 'mistral') this[gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading'] = false;
         clearTimeout(this._catalogTimers[provider]);
         // Serialize key writes; Start awaits the latest write. No key is logged.
         this._keySavePromise = this._keySavePromise.catch(() => {}).then(async () => {
-            const result = await (gemini ? contextHalo.storage.setApiKey(value) : contextHalo.storage.setGroqApiKey(value));
+            const result = await (gemini ? contextHalo.storage.setApiKey(value)
+                : provider === 'mistral' ? contextHalo.storage.setMistralApiKey(value) : contextHalo.storage.setGroqApiKey(value));
             if (result?.success === false) throw new Error('Credential storage rejected the update.');
         }).then(() => {
-            if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
+            if (this[keyField] !== value) return;
             this._savedKeys = { ...this._savedKeys, [provider]: Boolean(value) };
-            this[gemini ? '_geminiKey' : '_groqKey'] = '';
+            this[keyField] = '';
             this._keyError = false;
             this.startError = '';
-            if (value.length >= 20) this._catalogTimers[provider] = setTimeout(() => this._refreshProviderModels(provider, true), 1200);
+            if (provider !== 'mistral' && value.length >= 20) this._catalogTimers[provider] = setTimeout(() => this._refreshProviderModels(provider, true), 1200);
         }).catch(() => {
-            if (this[gemini ? '_geminiKey' : '_groqKey'] !== value) return;
+            if (this[keyField] !== value) return;
             this._keyError = true;
             this.startError = 'The key could not be saved securely. The entered value remains in this form; retry before starting.';
         });
@@ -892,6 +897,7 @@ export class MainView extends LitElement {
     }
 
     async _refreshProviderModels(provider, forceRefresh = false) {
+        if (provider === 'mistral') return;
         const gemini = provider === 'gemini';
         const loading = gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading';
         const errorKey = gemini ? '_geminiCatalogError' : '_groqCatalogError';
@@ -999,12 +1005,13 @@ export class MainView extends LitElement {
     async _handleStart() {
         if (this.sessionActive) return this.onStart();
         if (this._configurationLoading || this.isInitializing || this.downloadProgress.active || this.retryBlocked) return;
-        const draft = this._mode === 'groq' ? this._groqKey : this._geminiKey;
-        if (this._mode !== 'local' && this._keyDraftDirty && !this._keyError && draft.trim()) await this._saveProviderKey(this._mode === 'groq' ? 'groq' : 'gemini', draft);
+        const provider = this._mode === 'byok' ? 'gemini' : this._mode;
+        const draft = this[{ gemini: '_geminiKey', groq: '_groqKey', mistral: '_mistralKey' }[provider]] || '';
+        if (this._mode !== 'local' && this._keyDraftDirty && !this._keyError && draft.trim()) await this._saveProviderKey(provider, draft);
         await Promise.all([this._keySavePromise, this._configurationWrites]);
         if (this._saveError || this._keyError || this.isInitializing) { this._setupOpen = true; return; }
         if (!this._hasConfiguredProvider()) {
-            this.startError = this._mode === 'local' ? 'Choose a local language model and transcription model before starting.' : `Enter a ${this._mode === 'groq' ? 'Groq' : 'Gemini'} API key and review model settings before starting.`;
+            this.startError = this._mode === 'local' ? 'Choose a local language model and transcription model before starting.' : `Enter a ${{ gemini: 'Gemini', groq: 'Groq', mistral: 'Mistral' }[provider]} API key and review model settings before starting.`;
             this._setupOpen = true;
             this._keyError = this._mode !== 'local';
             await this.updateComplete;
@@ -1023,6 +1030,7 @@ export class MainView extends LitElement {
 
     _hasConfiguredProvider() {
         if (this._mode === 'local') return Boolean(this._localLlmModel.trim() && this._whisperModel.trim());
+        if (this._mode === 'mistral') return Boolean(this._savedKeys?.mistral || this._mistralKey.trim());
         return this._mode === 'groq' ? Boolean((this._savedKeys?.groq || this._groqKey.trim()) && this._groqModel.trim() && this._groqImageModel.trim() && this._groqTranscriptionModel.trim())
             : Boolean((this._savedKeys?.gemini || this._geminiKey.trim()) && this._geminiLiveModel.trim() && this._geminiHttpModel.trim());
     }
@@ -1039,8 +1047,9 @@ export class MainView extends LitElement {
     }
 
     _renderLaunch() {
-        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI' }[this._mode] || 'Provider';
-        const audio = { speaker_only: 'Speaker audio', mic_only: 'Microphone', both: 'Microphone and speaker audio' }[this._audioMode] || 'Audio input';
+        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI', mistral: 'Mistral' }[this._mode] || 'Provider';
+        const audio = this._mode === 'mistral' ? 'Text and screenshots; audio off'
+            : { speaker_only: 'Speaker audio', mic_only: 'Microphone', both: 'Microphone and speaker audio' }[this._audioMode] || 'Audio input';
         const { captureState } = getContextState();
         return html`<section class="launch-card" aria-label="Start or return to session">
             <div class="launch-heading"><h2>${this.sessionActive ? 'Your session is running' : 'Ready for your next conversation?'}</h2>${this._renderStartButton()}</div>
@@ -1149,7 +1158,9 @@ export class MainView extends LitElement {
 
     _renderHostedProvider(provider) {
         const gemini = provider === 'gemini';
-        const label = gemini ? 'Gemini' : 'Groq';
+        const mistral = provider === 'mistral';
+        const label = gemini ? 'Gemini' : mistral ? 'Mistral' : 'Groq';
+        const keyField = gemini ? '_geminiKey' : mistral ? '_mistralKey' : '_groqKey';
         const catalog = gemini ? this._geminiCatalog : this._groqCatalog;
         const all = catalog?.all || [];
         const fields = gemini ? [
@@ -1169,36 +1180,36 @@ export class MainView extends LitElement {
             { label: 'Audio Transcription Model', value: this._groqTranscriptionModel, preferred: catalog?.transcription,
                 all: catalog?.transcription || [], allowAdvanced: false, onSave: this._saveGroqTranscriptionModel },
         ];
-        const loading = gemini ? this._geminiCatalogLoading : this._groqCatalogLoading;
-        const error = gemini ? this._geminiCatalogError : this._groqCatalogError;
+        const loading = !mistral && (gemini ? this._geminiCatalogLoading : this._groqCatalogLoading);
+        const error = mistral ? '' : gemini ? this._geminiCatalogError : this._groqCatalogError;
         return html`
             <details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
                 <summary class="config-summary"><span class="config-summary-text">
                     <span class="config-summary-title">${label}</span>
-                    <span class="config-summary-description">${gemini ? 'Live audio, typed answers and screen analysis' : 'Transcription, reasoning and vision'}</span>
+                    <span class="config-summary-description">${gemini ? 'Live audio, typed answers and screen analysis' : mistral ? 'Typed answers and screen analysis; audio off' : 'Transcription, reasoning and vision'}</span>
                 </span>${this._renderConfigChevron()}</summary>
                 <div class="config-content">
                     <div class="form-group">
                         <label class="form-label" for="provider-api-key">${label} API Key</label>
                         <input id="provider-api-key" type="password" autocomplete="off" spellcheck="false"
-                            placeholder=${this._savedKeys[provider] ? 'Key saved securely; enter a replacement' : 'Required'} .value=${gemini ? this._geminiKey : this._groqKey}
+                            placeholder=${this._savedKeys[provider] ? 'Key saved securely; enter a replacement' : 'Required'} .value=${this[keyField]}
                             ?disabled=${this.sessionActive || this.isInitializing}
-                            @input=${event => { this._keyDraftDirty = true; this._keyError = false; this[gemini ? '_geminiKey' : '_groqKey'] = event.target.value; }}
+                            @input=${event => { this._keyDraftDirty = true; this._keyError = false; this[keyField] = event.target.value; }}
                             aria-invalid=${this._keyError ? 'true' : 'false'} class=${this._keyError ? 'error' : ''} />
                         <div class="key-actions">
-                            <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !(gemini ? this._geminiKey : this._groqKey).trim()}
-                                @click=${() => this._saveProviderKey(provider, gemini ? this._geminiKey : this._groqKey)}>Save key</button>
+                            <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !this[keyField].trim()}
+                                @click=${() => this._saveProviderKey(provider, this[keyField])}>Save key</button>
                             <button type="button" class="mode-link" ?disabled=${this.sessionActive || this.isInitializing || !this._savedKeys[provider]}
                                 @click=${() => this._saveProviderKey(provider, '')}>Remove saved key</button>
-                            <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : 'https://console.groq.com/keys')}>Open ${label} key settings</button>
-                            <button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh available models'}</button>
+                            <button type="button" class="mode-link" @click=${() => this.onExternalLink(gemini ? 'https://aistudio.google.com/apikey' : mistral ? 'https://console.mistral.ai' : 'https://console.groq.com/keys')}>Open ${label} key settings</button>
+                            ${mistral ? '' : html`<button type="button" class="mode-link" ?disabled=${loading} @click=${() => this._refreshProviderModels(provider, true)}>${loading ? 'Loading models...' : 'Refresh available models'}</button>`}
                         </div>
                         ${error ? html`<div class="config-note" role="status">${error}</div>` : ''}
                     </div>
-                    <details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
+                    ${mistral ? html`<p>Text and screenshots: Mistral Small 4 (mistral-small-2603). Reasoning off. Free account limits apply.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
                         ${fields.map(field => renderModelPicker(this, { ...field, stale: catalog?.stale === true }))}
-                    </details>
-                    <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : 'Google Search is not available in Groq mode. Its saved preference is retained for Gemini.'}</div>
+                    </details>`}
+                    <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : `Google Search is not available in ${label} mode. Its saved preference is retained for Gemini.`}</div>
                 </div>
             </details>
 
@@ -1285,7 +1296,7 @@ export class MainView extends LitElement {
             <div class="setup-choices">
                 <div class="form-group"><label class="form-label" for="provider-choice">AI provider</label>
                     <select id="provider-choice" .value=${this._mode} ?disabled=${this.sessionActive || this.isInitializing || this._configurationLoading} @change=${event => this._saveMode(event.target.value)}>
-                        <option value="byok">Gemini API</option><option value="groq">Groq API</option><option value="local">Local AI (on this computer)</option>
+                        <option value="groq">Groq API</option><option value="byok">Gemini API</option><option value="mistral">Mistral API (text and screenshots)</option><option value="local">Local AI (on this computer)</option>
                     </select><span class="form-hint">Uses your own account or local models.</span></div>
                 ${this._renderProfileSelector()}
             </div>
@@ -1294,7 +1305,7 @@ export class MainView extends LitElement {
                 ${this._mode === 'local' ? html`<details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
                     <summary class="config-summary">Local model setup (advanced)</summary><div class="config-content">
                     <button type="button" class="mode-link" @click=${this._openLocalHelp}>Local AI setup help</button>${this._renderLocalMode()}</div></details>`
-                    : this._renderHostedProvider(this._mode === 'groq' ? 'groq' : 'gemini')}
+                    : this._renderHostedProvider(this._mode === 'byok' ? 'gemini' : this._mode)}
             </fieldset>
             ${this.renderPreparation()}
         </div>${this._renderLocalHelp()}`;

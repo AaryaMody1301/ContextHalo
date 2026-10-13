@@ -38,6 +38,7 @@ function requestUrl(input) {
 function isChatRequest(url) {
     if (!url) return false;
     if (url.hostname === 'api.groq.com' && url.pathname.includes('/chat/completions')) return true;
+    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') return true;
     return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/v1/chat/completions');
 }
 
@@ -54,6 +55,7 @@ function tuneRequestInit(url, init = {}) {
     try {
         const body = JSON.parse(init.body);
         const tuned = tuneChatRequestBody(body, getResponseMode());
+        if (url.hostname === 'api.mistral.ai') tuned.max_tokens = Math.min(Number(tuned.max_tokens) || 2048, 2048);
         if (url.hostname === 'api.groq.com' && Array.isArray(tuned.messages)) {
             tuned.messages = formatGroqMessages(tuned.model, tuned.messages);
         }

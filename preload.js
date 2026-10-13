@@ -7,6 +7,7 @@ const allowedChannels = {
         'storage:credential-status',
         'storage:set-api-key',
         'storage:set-groq-api-key',
+        'storage:set-mistral-api-key',
         'storage:get-preferences',
         'storage:update-preference',
         'storage:get-keybinds',

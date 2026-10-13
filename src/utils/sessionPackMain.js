@@ -50,6 +50,7 @@ function requestUrl(input) {
 function isChatRequest(url) {
     if (!url) return false;
     if (url.hostname === 'api.groq.com' && url.pathname.includes('/chat/completions')) return true;
+    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') return true;
     return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/v1/chat/completions');
 }
 

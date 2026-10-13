@@ -169,6 +169,12 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
     ]);
 
     const repositoryDirectory = path.join(runtime.getModelsDirectory(), 'llama', repository);
+    runtime.persistModelProvenance(repositoryDirectory, {
+        schemaVersion: 1, repository, revision, quant,
+        model: { path: modelFile.path, sha256: modelSha256 },
+        projector: { path: projectorFile.path, sha256: projectorSha256 },
+    });
+    onModelProgress?.({ phase: 'checking' });
     const modelPath = await downloadVerifiedFile(
         `https://huggingface.co/${encodePathParts(repository)}/resolve/${revision}/${encodePathParts(modelFile.path)}`,
         path.join(repositoryDirectory, path.basename(modelFile.path)),
@@ -176,6 +182,7 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
         onModelProgress,
         signal
     );
+    onProjectorProgress?.({ phase: 'checking' });
     const projectorPath = await downloadVerifiedFile(
         `https://huggingface.co/${encodePathParts(repository)}/resolve/${revision}/${encodePathParts(projectorFile.path)}`,
         path.join(repositoryDirectory, path.basename(projectorFile.path)),
@@ -184,14 +191,6 @@ async function ensureXetLlamaModel(runtime, modelReference, onModelProgress, onP
         signal
     );
 
-    runtime.persistModelProvenance(repositoryDirectory, {
-        schemaVersion: 1,
-        repository,
-        revision,
-        quant,
-        model: { path: modelFile.path, sha256: modelSha256 },
-        projector: { path: projectorFile.path, sha256: projectorSha256 },
-    });
     return { modelPath, projectorPath };
 }
 

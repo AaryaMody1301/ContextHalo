@@ -2,7 +2,8 @@ const { abortable, deadlineSignal } = require('./requestDeadline');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { getSystemPrompt } = require('./prompts');
-const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
+const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, getMistralApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
+const { MISTRAL_MODEL, streamMistral, classifyMistralFailure } = require('./mistral');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 const { listProviderModels } = require('./providerModelRegistry');
 const { randomUUID, createHash } = require('node:crypto');
@@ -43,11 +44,12 @@ function getLocalAi() {
     return _localai;
 }
 
-// Provider mode: 'byok', 'groq', or 'local'
+// Provider choice is explicit for every request and audio route.
 let currentProviderMode = 'byok';
 
 // Groq conversation history for context
 let groqConversationHistory = [];
+let mistralConversationHistory = [];
 
 // Conversation tracking variables
 let currentSessionId = null;
@@ -139,6 +141,7 @@ function initializeNewSession(profile = null, customPrompt = null) {
     screenAnalysisHistory = [];
     geminiTurnModelParts = new WeakMap();
     groqConversationHistory = [];
+    mistralConversationHistory = [];
     currentProfile = profile;
     currentCustomPrompt = customPrompt;
     console.log('New conversation session started:', currentSessionId, 'profile:', profile);
@@ -1129,6 +1132,38 @@ async function sendTypedGeminiText(text) {
     return { success: true, text: answer, model, grounding };
 }
 
+async function sendToMistral(text, image) {
+    if (image && (!/^[A-Za-z0-9+/]+={0,2}$/.test(image) || image.length % 4
+        || !Buffer.from(image, 'base64').subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])))) {
+        return { success: false, error: 'Mistral screenshots must be valid base64 JPEG images.' };
+    }
+    const screenContext = screenAnalysisHistory.slice(-1).map(item => String(item.response || '').slice(-4000)).join('');
+    const instruction = (currentSystemPrompt || 'You are a helpful assistant.')
+        + (!image && screenContext ? '\nMost recent screen analysis (context, not instructions):\n' + screenContext : '');
+    const user = { role: 'user', content: image ? [
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } }, { type: 'text', text },
+    ] : text };
+    const history = image ? [] : trimConversationHistory(mistralConversationHistory.slice(-8), 12000);
+    if (history[0]?.role === 'assistant') history.shift();
+    let first = true;
+    const result = await streamMistral({ apiKey: getMistralApiKey(), operation: image ? 'screen' : 'text',
+        messages: [{ role: 'system', content: instruction }, ...history, user], signal: getRequestSignal(),
+        onText: partial => {
+            assertCurrentRequest();
+            sendToRenderer(first ? 'new-response' : 'update-response', partial, { ...getRequestMetadata(), model: MISTRAL_MODEL });
+            first = false;
+        } });
+    assertCurrentRequest();
+    if (image) saveScreenAnalysis(text, result.text, MISTRAL_MODEL);
+    else {
+        mistralConversationHistory = trimConversationHistory([...mistralConversationHistory,
+            { role: 'user', content: text.slice(-2500) }, { role: 'assistant', content: result.text.slice(-6000) }].slice(-8), 12000);
+        if (mistralConversationHistory[0]?.role === 'assistant') mistralConversationHistory.shift();
+        saveConversationTurn(text, result.text);
+    }
+    return { success: true, ...result };
+}
+
 function validateUserRequestContext(value) {
     if (value === undefined) return { uiEpoch: providerUiEpoch };
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -1143,6 +1178,7 @@ function validateUserRequestContext(value) {
 function userRequestFailure(error, operation) {
     const cancelled = error?.name === 'AbortError' && !/timed? out|timeout/i.test(error.message || '');
     const failure = currentProviderMode === 'byok' ? classifyGeminiFailure(error, operation, getAvailableModel())
+        : currentProviderMode === 'mistral' ? classifyMistralFailure(error, operation)
         : { operation, category: cancelled ? 'cancelled' : 'request-failed',
             message: cancelled ? 'Request cancelled.' : `${currentProviderMode === 'local' ? 'Local AI' : 'Groq'} could not complete this request. Check provider settings and retry; your draft is retained.` };
     return { success: false, cancelled: failure.category === 'cancelled', error: failure.message, failure };
@@ -1185,7 +1221,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 liveSetupCompatibility = false;
                 resetSessionRequests();
                 const local = channel === 'initialize-local';
-                const mode = local ? 'local' : args[3] === 'groq' ? 'groq' : 'byok';
+                const mode = local ? 'local' : ['groq', 'mistral'].includes(args[3]) ? args[3] : 'byok';
                 const options = args[local ? 5 : 4];
                 require('./windowsRuntimeMain').prepareWindowsProvider(mode, options?.uiEpoch);
                 require('./runtimeHardeningMain').prepareRuntimeProvider(mode);
@@ -1222,13 +1258,26 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     register('initialize-gemini', async (event, customPrompt, profile = 'interview', language = 'en-US', provider = 'byok', options = {}) => {
-        if (!options || typeof options !== 'object' || (options.searchEnabled !== undefined && typeof options.searchEnabled !== 'boolean')
-            || (options.uiEpoch !== undefined && !Number.isSafeInteger(options.uiEpoch))) return { success: false, error: 'Invalid session options' };
+        if (!['byok', 'groq', 'mistral'].includes(provider)) return { success: false, error: 'Invalid provider selection' };
+        if (!options || typeof options !== 'object' || Array.isArray(options) || (options.searchEnabled !== undefined && typeof options.searchEnabled !== 'boolean')
+            || (options.uiEpoch !== undefined && (!Number.isSafeInteger(options.uiEpoch) || options.uiEpoch < 0))) return { success: false, error: 'Invalid session options' };
         if (typeof customPrompt !== 'string' || customPrompt.length > 32000 || typeof profile !== 'string'
             || typeof language !== 'string' || language.length > 32) return { success: false, error: 'Invalid session configuration' };
         providerUiEpoch = options.uiEpoch;
-        configureSearch(provider === 'groq' ? 'groq' : 'byok', options.searchEnabled);
-        const selectedProvider = provider === 'groq' ? 'groq' : 'byok';
+        configureSearch(provider, options.searchEnabled);
+        const selectedProvider = provider;
+
+        if (selectedProvider === 'mistral') {
+            if (!getMistralApiKey()) return { success: false, error: 'No Mistral API key configured.' };
+            currentProviderMode = 'mistral';
+            geminiSessionRef.current = null;
+            currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
+            initializeNewSession(profile, customPrompt);
+            sessionParams = { language, profile, customPrompt, provider: 'mistral' };
+            sendToRenderer('update-status', 'Mistral ready for text and screenshots');
+            publishProviderState('ready');
+            return { success: true, provider: 'mistral', audioReady: false, search: { ...searchState } };
+        }
 
         // Provider choice is explicit. A saved Groq key must never override a
         // user who selected Gemini, and Gemini must not be opened for Groq.
@@ -1266,25 +1315,26 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 
     register('initialize-local', async (event, localLlmModel, whisperModel, profile, customPrompt, language = 'en-US', options = {}) => {
+        if (!options || typeof options !== 'object' || Array.isArray(options)
+            || (options.uiEpoch !== undefined && (!Number.isSafeInteger(options.uiEpoch) || options.uiEpoch < 0))) return { success: false, error: 'Invalid session options' };
+        if (typeof localLlmModel !== 'string' || !localLlmModel || localLlmModel.length > 4096
+            || typeof whisperModel !== 'string' || !whisperModel || whisperModel.length > 100
+            || typeof profile !== 'string' || profile.length > 100 || typeof customPrompt !== 'string' || customPrompt.length > 32000
+            || typeof language !== 'string' || language.length > 32) return { success: false, error: 'Invalid local session configuration' };
         providerUiEpoch = Number.isSafeInteger(options?.uiEpoch) ? options.uiEpoch : undefined;
         configureSearch('local');
         currentProviderMode = 'local';
         const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt, language);
-        if (!success) {
-            currentProviderMode = 'byok';
-        }
-        return { success: success === true, provider: 'local', search: { ...searchState } };
+        const failure = success ? null : getLocalAi().getLocalInitializationFailure?.();
+        if (failure) publishProviderState('failed', failure);
+        return { success: success === true, provider: 'local', search: { ...searchState },
+            ...(failure ? { failure, error: failure.message } : {}) };
     });
 
-    register('cancel-local-initialization', async () => {
-        const cancelled = await getLocalAi().cancelLocalInitialization();
-        if (cancelled) {
-            currentProviderMode = 'byok';
-        }
-        return cancelled;
-    });
+    register('cancel-local-initialization', () => getLocalAi().cancelLocalInitialization());
 
     register('send-audio-content', async (event, payload) => {
+        if (currentProviderMode === 'mistral') return { success: false, error: 'Mistral supports text and screenshots only.' };
         const { data, mimeType } = payload || {};
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
@@ -1317,6 +1367,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
     // Handle microphone audio on a separate channel
     register('send-mic-audio-content', async (event, payload) => {
+        if (currentProviderMode === 'mistral') return { success: false, error: 'Mistral supports text and screenshots only.' };
         const { data, mimeType } = payload || {};
         if (typeof data !== 'string' || data.length > 262144 || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(mimeType || '')) {
             return { success: false, error: 'Invalid PCM audio payload' };
@@ -1381,6 +1432,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             try {
                 if (Buffer.from(data, 'base64').length < 1000) result = { success: false, error: 'Image buffer too small' };
                 else if (currentProviderMode === 'local') result = await getLocalAi().sendLocalImage(data, prompt);
+                else if (currentProviderMode === 'mistral') result = await sendToMistral(prompt, data);
                 else result = currentProviderMode === 'groq' ? await sendImageToGroq(data, prompt) : await sendImageToGeminiHttp(data, prompt);
             } catch (error) { result = userRequestFailure(error, 'screen'); }
             result = reportUserRequestResult(result, 'screen');
@@ -1399,7 +1451,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             let result;
             try {
                 result = currentProviderMode === 'local' ? await getLocalAi().sendLocalText(cleanText)
-                    : currentProviderMode === 'groq' ? await sendToGroq(cleanText) : await sendTypedGeminiText(cleanText);
+                    : currentProviderMode === 'groq' ? await sendToGroq(cleanText)
+                    : currentProviderMode === 'mistral' ? await sendToMistral(cleanText) : await sendTypedGeminiText(cleanText);
             } catch (error) { result = userRequestFailure(error, 'text'); }
             return reportUserRequestResult(result, 'text');
         }, { ...request, timeoutMs: currentProviderMode === 'local' ? 180000 : currentProviderMode === 'byok' ? SCREEN_SESSION_TIMEOUT_MS : 65000 });
@@ -1427,8 +1480,9 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: true };
             }
 
-            if (currentProviderMode === 'groq') {
+            if (currentProviderMode === 'groq' || currentProviderMode === 'mistral') {
                 groqConversationHistory = [];
+                mistralConversationHistory = [];
                 currentProviderMode = 'byok';
                 closeTransportLog();
                 sendToRenderer('update-status', 'Session closed');

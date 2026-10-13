@@ -276,7 +276,7 @@ function arrayBufferToBase64(buffer) {
 
 async function initializeGemini(profile = 'interview', language = 'en-US', options = {}) {
     const prefs = await storage.getPreferences();
-    const provider = prefs.providerMode === 'groq' ? 'groq' : 'byok';
+    const provider = ['groq', 'mistral'].includes(prefs.providerMode) ? prefs.providerMode : 'byok';
 
     if (options.uiEpoch !== undefined && options.uiEpoch !== contextHaloApp._uiSessionEpoch) return false;
     const result = await ipcRenderer.invoke(
@@ -291,7 +291,7 @@ async function initializeGemini(profile = 'interview', language = 'en-US', optio
     contextHaloApp.setProviderState({ state: result?.success ? 'ready' : 'failed', provider, error: result?.failure, search: result?.search, uiEpoch: options.uiEpoch });
 
     if (result?.success) {
-        contextHaloApp.setStatus(result.provider === 'groq' ? 'Groq ready' : 'Gemini Live connected');
+        contextHaloApp.setStatus(result.provider === 'groq' ? 'Groq ready' : result.provider === 'mistral' ? 'Mistral ready for text and screenshots' : 'Gemini Live connected');
         return true;
     }
 
@@ -345,15 +345,17 @@ async function prepareCapture(imageQuality, epoch, signal, options = {}) {
         const preferences = getPreferencesCache() || {};
         const audioMode = ['speaker_only', 'mic_only', 'both'].includes(preferences.audioMode)
             ? preferences.audioMode : 'speaker_only';
-        const needsSystem = audioMode !== 'mic_only';
-        const needsMic = audioMode !== 'speaker_only';
+        const audioEnabled = preferences.providerMode !== 'mistral';
+        const needsSystem = audioEnabled && audioMode !== 'mic_only';
+        const needsMic = audioEnabled && audioMode !== 'speaker_only';
         let warning = '';
         mediaStream = await ownCaptureStream(navigator.mediaDevices.getDisplayMedia({
             video: { frameRate: 2, width: { ideal: 3840 }, height: { ideal: 2160 } },
             audio: needsSystem,
         }), epoch, signal);
         if (!mediaStream.getVideoTracks().some(track => track.readyState === 'live')) throw new Error('No live screen was selected.');
-        const systemAvailable = mediaStream.getAudioTracks().some(track => track.readyState === 'live');
+        if (!audioEnabled) for (const track of mediaStream.getAudioTracks()) track.stop();
+        const systemAvailable = audioEnabled && mediaStream.getAudioTracks().some(track => track.readyState === 'live');
         if (needsSystem && !systemAvailable) throw new Error('System audio loopback is unavailable. Check the selected display and audio device, or choose microphone-only mode.');
         if (systemAvailable) await setupSystemAudioProcessing(epoch, signal);
         if (needsMic) {

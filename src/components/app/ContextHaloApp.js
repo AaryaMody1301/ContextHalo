@@ -68,7 +68,7 @@ export class ContextHaloApp extends LitElement {
         this.isInitializing = false;
         this.lifecycleState = 'idle';
         this.providerState = 'disconnected';
-        this.providerMode = 'byok';
+        this.providerMode = 'groq';
         this.providerError = null;
         this.captureState = { state: 'stopped', audioReady: false, screen: false, warning: '' };
         this.searchState = { requested: false, liveEffective: false, httpEffective: false, status: 'off', liveReason: '', httpReason: '' };
@@ -239,7 +239,8 @@ export class ContextHaloApp extends LitElement {
     }
 
     _readyStatus() {
-        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI' }[this.providerMode] || 'Provider';
+        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI', mistral: 'Mistral' }[this.providerMode] || 'Provider';
+        if (this.providerMode === 'mistral') return 'Mistral ready for typed questions and screen analysis. Audio is off.';
         if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
         if (!this.captureState.audioReady) return `${provider} ready; audio capture is unavailable. Typed questions still work.`;
         const channels = [this.captureState.microphone ? 'microphone' : '', this.captureState.system ? 'speaker audio' : ''].filter(Boolean).join(' + ');
@@ -514,26 +515,28 @@ export class ContextHaloApp extends LitElement {
             }
             await this._awaitStart(Promise.resolve(saveSessionPack()), epoch);
             const prefs = await this._awaitStart(contextHalo.storage.getPreferences(), epoch);
-            this.providerMode = prefs.providerMode || 'byok';
-            if (!['byok', 'groq', 'local'].includes(this.providerMode)) throw new Error('Choose Gemini, Groq or Local AI in provider settings.');
+            this.providerMode = prefs.providerMode || 'groq';
+            if (!['byok', 'groq', 'local', 'mistral'].includes(this.providerMode)) throw new Error('Choose Gemini, Groq, Mistral or Local AI in provider settings.');
             if (this.providerMode !== 'local') {
                 const credentials = await this._awaitStart(contextHalo.storage.getCredentialStatus(), epoch);
-                const hasKey = this.providerMode === 'groq' ? credentials?.groq === true : credentials?.gemini === true;
-                if (!hasKey) throw new Error(`No ${this.providerMode === 'groq' ? 'Groq' : 'Gemini'} API key configured. Open provider settings.`);
+                const provider = this.providerMode === 'byok' ? 'gemini' : this.providerMode;
+                const hasKey = credentials?.[provider] === true;
+                if (!hasKey) throw new Error(`No ${{ gemini: 'Gemini', groq: 'Groq', mistral: 'Mistral' }[provider]} API key configured. Open provider settings.`);
             }
             this.providerState = 'connecting';
-            this._setLifecycle('connecting', this.providerMode === 'local' ? 'Preparing local AI and speech models...' : `Connecting to ${this.providerMode === 'groq' ? 'Groq' : 'Gemini Live'}...`);
+            this._setLifecycle('connecting', this.providerMode === 'local' ? 'Preparing local AI and speech models...'
+                : `Connecting to ${{ groq: 'Groq', byok: 'Gemini Live', mistral: 'Mistral' }[this.providerMode]}...`);
             const requestOptions = { ...options, uiEpoch: epoch };
             const success = await this._awaitStart(this.providerMode === 'local'
                 ? contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage, requestOptions)
                 : contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage, requestOptions), epoch);
             if (!success) throw new Error(this.providerError?.message || this.statusText || 'The provider could not connect.');
             this.providerState = 'ready';
-            this._setLifecycle('preparing-capture', 'Provider connected. Preparing the selected screen and audio inputs...');
+            this._setLifecycle('preparing-capture', this.providerMode === 'mistral' ? 'Provider ready. Preparing the selected screen...' : 'Provider connected. Preparing the selected screen and audio inputs...');
             const captured = await this._awaitStart(contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality), epoch);
             if (!captured) throw new Error(contextHalo.getCaptureState?.().warning || this.statusText || 'Capture could not start.');
             this.captureState = contextHalo.getCaptureState?.() || { state: 'ready', audioReady: true, screen: true };
-            this._setLifecycle('capture-ready', 'Screen and audio capture ready');
+            this._setLifecycle('capture-ready', this.providerMode === 'mistral' ? 'Screen capture ready; audio off' : 'Screen and audio capture ready');
             this.responses = [];
             this._responseIds = [];
             this._responseGrounding = [];
@@ -963,12 +966,13 @@ export class ContextHaloApp extends LitElement {
     }
 
     sessionStatusSummary() {
-        const provider = { byok:'Gemini', groq:'Groq', local:'Local AI' }[this.providerMode] || 'Provider';
+        const provider = { byok:'Gemini', groq:'Groq', local:'Local AI', mistral:'Mistral' }[this.providerMode] || 'Provider';
         if (this.providerState === 'reconnecting') return `${provider} reconnecting`;
         if (this.providerError) return `${provider} connection needs attention`;
         if (this.requestError) return this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention';
         if (this._isClickThrough) return 'Click-through on - use visibility shortcut or tray to recover';
         if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
+        if (this.providerMode === 'mistral') return 'Mistral ready · text and screenshots';
         if (!this.captureState.audioReady) return `${provider} ready - audio stopped`;
         return `${provider} ready - ${this.captureState.microphone && this.captureState.system ? 'mixed audio' : this.captureState.microphone ? 'microphone' : 'speaker audio'}`;
     }
@@ -998,14 +1002,15 @@ export class ContextHaloApp extends LitElement {
                     </div>
                     ${this.requestError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.requestError.retryAt).toLocaleTimeString()}.</p>` : ''}
                     ${this.requestError.model ? html`<p>Model: ${this.requestError.model}</p>` : ''}
-                    <details class="error-details"><summary>Read request error</summary><p>${this.requestError.message}</p></details>
+                    <p class="request-error-message" role="alert">${this.requestError.message}</p>
+                    <details class="error-details"><summary>Request diagnostics</summary><p>${this.requestError.operation} · ${this.requestError.category}${this.requestError.httpStatus ? ` · HTTP ${this.requestError.httpStatus}` : ''}</p></details>
                 ` : this._detailMessage?.uiEpoch === this._uiSessionEpoch ? html`<p>${this._detailMessage.message}</p>` : ''}
                 ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">
                     <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
                     ${this.searchState.requested && this.searchState.liveEffective && this.providerError.canDisableSearch ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.providerError.retryAt > Date.now()}>Continue without Search</button>` : ''}
                     <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button></div>
                     ${this.providerError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.providerError.retryAt).toLocaleTimeString()}.</p>` : ''}
-                    <details class="error-details"><summary>Read connection error</summary><p>${this.providerError.message}</p></details>` : ''}
+                    <p class="provider-error-message" role="alert">${this.providerError.message}</p>` : ''}
                 ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
                 <h3>Session connection</h3>
                 ${['text', 'screen'].map(operation => {

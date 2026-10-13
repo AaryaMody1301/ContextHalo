@@ -193,8 +193,8 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-text-message') {
         return async (event, ...args) => {
-            if (providerMode === 'groq') {
-                return runWithProviderScope('Groq text request', 65000, () => handler(event, ...args));
+            if (providerMode === 'groq' || providerMode === 'mistral') {
+                return runWithProviderScope('Provider text request', 65000, () => handler(event, ...args));
             }
             if (providerMode === 'local') {
                 return runWithProviderScope('Local AI text request', 180000, () => handler(event, ...args));
@@ -205,6 +205,7 @@ function wrapWindowsIpcHandler(channel, handler) {
 
     if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
         return async (event, payload, ...rest) => {
+            if (providerMode === 'mistral') return { success: false, error: 'Mistral supports text and screenshots only.' };
             if (!acceptingAudio || (sessionEpoch !== undefined && payload?.uiEpoch !== sessionEpoch)) return { success: true, ignored: true };
             if (!payload || typeof payload.data !== 'string' || payload.data.length > 262144) return { success: false, error: 'Invalid audio payload' };
             const mode = storage.getPreferences().audioMode || 'speaker_only';
