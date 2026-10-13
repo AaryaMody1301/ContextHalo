@@ -314,10 +314,11 @@ test('Mistral failure details link account limits and exclude Gemini-only Search
     const { app } = appFixture();
     app.providerMode = 'mistral';
     app.requestError = { operation: 'screen', category: 'rate-or-quota', httpStatus: 429,
-        providerCode: '1300', providerType: 'rate_limited', message: 'Sanitized limit explanation' };
+        providerCode: '1300', providerType: 'rate_limited', rateLimits: { requestsPerMinute: 0 }, message: 'Sanitized limit explanation' };
     const rendered = app.renderSessionDetails();
     assert.match(rendered, /Open Mistral limits/);
     assert.match(rendered, /Provider code: 1300/);
+    assert.match(rendered, /Effective request limit: 0\/min/);
     assert.match(rendered, /rate_limited/);
     assert.match(rendered, /Google Search is unavailable for Mistral/);
     assert.doesNotMatch(rendered, /Google decides/);
@@ -327,10 +328,28 @@ test('Mistral key drafts are saved through their own setter before Start', async
     const writes = [];
     const { Target } = componentClass('src/components/views/MainView.js', 'MainView', { contextHalo: { storage: { setMistralApiKey: async value => { writes.push(value); return { success: true }; } } } });
     let starts = 0;
-    const view = Object.assign(Object.create(Target.prototype), { _mode: 'mistral', _mistralKey: 'fixture', _keyDraftDirty: true,
+    const view = Object.assign(Object.create(Target.prototype), { _mode: 'mistral', _mistralModel: 'mistral-small-2603', _mistralKey: 'fixture', _keyDraftDirty: true,
         _catalogEpochs: { mistral: 0 }, _catalogTimers: {}, _savedKeys: {}, _keySavePromise: Promise.resolve(),
         _configurationWrites: Promise.resolve(), downloadProgress: { active: false }, requestUpdate() {}, onStart() { starts++; } });
     await view._handleStart();
     assert.deepEqual(writes, ['fixture']); assert.equal(starts, 1);
     assert.equal(view._mistralKey, ''); assert.equal(view._savedKeys.mistral, true);
+});
+
+test('Mistral picker persists explicit choices and rejects changes during an active session', async () => {
+    const writes = [];
+    const { Target } = componentClass('src/components/views/MainView.js', 'MainView');
+    const view = Object.assign(Object.create(Target.prototype), { _mistralModel: 'mistral-small-2603', requestUpdate() {},
+        _persistConfiguration: async (...args) => writes.push(args) });
+    await view._saveMistralModel('ministral-8b-2512');
+    assert.equal(view._mistralModel, 'ministral-8b-2512');
+    assert.deepEqual(writes, [['config', 'mistralModel', 'ministral-8b-2512']]);
+    view.sessionActive = true;
+    await view._saveMistralModel('ministral-14b-2512');
+    view.sessionActive = false; view.isInitializing = true;
+    await view._saveMistralModel('ministral-3b-2512');
+    view.isInitializing = false;
+    await view._saveMistralModel('untrusted');
+    assert.equal(writes.length, 1);
+    assert.equal(view._mistralModel, 'ministral-8b-2512');
 });

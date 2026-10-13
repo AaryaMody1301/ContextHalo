@@ -3,7 +3,7 @@ const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { getSystemPrompt } = require('./prompts');
 const { getAvailableModel, incrementLimitCount, getApiKey, getGroqApiKey, getMistralApiKey, incrementCharUsage, getConfig, getPreferences } = require('../storage');
-const { MISTRAL_MODEL, streamMistral, classifyMistralFailure } = require('./mistral');
+const { MISTRAL_MODEL, MISTRAL_MODELS, streamMistral, classifyMistralFailure } = require('./mistral');
 const { startTransportLog, logTransportEvent, closeTransportLog } = require('./transportLogger');
 const { listProviderModels } = require('./providerModelRegistry');
 const { randomUUID, createHash } = require('node:crypto');
@@ -50,6 +50,7 @@ let currentProviderMode = 'byok';
 // Groq conversation history for context
 let groqConversationHistory = [];
 let mistralConversationHistory = [];
+let currentMistralModel = MISTRAL_MODEL;
 
 // Conversation tracking variables
 let currentSessionId = null;
@@ -1133,6 +1134,7 @@ async function sendTypedGeminiText(text) {
 }
 
 async function sendToMistral(text, image) {
+    const model = currentMistralModel;
     if (image && (!/^[A-Za-z0-9+/]+={0,2}$/.test(image) || image.length % 4
         || !Buffer.from(image, 'base64').subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])))) {
         return { success: false, error: 'Mistral screenshots must be valid base64 JPEG images.' };
@@ -1146,15 +1148,15 @@ async function sendToMistral(text, image) {
     const history = image ? [] : trimConversationHistory(mistralConversationHistory.slice(-8), 12000);
     if (history[0]?.role === 'assistant') history.shift();
     let first = true;
-    const result = await streamMistral({ apiKey: getMistralApiKey(), operation: image ? 'screen' : 'text',
+    const result = await streamMistral({ apiKey: getMistralApiKey(), model, operation: image ? 'screen' : 'text',
         messages: [{ role: 'system', content: instruction }, ...history, user], signal: getRequestSignal(),
         onText: partial => {
             assertCurrentRequest();
-            sendToRenderer(first ? 'new-response' : 'update-response', partial, { ...getRequestMetadata(), model: MISTRAL_MODEL });
+            sendToRenderer(first ? 'new-response' : 'update-response', partial, { ...getRequestMetadata(), model });
             first = false;
         } });
     assertCurrentRequest();
-    if (image) saveScreenAnalysis(text, result.text, MISTRAL_MODEL);
+    if (image) saveScreenAnalysis(text, result.text, model);
     else {
         mistralConversationHistory = trimConversationHistory([...mistralConversationHistory,
             { role: 'user', content: text.slice(-2500) }, { role: 'assistant', content: result.text.slice(-6000) }].slice(-8), 12000);
@@ -1178,7 +1180,7 @@ function validateUserRequestContext(value) {
 function userRequestFailure(error, operation) {
     const cancelled = error?.name === 'AbortError' && !/timed? out|timeout/i.test(error.message || '');
     const failure = currentProviderMode === 'byok' ? classifyGeminiFailure(error, operation, getAvailableModel())
-        : currentProviderMode === 'mistral' ? classifyMistralFailure(error, operation)
+        : currentProviderMode === 'mistral' ? classifyMistralFailure(error, operation, currentMistralModel)
         : { operation, category: cancelled ? 'cancelled' : 'request-failed',
             message: cancelled ? 'Request cancelled.' : `${currentProviderMode === 'local' ? 'Local AI' : 'Groq'} could not complete this request. Check provider settings and retry; your draft is retained.` };
     return { success: false, cancelled: failure.category === 'cancelled', error: failure.message, failure };
@@ -1269,11 +1271,14 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
         if (selectedProvider === 'mistral') {
             if (!getMistralApiKey()) return { success: false, error: 'No Mistral API key configured.' };
+            const model = getConfig().mistralModel || MISTRAL_MODEL;
+            if (!MISTRAL_MODELS.some(item => item.id === model)) return { success: false, error: 'Choose a supported Mistral model in provider settings.' };
+            currentMistralModel = model;
             currentProviderMode = 'mistral';
             geminiSessionRef.current = null;
             currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
             initializeNewSession(profile, customPrompt);
-            sessionParams = { language, profile, customPrompt, provider: 'mistral' };
+            sessionParams = { language, profile, customPrompt, provider: 'mistral', model };
             sendToRenderer('update-status', 'Mistral ready for text and screenshots');
             publishProviderState('ready');
             return { success: true, provider: 'mistral', audioReady: false, search: { ...searchState } };

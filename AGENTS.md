@@ -53,7 +53,7 @@ The supported target is Windows x64. Preserve these properties when changing win
 - Gemini Live handles real-time Gemini audio sessions.
 - Gemini Flash handles Gemini screen analysis with a bounded retry policy; model/provider changes require explicit user selection.
 - Groq uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
-- Mistral uses the explicitly selected, pinned Mistral Small model for text and screenshots; audio stays disabled.
+- Mistral uses an explicitly selected, pinned Ministral 3 or Mistral Small 4 model for text and screenshots; audio stays disabled. Never silently switch models after an access or quota failure.
 - Local AI uses checksum-verified native whisper.cpp and llama.cpp runners plus GGUF models.
 
 Provider model IDs and request fields can change over time. Check the current official provider documentation before changing models or API schemas.

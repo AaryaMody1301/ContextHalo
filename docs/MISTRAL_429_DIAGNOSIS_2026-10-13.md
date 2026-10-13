@@ -2,6 +2,8 @@
 
 Date: October 13, 2026. Target: ContextHalo on Windows x64. This guide covers public provider guidance, application behavior and controlled validation.
 
+Later the same day, live tests established a zero runtime request allowance for Small 4 and successful Ministral text/vision access on the same Free account. See the [follow-up validation and model-picker repair](MISTRAL_FREE_MODEL_VALIDATION_2026-10-13.md). The artifact and counts below describe the earlier repair.
+
 ## Interpreting a 429
 
 A 429 does not by itself identify the enforced rate/usage limit or its reset time. Inspect the model's request/token limits, included monthly usage and organization/workspace caps privately in Mistral Admin. A saved Studio API key or a listed model does not establish working inference access. Preserve a supplied `Retry-After`; if it is absent, report the reset time as unknown. Published benchmark speeds do not establish free-account availability.

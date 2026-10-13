@@ -149,7 +149,16 @@ async function rendererBehaviorSmoke() {
         providerChoice.value = 'mistral'; providerChoice.dispatchEvent(new Event('change', { bubbles: true }));
         await home._configurationWrites; await settle(home);
         verify(home._mode === 'mistral' && (await api.storage.getPreferences()).providerMode === 'mistral', 'Home selects and persists the independent Mistral provider');
-        verify(home.shadowRoot.textContent.includes('mistral-small-2603') && !home.shadowRoot.querySelector('.advanced-models'), 'Mistral shows its fixed text/vision model without a Groq catalog');
+        verify(home.shadowRoot.querySelector('#mistral-model')?.options.length === 4 && !home.shadowRoot.querySelector('.advanced-models'), 'Mistral offers four explicit pinned text/vision models without a Groq catalog');
+        const mistralChoice = home.shadowRoot.querySelector('#mistral-model');
+        const originalMistralModel = (await api.storage.getConfig()).mistralModel;
+        mistralChoice.value = 'ministral-8b-2512'; mistralChoice.dispatchEvent(new Event('change', { bubbles: true }));
+        await home._configurationWrites; await home.updateComplete;
+        verify((await api.storage.getConfig()).mistralModel === 'ministral-8b-2512', 'Explicit Mistral model choice persists through sandboxed IPC');
+        home.sessionActive = true; await home.updateComplete;
+        verify(home.shadowRoot.querySelector('#mistral-model').disabled, 'Mistral model selection is locked during a session');
+        home.sessionActive = false; await home.updateComplete;
+        await home._saveMistralModel(originalMistralModel);
         verify(home.shadowRoot.querySelector('#provider-api-key')?.type === 'password', 'Mistral key input remains masked');
         verify(!home.shadowRoot.textContent.includes('Groq catalog error fixture'), 'Mistral does not show another provider\'s catalog failure');
         app.requestError = { operation: 'screen', category: 'transient', model: 'gemini-3.8-flash', httpStatus: 503, message: 'Controlled provider error fixture' };
@@ -161,12 +170,13 @@ async function rendererBehaviorSmoke() {
         const originalOpenLink = app.handleExternalLinkClick;
         try {
             app.providerMode = 'mistral';
-            app.requestError = { operation: 'screen', category: 'rate-or-quota', httpStatus: 429, providerCode: '1300', providerType: 'rate_limited', message: 'Controlled Mistral limit fixture' };
+            app.requestError = { operation: 'screen', category: 'rate-or-quota', httpStatus: 429, providerCode: '1300', providerType: 'rate_limited', rateLimits: { requestsPerMinute: 0, remainingRequestsPerMinute: 0 }, message: 'Controlled Mistral limit fixture' };
             let openedUrl = '';
             app.handleExternalLinkClick = async url => { openedUrl = url; };
             await settle(app);
             const details = app.shadowRoot.querySelector('.session-details');
             verify(details.textContent.includes('Provider code: 1300') && details.textContent.includes('rate_limited') && details.textContent.includes('reset time is unknown'), 'Mistral limit diagnostics preserve safe code and unknown retry time');
+            verify(details.textContent.includes('Effective request limit: 0/min'), 'Mistral zero runtime allowance remains visible');
             verify(details.textContent.includes('Google Search is unavailable for Mistral') && !details.textContent.includes('Google decides'), 'Mistral session details exclude Gemini-only Search instructions');
             [...details.querySelectorAll('button')].find(button => button.textContent === 'Open Mistral limits').click();
             await settle(app);

@@ -145,7 +145,7 @@ test('Gemini Live uses 40 ms capture chunks without changing Groq or Local VAD c
     assert.match(source, /samplesPerChunk: Math\.round\(context\.sampleRate \* preferredAudioChunkDuration\(\)\)/);
 });
 
-test('storage v9 removes retired Compound selections and legacy persisted Search metadata', { concurrency: false }, t => {
+test('storage v10 removes retired Compound selections and legacy persisted Search metadata', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-provider-v9-'));
     const originalHomedir = os.homedir;
     os.homedir = () => tempHome;
@@ -179,7 +179,7 @@ test('storage v9 removes retired Compound selections and legacy persisted Search
 
     storage.initializeStorage();
     const config = storage.getConfig();
-    assert.equal(config.configVersion, 9);
+    assert.equal(config.configVersion, 10);
     assert.equal(config.groqModel, 'openai/gpt-oss-120b');
     assert.equal(config.groqImageModel, 'qwen/qwen3.8-27b');
     const saved = JSON.parse(fs.readFileSync(path.join(historyDir, '123.json'), 'utf8'));

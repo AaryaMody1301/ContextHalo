@@ -3,8 +3,9 @@ const path = require('path');
 const os = require('os');
 const { randomUUID } = require('node:crypto');
 const { sanitizeConversationHistory, sanitizeScreenAnalysisHistory, sanitizeSessionProviderHistory } = require('./utils/providerHistoryPolicy');
+const MISTRAL_MODELS = require('./utils/mistralModels.json');
 
-const CONFIG_VERSION = 9;
+const CONFIG_VERSION = 10;
 const CREDENTIAL_FORMAT = 'windows-safe-storage-v1';
 const DEFAULT_CONFIG = {
     configVersion: CONFIG_VERSION,
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG = {
     groqImageModel: 'qwen/qwen3.8-27b',
     groqTranscriptionModel: 'whisper-large-v3-turbo',
     disableGroqThinking: true,
+    mistralModel: MISTRAL_MODELS.find(model => model.recommended).id,
 };
 const DEFAULT_CREDENTIALS = { apiKey: '', groqApiKey: '', mistralApiKey: '' };
 let credentialCache = { ...DEFAULT_CREDENTIALS };
@@ -294,6 +296,11 @@ function migrateConfig(rawConfig = {}) {
     }
     if (!config.groqImageModel || RETIRED_GROQ_MODELS.has(config.groqImageModel)) config.groqImageModel = DEFAULT_CONFIG.groqImageModel;
     if (!config.groqTranscriptionModel) config.groqTranscriptionModel = DEFAULT_CONFIG.groqTranscriptionModel;
+    // Previous releases pinned Small 4. Preserve that choice when adding the picker.
+    if ((!Object.hasOwn(source, 'mistralModel') && Object.keys(source).length)
+        || !MISTRAL_MODELS.some(model => model.id === config.mistralModel)) {
+        config.mistralModel = MISTRAL_MODELS.find(model => model.legacyDefault).id;
+    }
 
     return config;
 }
@@ -370,7 +377,10 @@ function migrateProviderHistoryFiles(now = Date.now()) {
 
 function getConfig() { return migrateConfig(readJsonFile(getConfigPath(), {})); }
 function setConfig(config) { return writeJsonFile(getConfigPath(), migrateConfig({ ...getConfig(), ...config })); }
-function updateConfig(key, value) { return setConfig({ [key]: value }); }
+function updateConfig(key, value) {
+    if (key === 'mistralModel' && !MISTRAL_MODELS.some(model => model.id === value)) throw new Error('Choose a supported Mistral model.');
+    return setConfig({ [key]: value });
+}
 function getCredentials() { return { ...credentialCache }; }
 function setCredentials(credentials) {
     credentialWriteQueue = credentialWriteQueue.catch(() => {}).then(async () => {

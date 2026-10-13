@@ -1007,6 +1007,9 @@ export class ContextHaloApp extends LitElement {
                     <details class="error-details"><summary>Request diagnostics</summary><p>${this.requestError.operation} · ${this.requestError.category}${this.requestError.httpStatus ? ` · HTTP ${this.requestError.httpStatus}` : ''}</p>
                         ${this.requestError.providerCode ? html`<p>Provider code: ${this.requestError.providerCode}</p>` : ''}
                         ${this.requestError.providerType ? html`<p>Provider type: ${this.requestError.providerType}</p>` : ''}
+                        ${this.requestError.rateLimits?.requestsPerMinute != null ? html`<p>Effective request limit: ${this.requestError.rateLimits.requestsPerMinute}/min</p>` : ''}
+                        ${this.requestError.rateLimits?.remainingRequestsPerMinute != null ? html`<p>Remaining requests: ${this.requestError.rateLimits.remainingRequestsPerMinute}/min</p>` : ''}
+                        ${this.requestError.rateLimits?.tokensPerMinute != null ? html`<p>Effective token limit: ${this.requestError.rateLimits.tokensPerMinute}/min</p>` : ''}
                         ${this.providerMode === 'mistral' && this.requestError.httpStatus === 429 && this.requestError.retryAfterMs == null ? html`<p>Mistral did not supply a retry delay. The reset time is unknown.</p>` : ''}</details>
                 ` : this._detailMessage?.uiEpoch === this._uiSessionEpoch ? html`<p>${this._detailMessage.message}</p>` : ''}
                 ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">

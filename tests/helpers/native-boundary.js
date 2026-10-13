@@ -10,6 +10,7 @@ function loadMain(file, mocks = {}, globals = {}) {
         filename = path.resolve(filename);
         if (cache.has(filename)) return cache.get(filename).exports;
         const module = { exports: {} }; cache.set(filename, module);
+        if (filename.endsWith('.json')) { module.exports = JSON.parse(fs.readFileSync(filename, 'utf8')); return module.exports; }
         const realRequire = createRequire(filename);
         const scopedRequire = name => {
             if (Object.hasOwn(mocks, name)) return mocks[name];
