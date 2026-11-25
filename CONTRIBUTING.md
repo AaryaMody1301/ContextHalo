@@ -18,15 +18,16 @@ npm install
 npm start
 ```
 
-Run validation before opening a pull request:
+Run validation before opening an application pull request:
 
 ```bash
 npm run check
 npm test
-npm run build:portable
 ```
 
-GitHub Actions checks source syntax and dependency provenance before launching the sandboxed Electron renderer and verifying the portable Windows executable.
+Every pull request checks source syntax, dependency provenance, repository policy, and branding. Documentation-only changes can finish there. Changes limited to renderer components, Knowledge Library, Practice, or JavaScript tests run the full regression suite and the sandboxed Electron renderer on Windows. Changes to dependencies, workflows, or packaging and other changes also build the portable EXE, verify its checksum, and launch it at four display scales.
+
+Pushes to main and manual runs always validate the portable EXE. Run `npm run build:portable` locally when changing packaging or runtime setup.
 
 For dependency changes, run `node --test tests/repository-provenance.test.js`. Keep the production inventory in `docs/THIRD_PARTY_PROVENANCE.json` and the locked runtime versions in `THIRD_PARTY_NOTICES.md` in sync with `package-lock.json`.
 
