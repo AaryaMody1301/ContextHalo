@@ -131,6 +131,41 @@ for (const phase of ['startup', 'restart']) test('source changes during capture 
     assert.ok(latest.getTracks().every(track => track.readyState === 'live'));
 });
 
+test('disconnecting a pinned display pauses capture while the provider stays active', async t => {
+    const { rendererFixture, stream } = require('./helpers/renderer-fixture');
+    const original = stream('video');
+    const restored = stream('video');
+    let attempts = 0;
+    const capture = rendererFixture({ prefs: { providerMode: 'mistral' }, display: async () => attempts++ === 0 ? original : restored });
+    const f = appFixture({
+        mode: 'mistral', credentials: { mistral: true }, globals: { refreshCaptureSources: async () => {} },
+        api: { startCapture: capture.api.startCapture, stopCapture: capture.api.stopCapture, getCaptureState: capture.api.getCaptureState },
+    });
+    const subscriptions = new Map();
+    f.context.window.electronAPI.on = (channel, cb) => subscriptions.set(channel, cb);
+    f.app.connectedCallback();
+    capture.window.addEventListener('capture-state-changed', event => f.app._captureChanged(event.detail));
+    t.after(() => f.app.endSession());
+
+    assert.equal((await f.app.handleStart()).success, true);
+    assert.match(f.app.sessionStatusSummary(), /Mistral session active.*audio off/);
+    const invalidated = subscriptions.get('capture-source-invalidated');
+    invalidated(null, { reason: 'selected-display-unavailable', displayId: null });
+    assert.equal(f.app.lifecycleState, 'capture-stopped');
+    assert.equal(f.app.providerState, 'ready');
+    assert.equal(f.app.sessionActive, true);
+    assert.match(f.app.sessionStatusSummary(), /Screen capture stopped/);
+    assert.match(f.app.captureState.warning, /selected display disconnected/i);
+    assert.equal(original.getVideoTracks()[0].readyState, 'ended');
+    assert.equal(attempts, 1);
+
+    invalidated(null, { reason: 'selected-display-restored', displayId: '2' });
+    await f.app._captureRestartPromise;
+    assert.equal(f.app.lifecycleState, 'active');
+    assert.equal(restored.getVideoTracks()[0].readyState, 'live');
+    assert.equal(attempts, 2);
+});
+
 test('a failed Home capture choice restores the displayed saved selection', async () => {
     const { Target } = componentClass('src/components/views/MainView.js', 'MainView', {
         setCaptureSource: async () => ({ success: false }),

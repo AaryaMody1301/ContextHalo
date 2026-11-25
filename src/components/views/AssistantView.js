@@ -710,7 +710,7 @@ export class AssistantView extends LitElement {
         const { sessionPack: pack, captureState } = getContextState();
         return html`<dialog class="tools-dialog secondary-panels" aria-labelledby="tools-title" @close=${() => { this.toolsOpen = false; }}>
             <div class="tools-heading"><h2 id="tools-title">Session tools</h2>
-                <button type="button" @click=${() => { this.closeTools(); this.onEndSession?.(); }}>End session</button>
+                <button type="button" aria-haspopup="dialog" @click=${() => this.onEndSession?.()}>End session</button>
                 <button type="button" @click=${() => { this.closeTools(); this.onHideWindow?.(); }}>Hide</button>
                 <button type="button" aria-label="Close session tools" @click=${this.closeTools}>Close</button></div>
             <div class="tools-tabs" role="group" aria-label="Tool workspace">

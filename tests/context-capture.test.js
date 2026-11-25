@@ -77,12 +77,19 @@ test('desktop source selection stays in the trusted main process and region sele
 
 
 
-test('active-display capture is invalidated after the app moves to another display', async () => {
+test('display changes invalidate the active or pinned source without silently switching a pinned display', async t => {
     const { EventEmitter } = require('node:events');
     const { setTimeout: sleep } = require('node:timers/promises');
     const handlers = new Map();
     const preferences = { captureSource: { kind: 'window', sourceId: 'window:editor:0' } };
     let displayId = 1;
+    let displays = [{ id: 1 }, { id: 2 }];
+    let shareDisplay;
+    // Keep a stale desktopCapturer entry when the monitor disappears.
+    const sources = [
+        { id: 'screen:1:0', display_id: '1', name: 'Primary' },
+        { id: 'screen:2:0', display_id: '2', name: 'Second monitor' },
+    ];
     const sends = [];
     const mainWindow = new EventEmitter();
     mainWindow.isDestroyed = () => false;
@@ -91,12 +98,13 @@ test('active-display capture is invalidated after the app moves to another displ
     mainWindow.webContents = { id: 1, mainFrame: {}, send: (...args) => sends.push(args) };
     const screen = new EventEmitter();
     screen.getPrimaryDisplay = () => ({ id: 1 });
+    screen.getAllDisplays = () => displays;
     screen.getDisplayMatching = () => ({ id: displayId });
     const main = loadMain('src/utils/contextCaptureMain.js', {
         electron: {
-            desktopCapturer: { getSources: async () => [] },
+            desktopCapturer: { getSources: async () => sources },
             screen,
-            session: { defaultSession: { setDisplayMediaRequestHandler() {} } },
+            session: { defaultSession: { setDisplayMediaRequestHandler(handler) { shareDisplay = handler; } } },
         },
         '../storage': {
             getPreferences: () => preferences,
@@ -105,6 +113,7 @@ test('active-display capture is invalidated after the app moves to another displ
     }, { process: { platform: 'win32' } });
 
     main.setupContextCaptureMain(mainWindow, { handle: (key, handler) => handlers.set(key, handler), removeHandler() {} });
+    t.after(() => mainWindow.emit('closed'));
     const event = { sender: mainWindow.webContents, senderFrame: mainWindow.webContents.mainFrame };
     const selected = await handlers.get('context-capture:set-source')(event, { kind: 'active-display' });
     assert.equal(selected.success, true);
@@ -113,5 +122,23 @@ test('active-display capture is invalidated after the app moves to another displ
     mainWindow.emit('moved');
     await sleep(220);
     assert.deepEqual(sends.at(-1), ['capture-source-invalidated', { reason: 'active-display-changed', displayId: '2' }]);
-    mainWindow.emit('closed');
+    await handlers.get('context-capture:set-source')(event, {
+        kind: 'screen', displayId: '2', sourceId: 'screen:2:0', label: 'Second monitor',
+    });
+    displays = [{ id: 1 }];
+    screen.emit('display-removed', {}, { id: 2 });
+    await sleep(220);
+    assert.deepEqual(sends.at(-1), ['capture-source-invalidated', { reason: 'selected-display-unavailable', displayId: null }]);
+    const list = await main.listCaptureSources(mainWindow);
+    assert.equal(list.selected.displayId, '2');
+    assert.ok(!list.sources.some(source => source.key === 'screen:2'));
+    const capture = () => new Promise(resolve => shareDisplay({ frame: event.senderFrame }, resolve));
+    assert.deepEqual(await capture(), {});
+    assert.match((await handlers.get('context-capture:select-region')(event)).error, /choose a connected display/i);
+
+    displays.push({ id: 2 });
+    screen.emit('display-added', {}, { id: 2 });
+    await sleep(220);
+    assert.deepEqual(sends.at(-1), ['capture-source-invalidated', { reason: 'selected-display-restored', displayId: '2' }]);
+    assert.equal((await capture()).video.display_id, '2');
 });

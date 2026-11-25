@@ -1,5 +1,5 @@
 import { initRealtimeContext, refreshPreferences, resolveSessionId, flushSessionContext } from '../../utils/realtimeContextRenderer.js';
-import { loadContextState, saveSessionPack, persistPackToCurrentSession } from '../../utils/contextCaptureRenderer.js';
+import { loadContextState, refreshCaptureSources, saveSessionPack, persistPackToCurrentSession } from '../../utils/contextCaptureRenderer.js';
 import { openPanel, closePanel } from '../../utils/phase4Renderer.js';
 import { html, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import { contextHaloAppStyles } from './ContextHaloAppStyles.js';
@@ -13,6 +13,8 @@ import { OnboardingView } from '../views/OnboardingView.js';
 import { AICustomizeView } from '../views/AICustomizeView.js';
 import { FeedbackView } from '../views/FeedbackView.js';
 import '../WindowResizeHandles.js';
+
+const PROVIDER_NAMES = { byok: 'Gemini', groq: 'Groq', local: 'Local AI', mistral: 'Mistral' };
 
 export class ContextHaloApp extends LitElement {
     static styles = contextHaloAppStyles;
@@ -183,10 +185,20 @@ export class ContextHaloApp extends LitElement {
             this._isClickThrough = isEnabled;
         });
         listen('capture-source-invalidated', (_, detail) => {
-            if (this.lifecycleState === 'stopping' || !['active-display-changed', 'selection-changed'].includes(detail?.reason)) return;
+            const reason = detail?.reason;
+            const disconnected = reason === 'selected-display-unavailable';
+            if (disconnected || reason === 'selected-display-restored') void refreshCaptureSources();
+            if (this.lifecycleState === 'stopping' || !['active-display-changed', 'primary-display-changed', 'selection-changed',
+                'selected-display-unavailable', 'selected-display-restored'].includes(reason)) return;
+
             this._captureSourceRevision++;
-            if (this.lifecycleState === 'preparing-capture') contextHalo.stopCapture();
-            else if (this.sessionActive) void this.restartCapture();
+            if (disconnected && this.sessionActive) {
+                contextHalo.stopCapture('The selected display disconnected. Reconnect it or choose another capture source.');
+            } else if (this.lifecycleState === 'preparing-capture') {
+                contextHalo.stopCapture();
+            } else if (this.sessionActive) {
+                void this.restartCapture();
+            }
         });
         listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
         listen('whisper-downloading', (_, downloading) => {
@@ -244,13 +256,27 @@ export class ContextHaloApp extends LitElement {
         this.statusText = /listening/i.test(status) && !this.isRecording ? this._readyStatus() : status;
     }
 
-    _readyStatus() {
-        const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI', mistral: 'Mistral' }[this.providerMode] || 'Provider';
-        if (this.providerMode === 'mistral') return 'Mistral ready for typed questions and screen analysis. Audio is off.';
+    _providerStatus() {
+        const provider = PROVIDER_NAMES[this.providerMode] || 'Provider';
+        if (this.providerState === 'reconnecting') return `${provider} reconnecting`;
+        if (this.providerError || this.providerState === 'failed') return `${provider} needs attention`;
         if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
-        if (!this.captureState.audioReady) return `${provider} ready; audio capture is unavailable. Typed questions still work.`;
-        const channels = [this.captureState.microphone ? 'microphone' : '', this.captureState.system ? 'speaker audio' : ''].filter(Boolean).join(' + ');
-        return this.captureState.warning || `${provider} ready \u00b7 ${channels || 'audio'} active`;
+        if (this.providerMode === 'byok') return 'Gemini Live connected';
+        return this.providerMode === 'local' ? 'Local AI ready' : `${provider} session active`;
+    }
+
+    _captureStatus() {
+        const { state, screen, audioReady, microphone, system } = this.captureState;
+        if (state === 'preparing' || state === 'recovering') return 'Capture starting';
+        const screenStatus = screen ? 'Screen capture active' : 'Screen capture stopped';
+        if (this.providerMode === 'mistral') return `${screenStatus} · audio off`;
+        if (!audioReady) return `${screenStatus} · audio stopped`;
+        const inputs = [microphone ? 'microphone' : '', system ? 'speaker audio' : ''].filter(Boolean).join(' + ');
+        return `${screenStatus} · ${inputs || 'audio'} active`;
+    }
+
+    _readyStatus() {
+        return `${this._providerStatus()} · ${this._captureStatus()}`;
     }
 
     _setLifecycle(state, status) {
@@ -421,13 +447,29 @@ export class ContextHaloApp extends LitElement {
     }
 
     async handleClose() {
-        if (this.sessionActive || this.isInitializing || this.currentView === 'assistant') return this.endSession();
+        if (this.sessionActive) return this.confirmEndSession();
+        if (this.isInitializing || this.currentView === 'assistant') return this.endSession();
         if (this._unsavedSession && !(await this.retrySave()).success) return;
         await window.electronAPI.invoke('quit-application');
     }
 
+    confirmEndSession() {
+        if (!this.sessionActive || this.lifecycleState === 'stopping') return;
+        const dialog = this.shadowRoot.querySelector('.end-confirmation');
+        if (dialog && !dialog.open) dialog.showModal();
+    }
+
+    async _finishConfirmedSession() {
+        await this.endSession();
+        await this.updateComplete;
+        const home = this.shadowRoot.querySelector('main-view');
+        await home?.updateComplete;
+        home?.shadowRoot.querySelector('.page-title')?.focus();
+    }
+
     endSession() {
         if (this._stopPromise) return this._stopPromise;
+        this.shadowRoot?.querySelector('.end-confirmation')?.close();
         this.closeSessionDetails();
         this.shadowRoot?.querySelector('.phase4-overlay')?.close();
         this._uiSessionEpoch += 1;
@@ -533,7 +575,8 @@ export class ContextHaloApp extends LitElement {
             }
             this.providerState = 'connecting';
             this._setLifecycle('connecting', this.providerMode === 'local' ? 'Preparing local AI and speech models...'
-                : `Connecting to ${{ groq: 'Groq', byok: 'Gemini Live', mistral: 'Mistral' }[this.providerMode]}...`);
+                : this.providerMode === 'byok' ? 'Connecting to Gemini Live...'
+                    : `Preparing the ${PROVIDER_NAMES[this.providerMode]} session...`);
             const requestOptions = { ...options, uiEpoch: epoch };
             const success = await this._awaitStart(this.providerMode === 'local'
                 ? contextHalo.initializeLocal(this.selectedProfile, this.selectedLanguage, requestOptions)
@@ -542,11 +585,11 @@ export class ContextHaloApp extends LitElement {
             this.providerState = 'ready';
             await this._awaitStart(persistPackToCurrentSession(), epoch);
             await this._awaitStart(resolveSessionId(), epoch);
-            this._setLifecycle('preparing-capture', this.providerMode === 'mistral' ? 'Provider ready. Preparing the selected screen...' : 'Provider connected. Preparing the selected screen and audio inputs...');
+            this._setLifecycle('preparing-capture', 'Preparing the selected capture source...');
             const captured = await this._awaitStart(this._startSelectedCapture(epoch), epoch);
             if (!captured) throw new Error(contextHalo.getCaptureState?.().warning || this.statusText || 'Capture could not start.');
             this.captureState = contextHalo.getCaptureState?.() || { state: 'ready', audioReady: true, screen: true };
-            this._setLifecycle('capture-ready', this.providerMode === 'mistral' ? 'Screen capture ready; audio off' : 'Screen and audio capture ready');
+            this._setLifecycle('capture-ready', this._captureStatus());
             this.responses = [];
             this._responseIds = [];
             this._responseGrounding = [];
@@ -590,7 +633,7 @@ export class ContextHaloApp extends LitElement {
         if (this._captureRestartPromise) return this._captureRestartPromise;
         const epoch = this._uiSessionEpoch;
         const operation = (async () => {
-            this._setLifecycle('preparing-capture', 'Restarting the selected screen and audio inputs...');
+            this._setLifecycle('preparing-capture', 'Restarting capture...');
             contextHalo.stopCapture();
             try { await this._startSelectedCapture(epoch); }
             catch { /* The capture owner publishes its recoverable failure state. */ }
@@ -821,7 +864,7 @@ export class ContextHaloApp extends LitElement {
                         .onSendText=${msg => this.handleSendText(msg)}
                         .onCancelText=${() => this.handleCancelText()}
                         .onAnalyzeScreen=${options => this.handleAnalyzeScreen(options)}
-                        .onEndSession=${() => this.endSession()}
+                        .onEndSession=${() => this.confirmEndSession()}
                         .onHideWindow=${() => this.handleHideToggle()}
                         .onShowError=${(message, operation) => this.openSessionDetails(message, operation)}
                         .onOpenKnowledge=${() => openPanel(this, 'knowledge')}
@@ -968,7 +1011,7 @@ export class ContextHaloApp extends LitElement {
         return html`
             <header class="live-bar">
                 <div class="live-bar-left">
-                    <button type="button" @click=${() => this.handleClose()} title="End session and stop capture">End</button>
+                    <button type="button" aria-haspopup="dialog" @click=${this.confirmEndSession} title="End session and stop capture">End</button>
                 </div>
                 <div class="live-bar-center">${profileLabels[this.selectedProfile] || 'Session workspace'}</div>
                 <div class="live-bar-right">
@@ -977,25 +1020,23 @@ export class ContextHaloApp extends LitElement {
                 </div>
             </header>
             <div class="session-state">
-                <span class="status-detail" role="status">${this.sessionStatusSummary()}</span>
+                <span class="status-detail" role="status" title=${this._readyStatus()}>${this.sessionStatusSummary()}</span>
                 <span class="search-state" title="Search availability can differ between Live audio and text/screen requests. Open Session details for each path.">
                     ${this.searchState.liveEffective && !this.searchState.httpEffective ? 'Search: Live only' : this.searchState.httpEffective && !this.searchState.liveEffective ? 'Search: text/screen only' : this.searchState.status === 'pending' ? 'Search pending' : this.searchState.status === 'not-supported' ? 'Search unavailable' : this.searchState.liveEffective ? 'Search on' : this.searchState.requested ? 'Search off (session)' : 'Search off'}
                 </span>
-                <button type="button" aria-haspopup="dialog" @click=${() => this.openSessionDetails()}>${this.providerError || this.requestError || this.captureState.warning ? 'Resolve issue' : 'Session details'}</button>
+                <button type="button" aria-haspopup="dialog" @click=${() => this.openSessionDetails()}>${this.providerError || this.requestError || this.captureState.warning || !this.captureState.screen ? 'Resolve issue' : 'Session details'}</button>
             </div>
         `;
     }
 
     sessionStatusSummary() {
-        const provider = { byok:'Gemini', groq:'Groq', local:'Local AI', mistral:'Mistral' }[this.providerMode] || 'Provider';
-        if (this.providerState === 'reconnecting') return `${provider} reconnecting`;
-        if (this.providerError) return `${provider} connection needs attention`;
-        if (this.requestError) return this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention';
+        if (this.lifecycleState === 'stopping') return 'Ending session...';
+        if (this.providerState !== 'ready' || this.providerError) return this._providerStatus();
         if (this._isClickThrough) return 'Click-through on - use visibility shortcut or tray to recover';
-        if (this.providerState !== 'ready') return `${provider} ${this.providerState || 'unavailable'}`;
-        if (this.providerMode === 'mistral') return 'Mistral ready · text and screenshots';
-        if (!this.captureState.audioReady) return `${provider} ready - audio stopped`;
-        return `${provider} ready - ${this.captureState.microphone && this.captureState.system ? 'mixed audio' : this.captureState.microphone ? 'microphone' : 'speaker audio'}`;
+        if (this.isInitializing || this.captureState.state !== 'ready' || !this.captureState.screen) return this._captureStatus();
+        if (this.requestError) return this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention';
+        return `${this._providerStatus()} · ${this.providerMode === 'mistral' ? 'audio off'
+            : this.captureState.audioReady ? 'audio active' : 'audio stopped'}`;
     }
 
     async openSessionDetails(message, operation) {
@@ -1007,6 +1048,28 @@ export class ContextHaloApp extends LitElement {
     }
 
     closeSessionDetails() { this.shadowRoot.querySelector('.session-details')?.close(); }
+
+    async openSessionSetting(section) {
+        this.closeSessionDetails();
+        this.navigate('main');
+        await this.updateComplete;
+        const home = this.shadowRoot.querySelector('main-view');
+        await home?.updateComplete;
+        if (home?.isConnected) home.focusSessionSetting(section);
+    }
+
+    renderEndConfirmation() {
+        return html`<dialog class="end-confirmation" aria-labelledby="end-confirmation-title" aria-describedby="end-confirmation-description">
+            <div class="details-header"><h2 id="end-confirmation-title">End session?</h2></div>
+            <div class="details-body">
+                <p id="end-confirmation-description">Capture will stop and ContextHalo will save the transcript to History.</p>
+                <div class="session-actions">
+                    <form method="dialog"><button autofocus>Keep session running</button></form>
+                    <button type="button" @click=${this._finishConfirmedSession}>End session</button>
+                </div>
+            </div>
+        </dialog>`;
+    }
 
     renderLocalRuntimeDetails() {
         const runtime = this._localRuntime;
@@ -1022,15 +1085,23 @@ export class ContextHaloApp extends LitElement {
     renderSessionDetails() {
         return html`<dialog class="session-details" aria-labelledby="session-details-title">
             <div class="details-header session-actions"><h2 id="session-details-title">Session details</h2>
-                <button type="button" @click=${() => { this.closeSessionDetails(); this.endSession(); }}>End session</button>
+                <button autofocus type="button" @click=${this.closeSessionDetails} aria-label="Close session details">Close</button>
                 <button type="button" @click=${() => { this.closeSessionDetails(); this.handleHideToggle(); }}>Hide</button>
-                <button type="button" @click=${this.closeSessionDetails} aria-label="Close session details">Close</button></div>
+                <button type="button" aria-haspopup="dialog" @click=${this.confirmEndSession}>End session</button></div>
             <div class="details-body" tabindex="0" aria-label="Session details">
+                <h3>Provider and capture</h3>
+                <p role="status">${this._providerStatus()}</p>
+                <p role="status">${this._captureStatus()}</p>
+                ${this.captureState.warning ? html`<p>${this.captureState.warning}</p>` : ''}
+                ${this.sessionActive ? html`<div class="session-actions" role="group" aria-label="Capture recovery">
+                    <button type="button" aria-disabled=${this.isInitializing ? 'true' : 'false'} @click=${this.restartCapture}>Restart capture</button>
+                    <button type="button" @click=${() => this.openSessionSetting('capture')}>Choose capture source</button>
+                </div>` : ''}
                 ${this.requestError ? html`<h3>${this.requestError.operation === 'screen' ? 'Screen analysis needs attention' : 'Text request needs attention'}</h3>
                     <div class="session-actions" role="group" aria-label="Request recovery">
                         <button @click=${() => { this.closeSessionDetails(); this.retryRequest(); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry ${this.requestError.operation === 'screen' ? 'analysis' : 'message'}</button>
                         ${this.requestError.canDisableSearch && this.searchState.httpEffective ? html`<button @click=${() => { this.closeSessionDetails(); this.retryRequest(true); }} ?disabled=${this.requestError.retryAt > Date.now()}>Retry request without Search</button>` : ''}
-                        <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button>
+                        <button @click=${() => this.openSessionSetting('provider')}>View provider settings</button>
                         ${this.providerMode === 'mistral' ? html`<button @click=${() => this.handleExternalLinkClick('https://admin.mistral.ai/plateforme/limits')}>Open Mistral limits</button>` : ''}
                     </div>
                     ${this.requestError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.requestError.retryAt).toLocaleTimeString()}.</p>` : ''}
@@ -1047,11 +1118,9 @@ export class ContextHaloApp extends LitElement {
                 ${this.providerError ? html`<h3>Provider connection needs attention</h3><div class="session-actions" role="group" aria-label="Provider recovery">
                     <button @click=${() => this.retryProvider()} ?disabled=${this.providerError.retryAt > Date.now() || this.providerState === 'reconnecting'}>Retry connection</button>
                     ${this.searchState.requested && this.searchState.liveEffective && this.providerError.canDisableSearch ? html`<button @click=${() => this.retryProvider(true)} ?disabled=${this.providerError.retryAt > Date.now()}>Continue without Search</button>` : ''}
-                    <button @click=${() => { this.closeSessionDetails(); this.navigate('main'); }}>Provider settings</button></div>
+                    <button @click=${() => this.openSessionSetting('provider')}>View provider settings</button></div>
                     ${this.providerError.retryAt > Date.now() ? html`<p>Retry available after ${new Date(this.providerError.retryAt).toLocaleTimeString()}.</p>` : ''}
                     <p class="provider-error-message" role="alert">${this.providerError.message}</p>` : ''}
-                ${this.captureState.state !== 'ready' && this.sessionActive ? html`<h3>Capture</h3><div class="session-actions"><button @click=${this.restartCapture} ?disabled=${this.isInitializing}>Restart capture</button></div><p>${this.captureState.warning || 'Capture is stopped. Typed questions can still work while the provider is connected.'}</p>` : ''}
-                <h3>Session connection</h3>
                 ${['text', 'screen'].map(operation => {
                     const owner = this._requestOwners[operation];
                     const metrics = owner?.metrics;
@@ -1061,10 +1130,11 @@ export class ContextHaloApp extends LitElement {
                         <p>Provider-reported tokens: ${Object.entries(metrics.usage || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || 'unavailable'}. Token counts are not a billing estimate.</p>`;
                 })}
                 ${this.renderLocalRuntimeDetails()}
-                <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
                 ${this.searchState.liveReason ? html`<p>Live Search: ${this.searchState.liveReason}</p>` : ''}
                 ${this.searchState.httpReason ? html`<p>Text/screen Search: ${this.searchState.httpReason}</p>` : ''}
-                ${this.providerMode === 'mistral' ? html`<p>Google Search is unavailable for Mistral. Your saved Gemini Search preference is unchanged.</p>` : html`<p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Live audio Search: ${this.searchState.liveEffective ? 'enabled' : 'off'}. Text and screen Search: ${this.searchState.httpEffective ? 'enabled' : 'off'}. Your saved preference is unchanged. Enabled means the tool is available; Google decides whether a request needs a search.</p>`}
+                ${this.providerMode === 'byok'
+                    ? html`<p>Search requested: ${this.searchState.requested ? 'yes' : 'no'}. Live audio Search: ${this.searchState.liveEffective ? 'enabled' : 'off'}. Text and screen Search: ${this.searchState.httpEffective ? 'enabled' : 'off'}. Google decides whether a request needs a search.</p>`
+                    : html`<p>Google Search is unavailable for ${PROVIDER_NAMES[this.providerMode] || 'this provider'}.</p>`}
                 <h3>Window visibility</h3>
                 <p>Restore with ${this.visibilityShortcut} or the ContextHalo notification-area icon. If the icon is unavailable, Hide minimizes to the taskbar. Hiding and minimizing do not stop capture.</p>
                 ${this.shortcutWarning ? html`<p>${this.shortcutWarning}</p>` : ''}
@@ -1112,12 +1182,13 @@ export class ContextHaloApp extends LitElement {
                 </div>
                 ${this.renderSidebar()}
                 <div class="content">
-                    ${isLive ? this.renderLiveBar() : this.sessionActive ? html`<div class="session-actions"><button @click=${() => this.navigate('assistant')}>Return to active session</button><button @click=${() => this.endSession()}>End session</button></div>` : ''}
+                    ${isLive ? this.renderLiveBar() : this.sessionActive ? html`<div class="session-actions"><button @click=${() => this.navigate('assistant')}>Return to active session</button><button type="button" aria-haspopup="dialog" @click=${this.confirmEndSession}>End session</button></div>` : ''}
                     <div class="content-inner ${isLive ? 'live' : ''}">${this.renderCurrentView()}</div>
                 </div>
             </div>
                 ${this.renderWorkspace()}
                 ${this.renderSessionDetails()}
+                ${this.renderEndConfirmation()}
         `;
     }
 }

@@ -203,10 +203,7 @@ function scheduleCaptureRecovery(kind, failedEpoch) {
             await new Promise(resolve => setTimeout(resolve, delayMs));
             if (token !== captureRecoveryToken) return false;
             const recovered = await startCapture(screenshotIntervalSeconds, imageQuality, { recovery: true, recoveryToken: token });
-            if (recovered && token === captureRecoveryToken) {
-                publishCaptureState({ warning: 'Capture recovered automatically.' });
-                return true;
-            }
+            if (recovered && token === captureRecoveryToken) return true;
         }
         if (token === captureRecoveryToken) {
             publishCaptureState({ state: 'stopped', screen: false, microphone: false, system: false, audioReady: false,
