@@ -1057,6 +1057,10 @@ export class MainView extends LitElement {
         }
         const languageError = this._localLanguageError();
         if (languageError) { this.startError = languageError; this._setupOpen = true; return; }
+        if (getContextState().captureSourceUnavailable) {
+            this.focusSessionSetting('capture');
+            return;
+        }
         return this.onStart();
     }
 
@@ -1073,27 +1077,28 @@ export class MainView extends LitElement {
     }
 
     _readinessSummary() {
-        if (this.sessionActive) return 'A session is active. Return to your answer workspace; capture is unchanged.';
+        if (this.sessionActive) return 'Return to Session to use the answer workspace or view live status.';
         if (this._configurationLoading) return 'Loading your saved configuration...';
         if (this._saveState === 'saving') return 'Saving configuration. Start will wait for it to finish.';
         if (this._saveError || this._keyError) return 'Resolve the unsaved configuration below before starting.';
         if (this._localLanguageError()) return this._localLanguageError();
         if (!this._hasConfiguredProvider()) return 'First-time setup: add a provider key below, or choose Local AI.';
         if (this._mode === 'local' && this._localOffline) return 'Offline is selected. Start checks the cached runners and models.';
-        return this._mode === 'local' ? 'Local setup selected. Runners and models are checked on start; first use may require downloads.'
-            : 'Provider settings saved locally. Credentials and model access are checked when connecting, not verified by this summary.';
+        if (this._mode === 'local') return 'Start checks your local runners and models. First use may require downloads.';
+        return this._mode === 'byok' ? 'Gemini Live checks access when connecting. Text and screen access are checked on use.'
+            : 'Start opens the session. Your provider checks key and model access on each request.';
     }
 
     _renderLaunch() {
         const provider = { byok: 'Gemini', groq: 'Groq', local: 'Local AI', mistral: 'Mistral' }[this._mode] || 'Provider';
         const audio = this._mode === 'mistral' ? 'Text and screenshots; audio off'
             : { speaker_only: 'Speaker audio', mic_only: 'Microphone', both: 'Microphone and speaker audio' }[this._audioMode] || 'Audio input';
-        const { captureState } = getContextState();
+        const { captureState, captureSourceUnavailable } = getContextState();
         return html`<section class="launch-card" aria-label="Start or return to session">
             <div class="launch-heading"><h2>${this.sessionActive ? 'Your session is running' : 'Ready for your next conversation?'}</h2>${this._renderStartButton()}</div>
             <p class="readiness" role="status">${this._readinessSummary()}</p>
             <p class="launch-summary">${provider} · ${this.selectedProfile} · ${audio}<br />
-                ${captureState?.label || 'Display hosting ContextHalo'} · ${this._mode !== 'byok' ? 'Search is not supported by this provider' : this._searchRequested ? 'Google Search requested for the next session' : 'Google Search off'}</p>
+                ${captureState?.label || 'Display hosting ContextHalo'}${captureSourceUnavailable ? ' (unavailable)' : ''} · ${this._mode !== 'byok' ? 'Search is not supported by this provider' : this._searchRequested ? 'Google Search requested for the next session' : 'Google Search off'}</p>
             <button type="button" class="mode-link" @click=${this.onOpenSettings}>Change audio, appearance or Search in Settings</button>
         </section>`;
     }
@@ -1145,6 +1150,15 @@ export class MainView extends LitElement {
         try { await action(); } catch { this.startError = 'The setting could not be saved. Your current draft is retained.'; }
     }
 
+    focusSessionSetting(section) {
+        if (section === 'capture') {
+            this.shadowRoot.querySelector('.preparation').open = true;
+            this.shadowRoot.querySelector('#captureSource').focus();
+        } else {
+            this.shadowRoot.querySelector('label[for="provider-choice"]').focus();
+        }
+    }
+
     async _changeCaptureSource(select) {
         const result = await setCaptureSource(select.value);
         if (!result?.success && !result?.cancelled) select.value = selectionKey(getContextState().captureState);
@@ -1156,19 +1170,26 @@ export class MainView extends LitElement {
     }
 
     renderPreparation() {
-        const { sessionPack: pack, cloudContext, cloudConsentSaving, captureState, captureSources, error } = getContextState();
+        const { sessionPack: pack, cloudContext, cloudConsentSaving, captureState, captureSources, captureSourceUnavailable, error } = getContextState();
+        const captureKey = selectionKey(captureState);
         const { responseMode } = getRealtimeState();
         const sharingLocked = this.sessionActive || this.isInitializing || this._configurationLoading || cloudConsentSaving;
-        return html`<details class="preparation"><summary>Screen, context &amp; response style</summary>
+        return html`<details class="preparation" @toggle=${event => {
+            if (event.currentTarget.open) void this._contextAction(refreshCaptureSources);
+        }}><summary>Screen, context &amp; response style</summary>
             <label for="responseMode">Response style (applied next session)</label>
             <select id="responseMode" .value=${responseMode} @change=${event => this._contextAction(() => setResponseMode(event.target.value))}>
                 ${RESPONSE_MODES.map(mode => html`<option value=${mode.id} .selected=${mode.id === responseMode}>${mode.label} - ${mode.description}</option>`)}
             </select>
             <label for="captureSource">Screen or window to analyze</label>
-            <select id="captureSource" .value=${selectionKey(captureState)} @change=${event => this._contextAction(() => this._changeCaptureSource(event.currentTarget))}>
-                ${captureSources.map(source => html`<option value=${source.key} .selected=${source.key === selectionKey(captureState)}>${source.label}</option>`)}
+            <select id="captureSource" .value=${captureKey} aria-describedby="capture-source-status"
+                @change=${event => this._contextAction(() => this._changeCaptureSource(event.currentTarget))}>
+                ${captureSourceUnavailable ? html`<option value=${captureKey} .selected=${true} disabled>${captureState.label} (unavailable)</option>` : ''}
+                ${captureSources.map(source => html`<option value=${source.key} .selected=${source.key === captureKey}>${source.label}</option>`)}
             </select>
-            <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(refreshCaptureSources)}>Refresh screens</button></div>
+            <p id="capture-source-status" class="form-hint" role="status" ?hidden=${!captureSourceUnavailable}>${captureSourceUnavailable
+                ? 'Reconnect or reopen the saved source and refresh, or choose another screen or window.' : ''}</p>
+            <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(refreshCaptureSources)}>Refresh screens and windows</button></div>
             <label for="contextTitle">Session title</label><input id="contextTitle" maxlength="160" .value=${pack.title} @input=${event => setPackField('title', event.target.value)} />
             <label for="contextGoal">Goal</label><input id="contextGoal" maxlength="1600" .value=${pack.goal} @input=${event => setPackField('goal', event.target.value)} />
             <label for="contextNotes">Context notes</label><textarea id="contextNotes" maxlength="6000" .value=${pack.notes} @input=${event => setPackField('notes', event.target.value)}></textarea>
@@ -1223,7 +1244,7 @@ export class MainView extends LitElement {
         const all = catalog?.all || [];
         const fields = gemini ? [
             { label: 'Gemini Live Model', value: this._geminiLiveModel, preferred: catalog?.live, all: catalog?.live || [],
-                allowAdvanced: false, onSave: this._saveGeminiLiveModel,
+                currentModel: all.find(model => model.id === this._geminiLiveModel), allowAdvanced: false, onSave: this._saveGeminiLiveModel,
                 helper: catalog?.liveMapped?.some(model => model.id === 'gemini-3.8-live-extended-thinking')
                     ? 'Gemini 3.8 Live is the low-latency default. Extended Thinking is mapped but not selectable yet because Google requires interactionStatus lifecycle handling rather than turnComplete alone.'
                     : 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
@@ -1236,7 +1257,8 @@ export class MainView extends LitElement {
             { label: 'Screenshot / Vision Model', value: this._groqImageModel, preferred: catalog?.vision, all, onSave: this._saveGroqImageModel,
                 helper: 'The advanced list may include models without image input. Saved manual IDs are preserved.' },
             { label: 'Audio Transcription Model', value: this._groqTranscriptionModel, preferred: catalog?.transcription,
-                all: catalog?.transcription || [], allowAdvanced: false, onSave: this._saveGroqTranscriptionModel },
+                all: catalog?.transcription || [], currentModel: all.find(model => model.id === this._groqTranscriptionModel),
+                allowAdvanced: false, onSave: this._saveGroqTranscriptionModel },
         ];
         const loading = !mistral && (gemini ? this._geminiCatalogLoading : this._groqCatalogLoading);
         const error = mistral ? '' : gemini ? this._geminiCatalogError : this._groqCatalogError;
@@ -1365,19 +1387,19 @@ export class MainView extends LitElement {
 
     render() {
         return html`<div class="form-wrapper">
-            <h1 class="page-title">ContextHalo</h1>
+            <h1 class="page-title" tabindex="-1">ContextHalo</h1>
             ${this._renderLaunch()}
             ${this._renderSessionStatus()}
             ${this.unsavedSession ? html`<button type="button" @click=${this.onRetrySave}>Retry saving final transcript</button>` : ''}
             ${this._saveError ? html`<div class="session-status error" role="alert"><span>${this._saveError}</span><button type="button" class="mode-link" @click=${this._retryConfiguration}>Retry configuration save</button></div>` : ''}
             <div class="setup-choices">
-                <div class="form-group"><label class="form-label" for="provider-choice">AI provider</label>
+                <div class="form-group"><label class="form-label" for="provider-choice" tabindex="-1">AI provider</label>
                     <select id="provider-choice" .value=${this._mode} ?disabled=${this.sessionActive || this.isInitializing || this._configurationLoading} @change=${event => this._saveMode(event.target.value)}>
                         <option value="groq">Groq API</option><option value="byok">Gemini API</option><option value="mistral">Mistral API (text and screenshots)</option><option value="local">Local AI (on this computer)</option>
                     </select><span class="form-hint">Uses your own account or local models.</span></div>
                 ${this._renderProfileSelector()}
             </div>
-            ${this.sessionActive ? html`<p class="form-hint">Provider and profile changes apply after this session ends.</p>` : ''}
+            ${this.sessionActive ? html`<p class="form-hint">End this session to change provider or profile.</p>` : ''}
             <fieldset class="provider-fields" ?disabled=${this.isInitializing || this.sessionActive || this._configurationLoading}>
                 ${this._mode === 'local' ? html`${this._renderLocalRuntimeControls()}<details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
                     <summary class="config-summary">Local model setup (advanced)</summary><div class="config-content">

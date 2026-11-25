@@ -41,23 +41,34 @@ function renderModelPicker(view, options) {
     const currentKnown = catalogModels.some(model => model.id === value);
     const selected = catalogModels.find(model => model.id === value) || (currentModel?.id === value ? currentModel : null);
     const selectedStatus = selected?.capabilityLabel || (selected?.preview ? 'Preview' : '');
+    const retained = hasCatalog && !currentKnown && Boolean(value);
+    const status = [
+        selectedStatus && `Selected model: ${selectedStatus}.`,
+        retained && (selected ? 'This saved model is outside the compatible choices for this feature.'
+            : 'Saved model ID. Refresh available models to check access.'),
+        stale && 'Cached catalog. Refresh to check current access.',
+    ].filter(Boolean).join(' ');
+    const fieldId = label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const statusId = `${fieldId}-status`;
 
     if (!hasCatalog) {
         return html`
             <div class="form-group">
-                <label class="form-label" for=${label}>${label}</label>
-                <input id=${label} type="text" spellcheck="false" .value=${value || ''} @input=${event => onSave.call(view, event.target.value)} />
-                ${selectedStatus ? html`<div class="form-hint" role="status">Selected model: ${selectedStatus}.</div>` : ''}
+                <label class="form-label" for=${fieldId}>${label}</label>
+                <input id=${fieldId} type="text" spellcheck="false" aria-describedby=${status ? statusId : ''}
+                    .value=${value || ''} @input=${event => onSave.call(view, event.target.value)} />
+                ${status ? html`<div id=${statusId} class="form-hint" role="status">${status}</div>` : ''}
                 ${helper ? html`<div class="form-hint">${helper}</div>` : ''}
             </div>
         `;
     }
 
+    // Let the options set selection as they render. Setting the select value
+    // before replacement options exist can clear its saved selection.
     return html`
         <div class="form-group">
-            <label class="form-label" for=${label}>${label}</label>
-            <select id=${label} .value=${value || ''} @change=${event => onSave.call(view, event.target.value)}>
-                ${!currentKnown && value ? html`<option value=${value} .selected=${true}>${value} — current/manual</option>` : ''}
+            <label class="form-label" for=${fieldId}>${label}</label>
+            <select id=${fieldId} aria-describedby=${status ? statusId : ''} @change=${event => onSave.call(view, event.target.value)}>
                 ${preferredModels.length ? html`
                     <optgroup label="Compatible / recommended">
                         ${preferredModels.map(model => html`
@@ -76,8 +87,9 @@ function renderModelPicker(view, options) {
                         `)}
                     </optgroup>
                 ` : ''}
+                ${retained ? html`<option value=${value} .selected=${true}>${value} (saved model)</option>` : ''}
             </select>
-            ${selectedStatus || stale ? html`<div class="form-hint" role="status">${selectedStatus ? `Selected model: ${selectedStatus}. ` : ''}${stale ? 'Cached catalog; refresh to check current access.' : ''}</div>` : ''}
+            ${status ? html`<div id=${statusId} class="form-hint" role="status">${status}</div>` : ''}
             ${helper ? html`<div class="form-hint">${helper}</div>` : ''}
         </div>
     `;

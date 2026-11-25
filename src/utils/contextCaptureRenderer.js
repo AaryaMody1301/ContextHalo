@@ -40,7 +40,11 @@ function selectionKey(selection) {
 }
 
 function changed() { window.dispatchEvent(new CustomEvent('session-context-changed')); }
-export function getContextState() { return { sessionPack, cloudContext, cloudConsentSaving, captureState, captureSources, error }; }
+export function getContextState() {
+    const captureSourceUnavailable = captureSources.length > 0 && ['screen', 'window'].includes(captureState.kind)
+        && !captureSources.some(source => source.key === selectionKey(captureState));
+    return { sessionPack, cloudContext, cloudConsentSaving, captureState, captureSources, captureSourceUnavailable, error };
+}
 export function loadContextState() {
     if (loaded) return Promise.resolve();
     if (loadPromise) return loadPromise;
@@ -59,7 +63,7 @@ export async function refreshCaptureSources() {
     const refresh = ++sourceRefreshRevision;
     const selection = sourceRevision;
     const updateSelection = !sourcePromise;
-    const result = await ipcRenderer.invoke('context-capture:list-sources');
+    const result = await ipcRenderer.invoke('context-capture:list-sources').catch(() => ({ success: false }));
     if (refresh !== sourceRefreshRevision) return;
 
     if (result?.success) captureSources = Array.isArray(result.data?.sources) ? result.data.sources : [];

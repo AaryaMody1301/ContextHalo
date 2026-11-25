@@ -402,10 +402,15 @@ export const contextHaloAppStyles = css`
         .session-state button { min-height:28px; flex-shrink:0; padding:4px 8px; border:1px solid var(--border-strong); border-radius:6px; background:var(--bg-elevated); color:var(--text-primary); cursor:pointer; font:inherit; }
         .session-actions { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
         .session-actions > span { flex-basis:100%; overflow-wrap:anywhere; }
-        .session-details { position:fixed; inset:12px; width:auto; height:auto; max-width:none; max-height:none; margin:0; padding:0; display:flex; flex-direction:column;
-            background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-strong); border-radius:12px; -webkit-app-region:no-drag; }
-        .session-details:not([open]) { display:none; }
-        .session-details::backdrop { background:rgb(0 0 0 / .35); }
+        .session-details, .end-confirmation {
+            position:fixed; padding:0; display:flex; flex-direction:column;
+            background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-strong); border-radius:12px; -webkit-app-region:no-drag;
+        }
+        .session-details { inset:12px; width:auto; height:auto; max-width:none; max-height:none; margin:0; }
+        .end-confirmation { width: min(420px, calc(100% - 24px)); max-height: calc(100% - 24px); }
+        .session-details:not([open]), .end-confirmation:not([open]) { display:none; }
+        .session-details::backdrop, .end-confirmation::backdrop { background:rgb(0 0 0 / .35); }
+        .session-actions button[aria-disabled="true"] { opacity: .65; cursor: default; }
         .details-header { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
         .details-header h2 { margin-right:auto; font-size:16px; }
         .details-body { flex:1; min-height:0; overflow:auto; padding:16px; font-size:14px; line-height:1.6; user-select:text; }

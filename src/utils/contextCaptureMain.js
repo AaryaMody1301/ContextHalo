@@ -46,9 +46,10 @@ function saveSelection(selection) {
 
 function getDisplayForSelection(mainWindow, selection = getStoredSelection()) {
     if (selection.kind === 'primary-display') return screen.getPrimaryDisplay();
-    if (selection.kind === 'screen' && selection.displayId) {
-        const match = screen.getAllDisplays().find(display => String(display.id) === String(selection.displayId));
-        if (match) return match;
+    if (selection.kind === 'screen') {
+        return selection.displayId
+            ? screen.getAllDisplays().find(display => String(display.id) === selection.displayId)
+            : null;
     }
     return screen.getDisplayMatching(mainWindow.getBounds());
 }
@@ -67,6 +68,8 @@ function sourceType(source) {
 
 async function listCaptureSources(mainWindow) {
     const sources = await getDesktopSources();
+    const selected = getStoredSelection();
+    const displayIds = new Set(screen.getAllDisplays().map(display => String(display.id)));
     const ownSourceId = typeof mainWindow.getMediaSourceId === 'function' ? mainWindow.getMediaSourceId() : null;
     const items = [
         { ...DEFAULT_SELECTION, key: 'active-display' },
@@ -80,7 +83,7 @@ async function listCaptureSources(mainWindow) {
     ];
 
     const screens = sources
-        .filter(source => sourceType(source) === 'screen')
+        .filter(source => sourceType(source) === 'screen' && (!source.display_id || displayIds.has(String(source.display_id))))
         .map(source => ({
             kind: 'screen',
             sourceId: source.id,
@@ -89,21 +92,20 @@ async function listCaptureSources(mainWindow) {
             key: `screen:${source.display_id || source.id}`,
         }));
 
-    const windows = sources
-        .filter(source => sourceType(source) === 'window' && source.id !== ownSourceId)
-        .filter(source => sanitizeText(source.name, 240))
-        .slice(0, 50)
-        .map(source => ({
+    const windowSources = sources.filter(source => sourceType(source) === 'window' && source.id !== ownSourceId);
+    const windows = windowSources.filter(source => sanitizeText(source.name, 240)).slice(0, 50);
+    const savedWindow = selected.kind === 'window' && windowSources.find(source => source.id === selected.sourceId);
+    if (savedWindow && !windows.includes(savedWindow)) windows.push(savedWindow);
+
+    return {
+        selected,
+        sources: [...items, ...screens, ...windows.map(source => ({
             kind: 'window',
             sourceId: source.id,
             displayId: null,
-            label: source.name,
+            label: sanitizeText(source.name, 240) || selected.label,
             key: `window:${source.id}`,
-        }));
-
-    return {
-        selected: getStoredSelection(),
-        sources: [...items, ...screens, ...windows],
+        }))],
     };
 }
 
@@ -120,7 +122,9 @@ async function resolveVideoSource(mainWindow) {
     if (selection.kind === 'screen') {
         const screenSource = sources.find(source => sourceType(source) === 'screen' &&
             (selection.displayId ? String(source.display_id) === String(selection.displayId) : source.id === selection.sourceId));
-        if (screenSource) return { source: screenSource, selection };
+        if (screenSource && (!selection.displayId || getDisplayForSelection(mainWindow, selection))) {
+            return { source: screenSource, selection };
+        }
         throw new Error('The selected display is unavailable. Choose a capture source in session settings.');
     }
 
@@ -187,6 +191,9 @@ function selectRegion(mainWindow) {
     }
 
     const display = getDisplayForSelection(mainWindow, selection);
+    if (!display) {
+        return Promise.resolve({ success: false, error: 'Choose a connected display in Home before selecting a region.' });
+    }
     const selector = new BrowserWindow({
         ...display.bounds,
         frame: false,
@@ -259,31 +266,31 @@ function selectRegion(mainWindow) {
     });
 }
 
-function installActiveDisplayWatcher(mainWindow) {
+function installCaptureDisplayWatcher(mainWindow) {
     let lastDisplayId = null;
     let timer = null;
-    const evaluate = () => {
+    const evaluate = (reset = false) => {
+        clearTimeout(timer);
         timer = null;
         if (!mainWindow || mainWindow.isDestroyed()) return;
         const selection = getStoredSelection();
-        if (selection.kind !== 'active-display') {
-            lastDisplayId = null;
-            return;
-        }
-        const displayId = String(screen.getDisplayMatching(mainWindow.getBounds()).id);
-        if (lastDisplayId === null) {
-            lastDisplayId = displayId;
-            return;
-        }
-        if (displayId === lastDisplayId) return;
+        const display = selection.kind === 'window' ? null : getDisplayForSelection(mainWindow, selection);
+        const displayId = display ? String(display.id) : null;
+        const changed = lastDisplayId !== displayId;
         lastDisplayId = displayId;
-        mainWindow.webContents.send('capture-source-invalidated', { reason: 'active-display-changed', displayId });
+        if (reset || !changed) return;
+
+        const reason = selection.kind === 'screen'
+            ? (displayId ? 'selected-display-restored' : 'selected-display-unavailable')
+            : selection.kind === 'primary-display' ? 'primary-display-changed' : 'active-display-changed';
+        cancelRegionSelection();
+        mainWindow.webContents.send('capture-source-invalidated', { reason, displayId });
     };
     const schedule = () => {
         clearTimeout(timer);
         timer = setTimeout(evaluate, 180);
     };
-    evaluate();
+    evaluate(true);
     const displayEvents = ['display-metrics-changed', 'display-added', 'display-removed'];
     if (typeof mainWindow.on === 'function') mainWindow.on('moved', schedule);
     if (typeof screen.on === 'function') for (const event of displayEvents) screen.on(event, schedule);
@@ -292,13 +299,13 @@ function installActiveDisplayWatcher(mainWindow) {
         if (typeof mainWindow.removeListener === 'function') mainWindow.removeListener('moved', schedule);
         if (typeof screen.removeListener === 'function') for (const event of displayEvents) screen.removeListener(event, schedule);
     });
-    return evaluate;
+    return () => evaluate(true);
 }
 
 function setupContextCaptureMain(mainWindow, ipcMain, isErasing = () => false) {
     if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
     installDisplayCaptureHandler(mainWindow, isErasing);
-    const refreshActiveDisplay = installActiveDisplayWatcher(mainWindow);
+    const resetDisplayWatcher = installCaptureDisplayWatcher(mainWindow);
 
     const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
     const installHandler = (channel, handler) => {
@@ -319,8 +326,11 @@ function setupContextCaptureMain(mainWindow, ipcMain, isErasing = () => false) {
     installHandler('context-capture:set-source', selection => {
         const previous = getStoredSelection();
         const data = saveSelection(selection);
-        refreshActiveDisplay?.();
-        if (JSON.stringify(previous) !== JSON.stringify(data)) mainWindow.webContents.send('capture-source-invalidated', { reason: 'selection-changed' });
+        resetDisplayWatcher();
+        if (JSON.stringify(previous) !== JSON.stringify(data)) {
+            cancelRegionSelection();
+            mainWindow.webContents.send('capture-source-invalidated', { reason: 'selection-changed' });
+        }
         return { success: true, data };
     });
     installHandler('context-capture:read-clipboard', async () => {

@@ -43,7 +43,7 @@ test('capture selection includes monitors/windows but never the app; untrusted f
     const frame={};const window={webContents:{id:1,mainFrame:frame},isDestroyed:()=>false,getBounds:()=>({}),getMediaSourceId:()=> 'window:own:0'};
     const screens=[{id:'screen:1:0',display_id:'1',name:'Primary'},{id:'screen:2:0',display_id:'2',name:'Second'},{id:'window:editor:0',name:'Editor'},{id:'window:own:0',name:'ContextHalo'}];
     const f=loadMain('src/utils/contextCaptureMain.js',{
-        electron:{desktopCapturer:{getSources:async()=>screens},screen:{getPrimaryDisplay:()=>({id:1}),getDisplayMatching:()=>({id:1})},session:{defaultSession:{setDisplayMediaRequestHandler(fn){capture=fn;}}}},
+        electron:{desktopCapturer:{getSources:async()=>screens},screen:{getPrimaryDisplay:()=>({id:1}),getDisplayMatching:()=>({id:1}),getAllDisplays:()=>[{id:1},{id:2}]},session:{defaultSession:{setDisplayMediaRequestHandler(fn){capture=fn;}}}},
         '../storage':{getPreferences:()=>prefs,updatePreference:(key,value)=>{prefs[key]=value;}}
     },{process:{platform:'win32'}});
     f.setupContextCaptureMain(window,{handle:(key,fn)=>handlers.set(key,fn),removeHandler(){}});

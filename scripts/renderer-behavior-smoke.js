@@ -145,6 +145,13 @@ async function rendererBehaviorSmoke() {
         const savedSource = (await api.storage.getPreferences()).captureSource;
         verify(captureContext.selectionKey(savedSource) === newSource && home.shadowRoot.querySelector('#captureSource').value === newSource,
             'Home capture dropdown saves the selected display through sandboxed IPC');
+        const missingSource = { kind: 'screen', displayId: '9000001', sourceId: 'screen:9000001:0', label: 'Disconnected monitor fixture' };
+        const savedMissing = await window.electronAPI.invoke('context-capture:set-source', missingSource);
+        await captureContext.refreshCaptureSources();
+        await settle(home);
+        const missingOption = home.shadowRoot.querySelector('#captureSource').selectedOptions[0];
+        verify(savedMissing.success && missingOption?.value === 'screen:9000001' && missingOption.disabled && missingOption.textContent.includes('(unavailable)'),
+            'Home visibly retains a disconnected display without selecting another source');
         await chooseCapture(originalSource);
         const select = home.shadowRoot.querySelector('#provider-choice');
         select.value = 'local'; select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -266,6 +273,12 @@ async function rendererBehaviorSmoke() {
     render(renderModelPicker({}, { label: 'Model selection fixture', value: deprecated.id, currentModel: deprecated,
         preferred: [{ id: 'gemini-3.8-flash' }], onSave() { throw new Error('Rendering must not save a model'); } }), picker);
     verify(picker.querySelector('select').value === deprecated.id && picker.textContent.includes('Selected model: Deprecated'), 'Deprecated saved model stays selected and shows its provider redirect warning');
+    render(renderModelPicker({}, { label: 'Model selection fixture', value: 'saved-private-model',
+        preferred: [{ id: 'gemini-3.8-flash' }], onSave() { throw new Error('Rendering must not save a model'); } }), picker);
+    const retainedModel = picker.querySelector('select');
+    verify(retainedModel.value === 'saved-private-model' && retainedModel.selectedOptions[0].textContent.includes('(saved model)')
+        && picker.querySelector('[role="status"]').textContent.includes('Refresh available models to check access'),
+        'An out-of-catalog model stays selected and explains how to check access');
     render(home._renderProfileSelector.call({ selectedProfile: 'meeting', _handleProfileChange() {} }), picker);
     verify(picker.querySelector('select').value === 'meeting', 'Initial profile picker displays a saved nondefault profile');
     render(home.renderPreparation(), picker);
@@ -355,6 +368,7 @@ async function rendererBehaviorSmoke() {
     await api.storage.updatePreference('backgroundTransparency',0.37);await api.theme.save('light');await api.theme.save('dark');await api.theme.load();
     verify(api.theme.currentAlpha===0.37,'Changing theme and reloading appearance preserve saved alpha');
     await api.storage.updatePreference('backgroundTransparency',storedAlpha);
+    app.providerMode = 'byok';
     app.searchState={requested:true,liveEffective:false,status:'disabled-for-session'};app.setStatus('Listening...');await settle(app);
     verify(app.shadowRoot.querySelector('.search-state').textContent.includes('off (session)'),'Requested/effective Search remains visible independently of transient status');
     app.searchState={requested:true,liveEffective:false,httpEffective:true,status:'live-setup-fallback'};await settle(app);
