@@ -1,5 +1,7 @@
 const PACKAGE_METADATA = require('../../package.json');
 
+const { abortable } = require('./requestDeadline');
+
 const RELEASE_REPOSITORY = 'AaryaMody1301/ContextHalo';
 const LATEST_RELEASE_API = `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/latest`;
 const RELEASE_PAGE_BASE = `https://github.com/${RELEASE_REPOSITORY}/releases/tag/`;
@@ -95,12 +97,32 @@ function validateLatestRelease(payload) {
     };
 }
 
-async function readBoundedJson(response) {
-    const declared = Number(response?.headers?.get?.('content-length'));
-    if (Number.isFinite(declared) && declared > MAX_RELEASE_JSON_BYTES) throw new Error('Release metadata response is too large.');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.byteLength > MAX_RELEASE_JSON_BYTES) throw new Error('Release metadata response is too large.');
-    return JSON.parse(buffer.toString('utf8'));
+async function readBoundedJson(response, signal) {
+    const declared = Number(response.headers?.get('content-length'));
+    if (declared > MAX_RELEASE_JSON_BYTES) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error('Release metadata response is too large.');
+    }
+    if (!response.body) throw new Error('Release metadata response is empty.');
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let length = 0;
+    try {
+        while (true) {
+            const { value, done } = await abortable(() => reader.read(), signal);
+            if (done) break;
+            length += value.byteLength;
+            if (length > MAX_RELEASE_JSON_BYTES) throw new Error('Release metadata response is too large.');
+            chunks.push(value);
+        }
+    } catch (error) {
+        void reader.cancel().catch(() => {});
+        throw error;
+    } finally {
+        reader.releaseLock();
+    }
+    return JSON.parse(Buffer.concat(chunks, length).toString('utf8'));
 }
 
 function publicCurrent(current) {
@@ -139,7 +161,7 @@ function createPortableUpdateController({
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(Object.assign(new Error('Update check timed out'), { name: 'AbortError' })), timeoutMs);
         try {
-            const response = await fetchImpl(LATEST_RELEASE_API, {
+            const response = await abortable(() => fetchImpl(LATEST_RELEASE_API, {
                 method: 'GET',
                 redirect: 'error',
                 signal: controller.signal,
@@ -148,9 +170,12 @@ function createPortableUpdateController({
                     'User-Agent': `ContextHalo/${installed.version}`,
                     'X-GitHub-Api-Version': '2026-03-10',
                 },
-            });
-            if (!response?.ok || response.status !== 200) throw new Error('Release service returned an unexpected status.');
-            const latest = validateLatestRelease(await readBoundedJson(response));
+            }), controller.signal);
+            if (!response?.ok || response.status !== 200) {
+                void response?.body?.cancel().catch(() => {});
+                throw new Error('Release service returned an unexpected status.');
+            }
+            const latest = validateLatestRelease(await readBoundedJson(response, controller.signal));
             const installedParsed = parsePortableReleaseTag(installed.tag);
             const newer = comparePortableReleases(latest, installedParsed) > 0;
 

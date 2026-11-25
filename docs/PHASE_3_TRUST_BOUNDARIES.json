@@ -23,7 +23,7 @@
         "storage:save-session",
         "storage:delete-session",
         "storage:delete-all-sessions",
-        "storage:clear-all"
+        "storage:clear-data"
       ],
       "boundary": "main-window WebContents + exact main frame; per-field validation; credential setters await main-process async safeStorage"
     },
@@ -127,13 +127,13 @@
       "screen-analysis-started",
       "screen-analysis-complete",
       "reconnect-failed",
-      "clear-sensitive-data",
       "click-through-toggled",
       "navigate-previous-response",
       "navigate-next-response",
       "scroll-response-up",
       "scroll-response-down",
       "shortcut",
+      "stop-capture-for-erase",
       "whisper-downloading",
       "local-ai-download-progress",
       "groq-rate-limit",

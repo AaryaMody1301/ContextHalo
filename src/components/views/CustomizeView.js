@@ -316,7 +316,7 @@ export class CustomizeView extends LitElement {
             { key: 'nextResponse', name: 'Next Response', description: 'Move to next AI response' },
             { key: 'scrollUp', name: 'Scroll Response Up', description: 'Scroll response content upward' },
             { key: 'scrollDown', name: 'Scroll Response Down', description: 'Scroll response content downward' },
-            { key: 'emergencyErase', name: 'Emergency Erase', description: 'Close the app and clear sensitive local data' },
+            { key: 'emergencyErase', name: 'Emergency Erase', description: 'Erase personal data immediately and close the app' },
         ];
     }
 
@@ -544,32 +544,23 @@ export class CustomizeView extends LitElement {
         }
     }
 
-    async clearLocalData() {
+    async clearLocalData(scope, button) {
         if (this.isClearing) return;
         this.isClearing = true;
         this.clearStatusMessage = '';
         this.clearStatusType = '';
-        this.requestUpdate();
         try {
-            const result = await contextHalo.storage.clearAll();
-            if (result?.success === false) throw new Error('No confirmation that data was cleared. Retry.');
-            this.clearStatusMessage = 'Successfully cleared all local data';
+            const result = await contextHalo.storage.clearLocalData(scope);
+            if (result.cancelled) return;
+            this.clearStatusMessage = 'Selected data deleted. Closing ContextHalo.';
             this.clearStatusType = 'success';
-            this.requestUpdate();
-            setTimeout(() => {
-                this.clearStatusMessage = 'Closing application...';
-                this.requestUpdate();
-                setTimeout(async () => {
-                    await window.electronAPI.invoke('quit-application');
-                }, 1000);
-            }, 2000);
         } catch (error) {
-            console.error('Error clearing data:', error);
-            this.clearStatusMessage = `Error clearing data: ${error.message}`;
+            this.clearStatusMessage = error.message || 'Could not clear the selected data. Retry.';
             this.clearStatusType = 'error';
         } finally {
             this.isClearing = false;
-            this.requestUpdate();
+            await this.updateComplete;
+            button.focus();
         }
     }
 
@@ -765,12 +756,13 @@ export class CustomizeView extends LitElement {
                     <button class="danger-button" @click=${this.restoreAllSettings} ?disabled=${this.isRestoring}>
                         ${this.isRestoring ? 'Restoring...' : 'Restore all settings'}
                     </button>
-                    <button class="danger-button" @click=${this.clearLocalData} ?disabled=${this.isClearing}>
-                        ${this.isClearing ? 'Clearing...' : 'Delete all data'}
-                    </button>
+                    <button class="danger-button" @click=${event => this.clearLocalData('personal', event.currentTarget)} ?disabled=${this.isClearing}>Delete personal data</button>
+                    <button class="danger-button" @click=${event => this.clearLocalData('downloads', event.currentTarget)} ?disabled=${this.isClearing}>Delete Local AI downloads</button>
+                    <button class="danger-button" @click=${event => this.clearLocalData('all', event.currentTarget)} ?disabled=${this.isClearing}>Reset all local data</button>
                 </div>
+                <p class="form-help">Emergency Erase immediately deletes personal data and keeps downloaded models and runners.</p>
                 ${this.clearStatusMessage ? html`
-                    <div class="status ${this.clearStatusType === 'success' ? 'success' : 'error'}">${this.clearStatusMessage}</div>
+                    <div role=${this.clearStatusType === 'error' ? 'alert' : 'status'} class="status ${this.clearStatusType === 'success' ? 'success' : 'error'}">${this.clearStatusMessage}</div>
                 ` : ''}
             </section>
         `;

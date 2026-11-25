@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const { installIpcHandlerHardening } = require('./utils/runtimeHardeningMain');
 const {
     installWindowsProviderTransport,
@@ -36,10 +36,12 @@ installSessionPackMain();
 installKnowledgeRagMain();
 
 const { createWindow, getShortcutState, saveGlobalShortcuts } = require('./utils/window');
-const { setupGeminiIpcHandlers, sendToRenderer } = require('./utils/gemini');
+const { setupGeminiIpcHandlers, sendToRenderer, stopProviderForDataErase } = require('./utils/gemini');
 const storage = require('./storage');
-const { listProviderModels } = require('./utils/providerModelRegistry');
+const { listProviderModels, clearProviderModelCache } = require('./utils/providerModelRegistry');
 const { createPortableUpdateController } = require('./utils/updateMain');
+
+const { createDataDeletionController } = require('./utils/dataDeletionMain');
 
 const geminiSessionRef = { current: null };
 const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE });
@@ -47,10 +49,37 @@ let mainWindow = null;
 let reliabilityAcceptance = null;
 
 
+const dataDeletion = createDataDeletionController({
+    getWindow: () => mainWindow,
+    async stopActivity(scope, signal) {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('stop-capture-for-erase');
+        reliabilityAcceptance?.stop('data-deletion');
+        abortProviderSession('Local data deletion');
+        if (scope !== 'downloads') clearProviderModelCache();
+        await stopProviderForDataErase(geminiSessionRef, signal);
+        if (scope !== 'downloads' && mainWindow && !mainWindow.isDestroyed()) {
+            const browserSession = mainWindow.webContents.session;
+            await Promise.all([browserSession.clearStorageData(), browserSession.clearCache()]);
+        }
+    },
+    quit: () => setImmediate(() => app.quit()),
+});
+
+async function emergencyErase() {
+    if (!mainWindow || mainWindow.isDestroyed() || dataDeletion.isErasing()) return;
+    mainWindow.hide();
+    const result = await dataDeletion.emergencyErase();
+    if (!result.success && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        await dialog.showMessageBox(mainWindow, { type: 'error', message: 'Emergency Erase did not complete', detail: result.error });
+    }
+}
+
 function createMainWindow() {
-    mainWindow = createWindow(sendToRenderer, geminiSessionRef);
-    setupContextCaptureMain(mainWindow, ipcMain);
-    setupPhase4Main(mainWindow, ipcMain);
+    mainWindow = createWindow(sendToRenderer, { emergencyErase, isErasing: dataDeletion.isErasing });
+    mainWindow.on('close', event => { if (dataDeletion.blocksQuit()) event.preventDefault(); });
+    setupContextCaptureMain(mainWindow, ipcMain, dataDeletion.isErasing);
+    setupPhase4Main(mainWindow, ipcMain, dataDeletion.isErasing);
     if (WINDOWS_SMOKE_MODE) require('../scripts/renderer-behavior-smoke').installWindowsSmokeCheck(mainWindow);
     return mainWindow;
 }
@@ -117,7 +146,7 @@ app.whenReady().then(async () => {
     const restoreWindowsIpc = installWindowsIpcHardening();
     const restoreIpcHandle = installIpcHandlerHardening();
     try {
-        setupGeminiIpcHandlers(geminiSessionRef);
+        setupGeminiIpcHandlers(geminiSessionRef, dataDeletion.isErasing);
     } finally {
         restoreIpcHandle();
         restoreWindowsIpc();
@@ -129,7 +158,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => app.quit());
 
-app.on('before-quit', () => {
+app.on('before-quit', event => {
+    if (dataDeletion.blocksQuit()) { event.preventDefault(); return; }
     reliabilityAcceptance?.stop('before-quit');
     abortProviderSession('Application is closing');
     require('./utils/localai').closeLocalSession();
@@ -139,6 +169,7 @@ function setupStorageIpcHandlers() {
     const saved = result => { if (result !== true) throw new Error('Could not save data. Check available disk space and folder permissions.'); };
     const handle = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
         if (!isTrustedEvent(event)) return { success: false, error: 'Untrusted renderer' };
+        if (dataDeletion.isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
         try { return await handler(...args); } catch (error) { console.warn(`${channel} failed`, { code: error.code || 'STORAGE_FAILURE' }); return { success: false, error: error.message, code: error.code || 'STORAGE_FAILURE' }; }
     });
 
@@ -153,11 +184,15 @@ function setupStorageIpcHandlers() {
     } }));
     handle('storage:set-api-key', async apiKey => {
         if (!validateString(apiKey, 10000)) throw new Error('Invalid API key');
-        saved(await storage.setApiKey(apiKey)); return { success: true };
+        saved(await storage.setApiKey(apiKey));
+        clearProviderModelCache('gemini');
+        return { success: true };
     });
     handle('storage:set-groq-api-key', async groqApiKey => {
         if (!validateString(groqApiKey, 10000)) throw new Error('Invalid Groq API key');
-        saved(await storage.setGroqApiKey(groqApiKey)); return { success: true };
+        saved(await storage.setGroqApiKey(groqApiKey));
+        clearProviderModelCache('groq');
+        return { success: true };
     });
     handle('storage:set-mistral-api-key', async mistralApiKey => {
         if (!validateString(mistralApiKey, 10000)) throw new Error('Invalid Mistral API key');
@@ -190,7 +225,7 @@ function setupStorageIpcHandlers() {
         saved(storage.deleteSession(sessionId)); return { success: true };
     });
     handle('storage:delete-all-sessions', () => ({ success: storage.deleteAllSessions() }));
-    handle('storage:clear-all', async () => ({ success: await storage.clearAllData() }));
+    ipcMain.handle('storage:clear-data', (event, scope) => dataDeletion.request(scope, () => isTrustedEvent(event)));
 }
 
 function setupGeneralIpcHandlers() {
@@ -198,6 +233,7 @@ function setupGeneralIpcHandlers() {
         if (!isTrustedEvent(event) || !['gemini', 'groq'].includes(provider)) {
             return { success: false, error: 'Invalid provider model request' };
         }
+        if (dataDeletion.isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
         try {
             const apiKey = provider === 'gemini' ? storage.getApiKey() : storage.getGroqApiKey();
             const data = await listProviderModels(provider, apiKey, { forceRefresh: forceRefresh === true });

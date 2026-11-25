@@ -128,3 +128,46 @@ test('catalog cancellation aborts the fetch and never returns a cached fallback 
     await assert.rejects(pending, { name: 'AbortError' });
     assert.equal(requestSignal.aborted, true);
 });
+
+
+test('credential rotation evicts old catalogs and stale fallback expires after 24 hours', async t => {
+    const original = global.fetch;
+    const originalNow = Date.now;
+    t.after(() => { global.fetch = original; Date.now = originalNow; });
+    let now = originalNow();
+    Date.now = () => now;
+    global.fetch = async () => new Response(JSON.stringify({ models: [] }));
+    await registry.listProviderModels('gemini', 'catalog-old-fixture');
+    await registry.listProviderModels('gemini', 'catalog-current-fixture');
+    global.fetch = async () => { throw new Error('Unavailable'); };
+    now += 7 * 60 * 60 * 1000;
+    assert.equal((await registry.listProviderModels('gemini', 'catalog-current-fixture')).stale, true);
+    now += 17 * 60 * 60 * 1000;
+    await assert.rejects(registry.listProviderModels('gemini', 'catalog-current-fixture'), /Unavailable/);
+    await assert.rejects(registry.listProviderModels('gemini', 'catalog-old-fixture'), /Unavailable/);
+});
+
+test('catalog callers share one refresh and can cancel independently', async t => {
+    const original = global.fetch;
+    t.after(() => { global.fetch = original; });
+    const calls = [];
+    global.fetch = async (_url, { signal }) => new Promise((resolve, reject) => {
+        calls.push({ signal, resolve });
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+    const first = new AbortController();
+    const second = new AbortController();
+    const abandoned = registry.listProviderModels('gemini', 'catalog-shared-fixture', { signal: first.signal });
+    const retained = registry.listProviderModels('gemini', 'catalog-shared-fixture', { signal: second.signal });
+    try {
+        first.abort();
+        await assert.rejects(abandoned, { name: 'AbortError' });
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].signal.aborted, false);
+        calls[0].resolve(new Response(JSON.stringify({ models: [] })));
+        assert.equal((await retained).source, 'api');
+    } finally {
+        second.abort();
+        await retained.catch(() => {});
+    }
+});

@@ -138,13 +138,13 @@ function isTrustedDisplayMediaRequest(request, mainWindow) {
         && request.frame === mainWindow.webContents.mainFrame);
 }
 
-function installDisplayCaptureHandler(mainWindow) {
+function installDisplayCaptureHandler(mainWindow, isErasing) {
     session.defaultSession.setDisplayMediaRequestHandler(
         async (request, callback) => {
-            if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
+            if (isErasing() || !isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
             try {
                 const { source } = await resolveVideoSource(mainWindow);
-                if (!isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
+                if (isErasing() || !isTrustedDisplayMediaRequest(request, mainWindow)) { callback({}); return; }
                 callback(source ? { video: source, ...(request.audioRequested ? { audio: 'loopback' } : {}) } : {});
             } catch (error) {
                 console.warn('Context capture source selection unavailable; capture denied.');
@@ -295,9 +295,9 @@ function installActiveDisplayWatcher(mainWindow) {
     return evaluate;
 }
 
-function setupContextCaptureMain(mainWindow, ipcMain) {
+function setupContextCaptureMain(mainWindow, ipcMain, isErasing = () => false) {
     if (process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
-    installDisplayCaptureHandler(mainWindow);
+    installDisplayCaptureHandler(mainWindow, isErasing);
     const refreshActiveDisplay = installActiveDisplayWatcher(mainWindow);
 
     const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
@@ -305,6 +305,7 @@ function setupContextCaptureMain(mainWindow, ipcMain) {
         try { ipcMain.removeHandler(channel); } catch {}
         ipcMain.handle(channel, async (event, ...args) => {
             if (!isTrusted(event)) return { success: false, error: 'Untrusted renderer' };
+            if (isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
             try {
                 return await handler(...args);
             } catch (error) {

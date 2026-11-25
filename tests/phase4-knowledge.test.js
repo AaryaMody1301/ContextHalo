@@ -54,7 +54,7 @@ test('disabled knowledge sources do not participate in retrieval', () => {
 test('request retrieval loads enabled documents once and reuses them for ranking', () => {
     let reads = 0;
     const rag = loadMain('src/utils/knowledgeRagMain.js', {
-        '../storage': { getPreferences: () => ({}) },
+        '../storage': { getPreferences: () => ({ cloudKnowledgeEnabled: true }) },
         './knowledgeStore': { getEnabledDocuments: () => { reads++; return [{ id: 'db', title: 'Database', enabled: true,
             chunks: [{ id: 'c', text: 'Database indexes reduce query scan cost.' }] }]; } },
     });
@@ -64,7 +64,7 @@ test('request retrieval loads enabled documents once and reuses them for ranking
 
 test('Gemini knowledge retrieval uses the current question after a long unrelated history', () => {
     const rag = loadMain('src/utils/knowledgeRagMain.js', {
-        '../storage': { getPreferences: () => ({}) },
+        '../storage': { getPreferences: () => ({ cloudKnowledgeEnabled: true }) },
         './knowledgeStore': { getEnabledDocuments: () => [
             { id: 'old', title: 'Gardening', enabled: true, chunks: [{ id: 'a', text: 'Orchids need careful watering.' }] },
             { id: 'new', title: 'Database', enabled: true, chunks: [{ id: 'b', text: 'PostgreSQL MVCC provides transaction isolation.' }] },
@@ -83,6 +83,46 @@ test('Gemini knowledge retrieval uses the current question after a long unrelate
     assert.equal(params.config.systemInstruction, 'Answer the question.');
     const screenshot = rag.augmentGenerateParams({ contents: [{ inlineData: { data: 'image' } }, ...question.parts] });
     assert.match(screenshot.config.systemInstruction.parts[0].text, /PostgreSQL MVCC/);
+});
+
+test('outgoing provider requests require separate cloud consent for knowledge and clipboard', async () => {
+    const preferences = { sessionPack: { title: 'Fixture review', clipboardText: 'private clipboard fixture' } };
+    const sent = [];
+    const globals = { global: { fetch: async (input, init) => { sent.push({ input, ...init }); } } };
+    const mocks = {
+        '../storage': { getPreferences: () => preferences },
+        './knowledgeStore': { getEnabledDocuments: () => [
+            { id: 'doc', title: 'Fixture document', chunks: [{ id: 'chunk', text: 'Database indexes reduce scan cost.' }] },
+        ] },
+    };
+    const pack = loadMain('src/utils/sessionPackMain.js', mocks, globals);
+    const rag = loadMain('src/utils/knowledgeRagMain.js', mocks, globals);
+    pack.installSessionPackMain();
+    rag.installKnowledgeRagMain();
+    const question = 'Explain database indexes.';
+    const params = { contents: question, config: { systemInstruction: pack.appendSessionPack('Respond.') } };
+    assert.match(params.config.systemInstruction, /Fixture review/);
+    assert.doesNotMatch(params.config.systemInstruction, /private clipboard/);
+    assert.equal(rag.retrieveContext(''), '');
+    assert.equal(rag.augmentGenerateParams(params), params);
+    assert.equal(rag.augmentLiveTextPayload({ text: question }).text, question);
+
+    const hosts = ['https://api.groq.com/openai/v1', 'https://api.mistral.ai/v1', 'http://127.0.0.1:8080/v1'];
+    for (const [knowledge, clipboard] of [[false, false], [true, false], [false, true], [true, true]]) {
+        preferences.cloudKnowledgeEnabled = knowledge;
+        preferences.cloudClipboardEnabled = clipboard;
+        assert.equal(pack.appendSessionPack('Respond.').includes('private clipboard'), clipboard);
+        assert.equal(rag.augmentLiveTextPayload({ text: question }).text.includes('reduce scan cost'), knowledge);
+        assert.equal(rag.augmentGenerateParams(params).config.systemInstruction.includes('reduce scan cost'), knowledge);
+        for (const host of hosts) {
+            await globals.global.fetch(host + '/chat/completions', { body: JSON.stringify({ messages: [{ role: 'user', content: question }] }) });
+            const { body, redirect } = sent.at(-1);
+            assert.match(body, /Fixture review/);
+            assert.equal(body.includes('reduce scan cost'), knowledge || host.startsWith('http:'));
+            assert.equal(body.includes('private clipboard'), clipboard || host.startsWith('http:'));
+            assert.equal(redirect, 'error');
+        }
+    }
 });
 
 test('practice questions and grading work without a provider', () => {
@@ -442,4 +482,43 @@ test('mixed imports reject overlong text and report every skipped selection by n
     assert.equal(pasted.success, false);
     assert.match(pasted.error, /1,500,000 characters/);
     assert.equal(knowledge.listDocuments().length, 18);
+});
+
+test('knowledge deletion confirms the exact source over trusted IPC and preserves it on cancel', async t => {
+    const { knowledge, storage } = knowledgeFixture(t);
+    const one = knowledge.addText('First synthetic source', 'The document is retained until confirmed.');
+    const other = knowledge.addText('Second synthetic source', 'An unrelated source remains in the library.');
+    const handlers = new Map();
+    const senderFrame = {};
+    const window = { isDestroyed: () => false, webContents: { id: 1, mainFrame: senderFrame } };
+    const event = { sender: { id: 1 }, senderFrame };
+    let reply;
+    const options = [];
+    const { setupPhase4Main } = loadMain('src/utils/phase4Main.js', {
+        '../storage': storage,
+        './knowledgeStore': knowledge,
+        electron: { dialog: { showMessageBox: (owner, config) => {
+            assert.equal(owner, window);
+            options.push(config);
+            return new Promise(resolve => { reply = response => resolve({ response }); });
+        } } },
+    });
+    setupPhase4Main(window, { handle: (channel, handler) => handlers.set(channel, handler) });
+    const remove = handlers.get('knowledge:delete');
+    assert.equal((await remove({ ...event, senderFrame: {} }, one.id)).success, false);
+    assert.equal(options.length, 0);
+    const cancel = remove(event, one.id);
+    assert.equal((await remove(event, other.id)).cancelled, true);
+    assert.deepEqual(options[0].buttons, ['Cancel', 'Delete knowledge source']);
+    assert.equal(options[0].defaultId, 0);
+    assert.equal(options[0].cancelId, 0);
+    assert.match(options[0].detail, /First synthetic source/);
+    reply(0);
+    assert.equal((await cancel).cancelled, true);
+    assert.ok(knowledge.loadDocument(one.id));
+    const confirm = remove(event, one.id);
+    reply(1);
+    assert.equal((await confirm).success, true);
+    assert.equal(knowledge.loadDocument(one.id), null);
+    assert.ok(knowledge.loadDocument(other.id));
 });

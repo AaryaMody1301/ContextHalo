@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { getConfigDir } = require('../storage');
 let logStream = null;
+const pendingFiles = new Set();
 let bytes = 0;
 const ALLOWED = new Set(['sessionId', 'model', 'status', 'code', 'chunkLength', 'provider', 'durationMs', 'operation', 'category', 'retryAfterMs', 'attempt', 'networkCode', 'stage', 'quotaScope', 'searchAttached', 'searchControl', 'generationReason']);
 function startTransportLog(sessionId) {
@@ -10,13 +11,17 @@ function startTransportLog(sessionId) {
     if (!/^\d{1,30}$/.test(String(sessionId))) return;
     const directory = path.join(getConfigDir(), 'logs');
     try {
-    fs.mkdirSync(directory, { recursive: true });
-    const old = fs.readdirSync(directory).filter(name => /^\d+\.jsonl$/.test(name)).sort();
-    for (const name of old.slice(0, Math.max(0, old.length - 9))) fs.unlinkSync(path.join(directory, name));
-    bytes = 0;
-    logStream = fs.createWriteStream(path.join(directory, `${sessionId}.jsonl`), { mode: 0o600 });
-    logStream.on('error', () => { logStream = null; });
-    logTransportEvent('session.started', { sessionId });
+        fs.mkdirSync(directory, { recursive: true });
+        const old = fs.readdirSync(directory).filter(name => /^\d+\.jsonl$/.test(name)).sort();
+        for (const name of old.slice(0, Math.max(0, old.length - 9))) fs.unlinkSync(path.join(directory, name));
+        bytes = 0;
+        const stream = fs.createWriteStream(path.join(directory, `${sessionId}.jsonl`), { mode: 0o600 });
+        logStream = stream;
+        const closed = new Promise(resolve => stream.once('close', resolve));
+        pendingFiles.add(closed);
+        void closed.then(() => pendingFiles.delete(closed));
+        stream.on('error', () => { if (logStream === stream) logStream = null; });
+        logTransportEvent('session.started', { sessionId });
     } catch { closeTransportLog(); }
 }
 function logTransportEvent(type, data) {
@@ -28,6 +33,11 @@ function logTransportEvent(type, data) {
     try { logStream.write(line); } catch { closeTransportLog(); }
 }
 function closeTransportLog() {
-    if (logStream) { const stream = logStream; logStream = null; try { stream.end(); } catch {} }
+    if (logStream) {
+        const stream = logStream;
+        logStream = null;
+        try { stream.end(); } catch { stream.destroy(); }
+    }
+    return Promise.all(pendingFiles);
 }
 module.exports = { startTransportLog, logTransportEvent, closeTransportLog };

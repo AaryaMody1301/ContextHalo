@@ -1,5 +1,5 @@
 import { RESPONSE_MODES, getRealtimeState, setResponseMode } from '../../utils/realtimeContextRenderer.js';
-import { loadContextState, getContextState, selectionKey, refreshCaptureSources, setCaptureSource, setPackField, captureClipboardText, clearClipboardContext } from '../../utils/contextCaptureRenderer.js';
+import { loadContextState, getContextState, selectionKey, refreshCaptureSources, setCaptureSource, setPackField, captureClipboardText, clearClipboardContext, setCloudContextSharing } from '../../utils/contextCaptureRenderer.js';
 import { GEMINI_DEFAULTS, GROQ_DEFAULTS, renderModelPicker } from '../../utils/dynamicModelRegistryRenderer.js';
 import { html, css, LitElement } from '../../assets/lit-core-3.3.3.min.js';
 import MISTRAL_MODELS from '../../utils/mistralModels.json' with { type: 'json' };
@@ -23,6 +23,8 @@ export class MainView extends LitElement {
         .preparation summary { cursor: pointer; font-weight: 600; }
         .preparation label { display: block; margin: 12px 0 4px; color: var(--text-secondary); }
         .preparation textarea, .preparation select, .preparation input { width: 100%; font: inherit; }
+        .preparation input[type=checkbox] { width: auto; }
+        .cloud-context { margin-top: 12px; padding: 8px 12px; border: 1px solid var(--border); }
         .preparation textarea { min-height: 72px; padding: 8px; resize: vertical; background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; }
         .preparation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
         .preparation button { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); padding: 7px 10px; border-radius: 6px; cursor: pointer; }
@@ -1123,9 +1125,15 @@ export class MainView extends LitElement {
         if (!result?.success && !result?.cancelled) select.value = selectionKey(getContextState().captureState);
     }
 
+    async _changeCloudContext(input) {
+        await this._contextAction(() => setCloudContextSharing(input.name, input.checked));
+        input.checked = getContextState().cloudContext[input.name];
+    }
+
     renderPreparation() {
-        const { sessionPack: pack, captureState, captureSources, error } = getContextState();
+        const { sessionPack: pack, cloudContext, cloudConsentSaving, captureState, captureSources, error } = getContextState();
         const { responseMode } = getRealtimeState();
+        const sharingLocked = this.sessionActive || this.isInitializing || this._configurationLoading || cloudConsentSaving;
         return html`<details class="preparation"><summary>Screen, context &amp; response style</summary>
             <label for="responseMode">Response style (applied next session)</label>
             <select id="responseMode" .value=${responseMode} @change=${event => this._contextAction(() => setResponseMode(event.target.value))}>
@@ -1141,7 +1149,16 @@ export class MainView extends LitElement {
             <label for="contextNotes">Context notes</label><textarea id="contextNotes" maxlength="6000" .value=${pack.notes} @input=${event => setPackField('notes', event.target.value)}></textarea>
             <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(captureClipboardText)}>Add clipboard text</button>
                 <button type="button" ?disabled=${!pack.clipboardText} @click=${() => this._contextAction(clearClipboardContext)}>Clear clipboard context</button>
-                <span>${pack.clipboardText ? `${pack.clipboardText.length} characters included` : 'Clipboard is not included'}</span></div>
+                <span>${pack.clipboardText ? `${pack.clipboardText.length} characters saved` : 'No clipboard text saved'}</span></div>
+            <fieldset class="cloud-context" ?disabled=${sharingLocked}>
+                <legend>Cloud context sharing</legend>
+                <label><input type="checkbox" name="cloudKnowledgeEnabled" .checked=${cloudContext.cloudKnowledgeEnabled}
+                    @change=${event => this._changeCloudContext(event.currentTarget)} /> Share relevant excerpts from enabled knowledge sources</label>
+                <label><input type="checkbox" name="cloudClipboardEnabled" .checked=${cloudContext.cloudClipboardEnabled}
+                    @change=${event => this._changeCloudContext(event.currentTarget)} /> Share clipboard text added to the session</label>
+                <p class="form-hint">These choices apply to future Gemini, Groq, and Mistral sessions. Local AI can use both on this device.
+                    The title, goal, and notes above go to the selected provider.</p>
+            </fieldset>
             ${error ? html`<p role="alert">${error}</p>` : ''}
         </details>`;
     }
@@ -1150,7 +1167,7 @@ export class MainView extends LitElement {
         const downloading = this._mode === 'local' && this.downloadProgress.active;
         return html`<div class="primary-action">
             <button type="button" class="start-button" aria-describedby="start-shortcut"
-                ?disabled=${!this.sessionActive && (this._configurationLoading || this.isInitializing || downloading || this.retryBlocked)}
+                ?disabled=${!this.sessionActive && (this._configurationLoading || this.isInitializing || downloading || this.retryBlocked || getContextState().cloudConsentSaving)}
                 @click=${this._handleStart}>${this.sessionActive ? 'Return to Session' : downloading ? 'Preparing local AI...' : this.isInitializing ? 'Starting...' : 'Start Session'}</button>
             <span id="start-shortcut" class="form-hint">${this.shortcut || 'Ctrl+Enter'}</span>
             ${downloading ? html`<div class="download-controls"><span>${this.downloadProgress.label || 'Downloading local AI files'}${Number.isFinite(this.downloadProgress.percentage) ? `: ${this.downloadProgress.percentage}%` : ''}</span>

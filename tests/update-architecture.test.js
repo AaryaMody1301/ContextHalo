@@ -44,19 +44,10 @@ function releasePayload(build = 368, overrides = {}) {
 
 function response(payload, options = {}) {
     const bytes = Buffer.from(JSON.stringify(payload), 'utf8');
-    return {
-        ok: options.ok ?? true,
+    return new Response(bytes, {
         status: options.status ?? 200,
-        headers: {
-            get(name) {
-                if (String(name).toLowerCase() === 'content-length') return String(options.contentLength ?? bytes.byteLength);
-                return null;
-            },
-        },
-        async arrayBuffer() {
-            return Uint8Array.from(bytes).buffer;
-        },
-    };
+        headers: { 'content-length': String(options.contentLength ?? bytes.byteLength) },
+    });
 }
 
 function packagedApp(version = '0.8.0') {
@@ -206,6 +197,45 @@ test('bad status, oversized or malformed release metadata fails closed without r
         assert.equal(result.status, 'error');
         assert.equal(result.message, 'Could not check the official ContextHalo release feed. Your current app is unchanged.');
         assert.equal(result.releasePageUrl, undefined);
+    }
+});
+
+test('update metadata streams within 256 KiB and cancels oversize or stalled bodies', async () => {
+    const bytes = Buffer.from(JSON.stringify(releasePayload()));
+    for (const mode of ['valid', 'declared', 'streamed', 'stalled']) {
+        let cancelled = false;
+        let sent = false;
+        const body = new ReadableStream({
+            pull(stream) {
+                if (mode === 'stalled') return;
+                if (mode === 'valid') {
+                    if (!sent) stream.enqueue(bytes.subarray(0, 32));
+                    else {
+                        stream.enqueue(bytes.subarray(32));
+                        stream.close();
+                    }
+                } else if (!sent) stream.enqueue(new Uint8Array(256 * 1024));
+                else stream.enqueue(Uint8Array.of(32));
+                sent = true;
+            },
+            cancel() { cancelled = true; },
+        });
+        const controller = createPortableUpdateController({
+            app: packagedApp(),
+            packageMetadata: metadata(),
+            platform: 'win32',
+            arch: 'x64',
+            timeoutMs: mode === 'stalled' ? 20 : 1000,
+            fetchImpl: async () => ({
+                ok: true,
+                status: 200,
+                body,
+                headers: new Headers(mode === 'declared' ? { 'content-length': '262145' } : {}),
+                arrayBuffer() { throw new Error('Full response buffering is disabled in this fixture'); },
+            }),
+        });
+        assert.equal((await controller.check()).status, mode === 'valid' ? 'update-available' : 'error', mode);
+        assert.equal(cancelled, mode !== 'valid', mode);
     }
 });
 

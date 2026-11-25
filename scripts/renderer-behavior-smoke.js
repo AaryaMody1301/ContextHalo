@@ -212,16 +212,14 @@ async function rendererBehaviorSmoke() {
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
     const text='The data pipeline uses idempotent ingestion to prevent duplicate events. Atomic checkpoints record the last committed offset so interrupted jobs resume safely. Partitioned tables and bounded retries improve recovery without silently discarding records.';
     const knowledgeDoc=await call('knowledge:add-text','Smoke test data pipeline',text);
-    try {
-        const hits=await call('knowledge:search','idempotent ingestion');
-        verify(hits.some(hit=>hit.text.includes('idempotent')),'Knowledge add and retrieval use real IPC');
-        const practice=await call('practice:generate',{sourceType:'knowledge',documentIds:[knowledgeDoc.id],count:2});
-        verify(practice.questions.length>0,'Practice generation creates source-grounded questions');
-        const grade=await call('practice:grade',practice.setId,practice.questions[0].id,text);
-        verify(Number.isFinite(grade.score) && typeof grade.reference==='string','Practice grading returns score and reference');
-        await call('knowledge:set-enabled',knowledgeDoc.id,false);
-        verify((await call('knowledge:search','idempotent ingestion')).length===0,'Disabled knowledge is excluded from retrieval');
-    } finally { await call('knowledge:delete',knowledgeDoc.id); }
+    const hits=await call('knowledge:search','idempotent ingestion');
+    verify(hits.some(hit=>hit.text.includes('idempotent')),'Knowledge add and retrieval use real IPC');
+    const practice=await call('practice:generate',{sourceType:'knowledge',documentIds:[knowledgeDoc.id],count:2});
+    verify(practice.questions.length>0,'Practice generation creates source-grounded questions');
+    const grade=await call('practice:grade',practice.setId,practice.questions[0].id,text);
+    verify(Number.isFinite(grade.score) && typeof grade.reference==='string','Practice grading returns score and reference');
+    await call('knowledge:set-enabled',knowledgeDoc.id,false);
+    verify((await call('knowledge:search','idempotent ingestion')).length===0,'Disabled knowledge is excluded from retrieval');
     const sessionId='1234567890123';
     await call('storage:save-session',sessionId,{profile:'meeting',liveTranscript:[{text:'We decided to deploy on Friday.',provider:'gemini',timestamp:1}],markers:[{type:'decision',timestamp:1}],sessionPack:{title:'Smoke session'}});
     await call('storage:save-session',sessionId,{conversationHistory:[{transcription:'What is next?',ai_response:'Test the deployment.'}]});
@@ -250,6 +248,8 @@ async function rendererBehaviorSmoke() {
     verify((await ipc.invoke('storage:get-session','../escape')).success===false,'IPC rejects invalid session paths');
     app.navigate('main');await settle(app);
     const home=app.shadowRoot.querySelector('main-view'); await settle(home);
+    const cloudOptions = [...home.shadowRoot.querySelectorAll('.cloud-context input')];
+    verify(cloudOptions.length === 2 && cloudOptions.every(option => !option.checked), 'Hosted knowledge and clipboard sharing start off');
     const { renderModelPicker } = await import('./utils/dynamicModelRegistryRenderer.js');
     const { render } = await import('./assets/lit-core-3.3.3.min.js');
     const picker = document.createElement('div');
@@ -330,6 +330,35 @@ async function rendererBehaviorSmoke() {
     app.closeSessionDetails();app.requestError=null;
     app.navigate('customize'); await settle(app);
     const settings = app.shadowRoot.querySelector('customize-view'); await waitUntil(() => !settings.settingsLoading);
+    const deletionButtons = [...settings.shadowRoot.querySelectorAll('.danger-surface button')];
+    const scopes = [
+        ['Delete personal data', 'personal'],
+        ['Delete Local AI downloads', 'downloads'],
+        ['Reset all local data', 'all'],
+    ];
+    const originalDeletion = api.storage.clearLocalData;
+    try {
+        for (const [label, scope] of scopes) {
+            const button = deletionButtons.find(item => item.textContent.trim() === label);
+            verify(Boolean(button), 'Settings shows the ' + label + ' scope');
+            let selected;
+            api.storage.clearLocalData = async requested => { selected = requested; return { success: true, cancelled: true }; };
+            button.click();
+            await waitUntil(() => selected === scope && !settings.isClearing);
+            await settle(settings);
+            verify(!settings.clearStatusMessage && settings.shadowRoot.activeElement === button, label + ' cancel restores button focus');
+        }
+        api.storage.clearLocalData = async () => { throw new Error('Fixture deletion failed. Retry.'); };
+        const retry = deletionButtons.find(item => item.textContent.trim() === 'Delete personal data');
+        retry.click();
+        await waitUntil(() => !settings.isClearing && settings.clearStatusType === 'error');
+        await settle(settings);
+        verify(!retry.disabled && settings.shadowRoot.querySelector('.danger-surface [role=alert]')?.textContent.includes('Retry'), 'Failed deletion is announced and can be retried');
+    } finally {
+        api.storage.clearLocalData = originalDeletion;
+        settings.clearStatusMessage = '';
+        settings.clearStatusType = '';
+    }
     const originalSave = api.storage.updatePreference;
     api.storage.updatePreference = async () => ({ success:false, error:'Controlled save failure' });
     try {

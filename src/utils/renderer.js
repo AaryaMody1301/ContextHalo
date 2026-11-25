@@ -633,11 +633,8 @@ ipcRenderer.on('save-screen-analysis', async (event, data) => {
     }
 });
 
-// Listen for emergency erase command from main process
-ipcRenderer.on('clear-sensitive-data', async () => {
-    console.log('Clearing all data...');
-    await storage.clearAll();
-});
+// Main owns deletion. The renderer only stops its media tracks.
+ipcRenderer.on('stop-capture-for-erase', () => stopCapture());
 
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {

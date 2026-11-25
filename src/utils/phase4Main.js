@@ -1,10 +1,12 @@
 const crypto = require('node:crypto');
 const { dialog } = require('electron');
+const { confirmDeletion } = require('./dataDeletionMain');
 const storage = require('../storage');
 const {
     SUPPORTED_EXTENSIONS,
     initializeKnowledgeStore,
     getKnowledgeLibrary,
+    loadDocument,
     loadDocuments,
     getEnabledDocuments,
     importFiles,
@@ -120,15 +122,17 @@ function gradePractice(setId, questionId, answer) {
     };
 }
 
-function setupPhase4Main(mainWindow, ipcMain) {
+function setupPhase4Main(mainWindow, ipcMain, isErasing = () => false) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     initializeKnowledgeStore();
 
+    let confirmingDelete = false;
     const isTrusted = event => Boolean(event?.sender && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id && event.senderFrame === mainWindow.webContents.mainFrame);
     const installHandler = (channel, handler) => {
         try { ipcMain.removeHandler(channel); } catch {}
         ipcMain.handle(channel, async (event, ...args) => {
             if (!isTrusted(event)) return { success: false, error: 'Untrusted renderer' };
+            if (isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
             try { return await handler(...args); }
             catch (error) { return { success: false, error: error?.message || String(error) }; }
         });
@@ -149,6 +153,7 @@ function setupPhase4Main(mainWindow, ipcMain) {
             ],
         });
         if (selection.canceled || !selection.filePaths.length) return { success: true, cancelled: true, data: { imported: [], failed: [] } };
+        if (isErasing()) return { success: true, cancelled: true };
         return { success: true, data: importFiles(selection.filePaths) };
     });
     installHandler('knowledge:add-text', (title, content) => {
@@ -159,7 +164,28 @@ function setupPhase4Main(mainWindow, ipcMain) {
         success: true,
         data: setDocumentEnabled(sanitizeId(id, 64), enabled === true),
     }));
-    installHandler('knowledge:delete', id => ({ success: deleteDocument(sanitizeId(id, 64)) }));
+    ipcMain.removeHandler?.('knowledge:delete');
+    ipcMain.handle('knowledge:delete', async (event, id) => {
+        if (!isTrusted(event)) return { success: false, error: 'Untrusted renderer' };
+        if (isErasing() || confirmingDelete) return { success: true, cancelled: true };
+        const cleanId = sanitizeId(id, 64);
+        if (!cleanId || id !== cleanId) return { success: false, error: 'Invalid knowledge source.' };
+        confirmingDelete = true;
+        try {
+            const target = loadDocument(cleanId);
+            if (!target) return { success: false, error: 'Knowledge source not found. Refresh the library and retry.' };
+            const accepted = await confirmDeletion(mainWindow, {
+                action: 'Delete knowledge source',
+                detail: `Remove “${sanitizeString(target.title, 180) || 'Untitled source'}” and its indexed excerpts from ContextHalo. Imported files in their original location are kept.`,
+            });
+            if (!accepted || !isTrusted(event) || isErasing()) return { success: true, cancelled: true };
+            return { success: deleteDocument(cleanId) };
+        } catch (error) {
+            return { success: false, error: error?.message || 'Could not delete the knowledge source. Retry.' };
+        } finally {
+            confirmingDelete = false;
+        }
+    });
     installHandler('knowledge:search', (query, options = {}) => ({
         success: true,
         data: searchKnowledge(sanitizeString(query, 12_000), {

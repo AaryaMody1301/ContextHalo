@@ -1,5 +1,7 @@
 const ipcRenderer = window.electronAPI;
 let sessionPack = { title: '', goal: '', notes: '', clipboardText: '' };
+let cloudContext = { cloudKnowledgeEnabled: false, cloudClipboardEnabled: false };
+let cloudConsentSaving = false;
 let captureState = { kind: 'active-display', sourceId: null, displayId: null, label: 'Display hosting ContextHalo' };
 let captureSources = [];
 let packSaveTimer = null;
@@ -38,13 +40,17 @@ function selectionKey(selection) {
 }
 
 function changed() { window.dispatchEvent(new CustomEvent('session-context-changed')); }
-export function getContextState() { return { sessionPack, captureState, captureSources, error }; }
+export function getContextState() { return { sessionPack, cloudContext, cloudConsentSaving, captureState, captureSources, error }; }
 export function loadContextState() {
     if (loaded) return Promise.resolve();
     if (loadPromise) return loadPromise;
     loadPromise = (async () => {
         const preferences = await contextHalo.storage.getPreferences();
         sessionPack = sanitizePack(preferences.sessionPack);
+        cloudContext = {
+            cloudKnowledgeEnabled: preferences.cloudKnowledgeEnabled === true,
+            cloudClipboardEnabled: preferences.cloudClipboardEnabled === true,
+        };
         await refreshCaptureSources(); loaded = true;
     })().finally(() => { loadPromise = null; });
     return loadPromise;
@@ -66,6 +72,19 @@ export async function refreshCaptureSources() {
         }
     }
     changed();
+}
+export async function setCloudContextSharing(key, value) {
+    if (!loaded || cloudConsentSaving || !Object.hasOwn(cloudContext, key)) return;
+    cloudConsentSaving = true;
+    changed();
+    try {
+        const result = await contextHalo.storage.updatePreference(key, value === true);
+        if (!result?.success) throw new Error('Could not save cloud sharing preferences.');
+        cloudContext = { ...cloudContext, [key]: value === true };
+    } finally {
+        cloudConsentSaving = false;
+        changed();
+    }
 }
 export async function saveSessionPack() {
     clearTimeout(packSaveTimer);

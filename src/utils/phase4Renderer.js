@@ -162,8 +162,20 @@ async function renderKnowledge(app, body) {
                 remove.setAttribute('aria-label', `Delete knowledge source ${document.title}`);
                 remove.addEventListener('click', async () => {
                     remove.disabled = true;
-                    try { await invoke('knowledge:delete', document.id); await redraw(); }
-                    catch (error) { statusLine(body, error.message, true); remove.disabled = false; }
+                    try {
+                        const result = await invoke('knowledge:delete', document.id);
+                        if (result.cancelled) return;
+                        await redraw();
+                        refreshButton.focus();
+                        statusLine(body, 'Knowledge source deleted.');
+                    } catch (error) {
+                        statusLine(body, error.message, true);
+                    } finally {
+                        if (remove.isConnected) {
+                            remove.disabled = false;
+                            remove.focus();
+                        }
+                    }
                 });
                 row.append(toggle, main, remove);
                 list.append(row);

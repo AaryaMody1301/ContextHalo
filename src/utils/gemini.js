@@ -1203,7 +1203,66 @@ function reportUserRequestResult(result, operation) {
     return { ...result, request: getRequestMetadata(), metrics: getRequestMetrics() };
 }
 
-function setupGeminiIpcHandlers(geminiSessionRef) {
+async function closeActiveProviderSession(geminiSessionRef) {
+    liveGeneration += 1;
+    liveController.abort(Object.assign(new Error('Session ended'), { name: 'AbortError' }));
+    isInitializingSession = false;
+    mainSessionActive = false;
+    isUserClosing = true;
+    sessionParams = null;
+    geminiLiveRuntime?.stop();
+    geminiLiveRuntime = null;
+    manualReconnectPromise = null;
+    currentTranscription = '';
+    messageBuffer = '';
+    closeSessionRequests();
+    require('./contextCaptureMain').cancelRegionSelection();
+    try {
+        if (currentProviderMode === 'local') {
+            getLocalAi().closeLocalSession();
+            currentProviderMode = 'byok';
+            return { success: true };
+        }
+
+        if (currentProviderMode === 'groq' || currentProviderMode === 'mistral') {
+            groqConversationHistory = [];
+            mistralConversationHistory = [];
+            currentProviderMode = 'byok';
+            sendToRenderer('update-status', 'Session closed');
+            return { success: true };
+        }
+
+        const session = geminiSessionRef.current;
+        if (session) {
+            await session.close();
+            if (geminiSessionRef.current === session) geminiSessionRef.current = null;
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.warn('Error closing session:');
+        return { success: false, error: error.message };
+    } finally {
+        void closeTransportLog();
+    }
+}
+
+async function stopProviderForDataErase(geminiSessionRef, signal) {
+    const starting = initializePromise;
+    const reconnecting = manualReconnectPromise;
+    const result = await closeActiveProviderSession(geminiSessionRef);
+    if (!result.success) throw new Error('Could not close the active provider');
+    await Promise.all([starting, reconnecting, getLocalAi().waitForLocalShutdown(), closeTransportLog()]);
+    signal.throwIfAborted();
+    currentSessionId = null;
+    conversationHistory = [];
+    screenAnalysisHistory = [];
+    geminiTurnModelParts = new WeakMap();
+    currentCustomPrompt = null;
+    currentSystemPrompt = null;
+}
+
+function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
     const register = (channel, handler) => ipcMain.handle(channel, async (event, ...args) => {
@@ -1213,9 +1272,13 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         if (!mainWindow || event.senderFrame !== mainWindow.webContents.mainFrame) {
             return { success: false, error: 'Untrusted renderer' };
         }
+        if (isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
         const initializing = channel.startsWith('initialize-');
         if (initializing && initializePromise && !liveController.signal.aborted) return initializePromise;
-        if (initializing && initializePromise) await initializePromise.catch(() => {});
+        if (initializing && initializePromise) {
+            await initializePromise.catch(() => {});
+            if (isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
+        }
         if (initializing && mainSessionActive) return { success: true, provider: currentProviderMode, search: { ...searchState }, alreadyActive: true };
         const execute = async () => {
             if (initializing) {
@@ -1467,55 +1530,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }, { ...request, timeoutMs: currentProviderMode === 'local' ? 180000 : currentProviderMode === 'byok' ? SCREEN_SESSION_TIMEOUT_MS : 65000 });
     });
 
-    register('close-session', async event => {
-        liveGeneration += 1;
-        liveController.abort(Object.assign(new Error('Session ended'), { name: 'AbortError' }));
-        isInitializingSession = false;
-        mainSessionActive = false;
-        isUserClosing = true;
-        sessionParams = null;
-        geminiLiveRuntime?.stop();
-        geminiLiveRuntime = null;
-        manualReconnectPromise = null;
-        currentTranscription = '';
-        messageBuffer = '';
-        closeSessionRequests();
-        require('./contextCaptureMain').cancelRegionSelection();
-        try {
-            if (currentProviderMode === 'local') {
-                getLocalAi().closeLocalSession();
-                currentProviderMode = 'byok';
-                closeTransportLog();
-                return { success: true };
-            }
-
-            if (currentProviderMode === 'groq' || currentProviderMode === 'mistral') {
-                groqConversationHistory = [];
-                mistralConversationHistory = [];
-                currentProviderMode = 'byok';
-                closeTransportLog();
-                sendToRenderer('update-status', 'Session closed');
-                return { success: true };
-            }
-
-            // Set flag to prevent reconnection attempts
-            isUserClosing = true;
-            sessionParams = null;
-
-            // Cleanup session
-            if (geminiSessionRef.current) {
-                await geminiSessionRef.current.close();
-                geminiSessionRef.current = null;
-            } else {
-                closeTransportLog();
-            }
-
-            return { success: true };
-        } catch (error) {
-            console.warn('Error closing session:');
-            return { success: false, error: error.message };
-        }
-    });
+    register('close-session', () => closeActiveProviderSession(geminiSessionRef));
 
     // Conversation history IPC handlers
     register('get-current-session', async event => {
@@ -1588,6 +1603,7 @@ module.exports = {
     resamplePcm16Mono,
     normalizeGeminiAudioPayload,
     sendImageToGeminiHttp,
+    stopProviderForDataErase,
     setupGeminiIpcHandlers,
     classifyGeminiFailure, runGeminiRequest, connectGeminiLiveWithGuard, groundingFromResponse, configureSearch,
     formatSpeakerResults,
