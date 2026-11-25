@@ -354,6 +354,11 @@ async function rendererBehaviorSmoke() {
         await waitUntil(() => !settings.isClearing && settings.clearStatusType === 'error');
         await settle(settings);
         verify(!retry.disabled && settings.shadowRoot.querySelector('.danger-surface [role=alert]')?.textContent.includes('Retry'), 'Failed deletion is announced and can be retried');
+        api.storage.clearLocalData = async () => ({ success: true });
+        retry.click();
+        await waitUntil(() => !settings.isClearing && settings.clearStatusType === 'success');
+        await settle(settings);
+        verify(settings.shadowRoot.querySelector('.danger-surface [role=status]')?.textContent.includes('Selected data deleted'), 'Confirmed deletion is announced');
     } finally {
         api.storage.clearLocalData = originalDeletion;
         settings.clearStatusMessage = '';
