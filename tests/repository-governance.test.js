@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { samePolicy, governanceStatus, readPolicy } = require('../scripts/repository-governance');
+const { pullRequestScope, validationScope } = require('../scripts/pr-validation-scope');
 
 const read = path => fs.readFileSync(path, 'utf8');
 
@@ -75,6 +76,22 @@ test('governance application cannot run accidentally under the normal Actions to
     assert.doesNotMatch(workflows, /repository-governance\.js\s+--apply/);
 });
 
+test('PR validation runs portable checks when change scope requires them', () => {
+    assert.equal(pullRequestScope(['README.md', 'docs/guide.md']), 'source');
+    assert.equal(pullRequestScope(['tests/phase4-knowledge.test.js']), 'windows');
+    assert.equal(pullRequestScope(['src/utils/practiceCore.js', 'README.md']), 'windows');
+    assert.equal(pullRequestScope(['src/components/views/HistoryView.js']), 'windows');
+    for (const file of ['package.json', 'package-lock.json', 'preload.js', 'src/index.js',
+        'src/assets/logo.ico', 'src/utils/windowsRuntimeMain.js', 'scripts/check-source.js',
+        '.github/workflows/build-windows.yml', 'docs/PHASE_8_REPOSITORY_GOVERNANCE.json']) {
+        assert.equal(pullRequestScope(['docs/guide.md', file]), 'portable', file);
+    }
+    assert.equal(pullRequestScope([]), 'portable');
+    assert.equal(validationScope('push'), 'portable');
+    assert.equal(validationScope('workflow_dispatch'), 'portable');
+    assert.equal(validationScope('pull_request', 'unavailable'), 'portable');
+});
+
 test('source and dependency checks gate the Windows build for pushes and PRs', () => {
     const workflow = read('.github/workflows/build-windows.yml').replace(/\r\n/g, '\n');
     assert.match(workflow, /^  push:\n    branches: \[main\]\n  pull_request:\n    branches: \[main\]$/m);
@@ -83,10 +100,22 @@ test('source and dependency checks gate the Windows build for pushes and PRs', (
     assert.match(sourceCheck, /^    name: Check ContextHalo source and provenance$/m);
     assert.match(sourceCheck, /^        run: node --test tests\/repository-provenance\.test\.js$/m);
     assert.match(sourceCheck, /^        run: npm run check$/m);
+    assert.match(sourceCheck, /scope: \$\{\{ steps\.scope\.outputs\.scope \}\}/);
+    assert.match(sourceCheck, /fetch-depth: 2/);
+    assert.match(sourceCheck, /run: node scripts\/pr-validation-scope\.js/);
 
     const build = workflowJob(workflow, 'build');
     assert.match(build, /^    name: Build ContextHalo Windows x64 EXE$/m);
     assert.match(build, /^    needs: source-check$/m);
+    assert.match(build, /^    if: needs\.source-check\.outputs\.scope != 'source'$/m);
+    assert.match(build, /BUILD_PORTABLE: \$\{\{ needs\.source-check\.outputs\.scope != 'windows' \}\}/);
+    assert.match(build, /- name: Run all regression tests\n        run: npm test\n/);
+    assert.doesNotMatch(build, /- name: Run Electron behavior and layout smoke test\n        if:/);
+    for (const step of ['Resolve release metadata', 'Build portable Windows EXE',
+        'Verify portable EXE and record checksum', 'Record portable EXE Authenticode state',
+        'Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale', 'Upload portable EXE artifact']) {
+        assert.ok(build.includes('      - name: ' + step + '\n        if: env.BUILD_PORTABLE == \'true\'\n'), step);
+    }
 });
 
 test('release workflow requires explicit publication from main and verifies published identity', () => {

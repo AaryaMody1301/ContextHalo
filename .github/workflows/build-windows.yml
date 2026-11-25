@@ -26,16 +26,25 @@ jobs:
     name: Check ContextHalo source and provenance
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+
+      - name: Determine pull request validation scope
+        id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/pr-validation-scope.js
 
       - name: Verify lockfile and dependency provenance
         run: node --test tests/repository-provenance.test.js
@@ -43,9 +52,16 @@ jobs:
       - name: Run source validation
         run: npm run check
 
+      - name: Check repository policy and branding
+        if: steps.scope.outputs.scope == 'source'
+        run: node --test tests/repository-governance.test.js tests/brand.test.js
+
   build:
     name: Build ContextHalo Windows x64 EXE
     needs: source-check
+    if: needs.source-check.outputs.scope != 'source'
+    env:
+      BUILD_PORTABLE: ${{ needs.source-check.outputs.scope != 'windows' }}
     runs-on: windows-2022
     timeout-minutes: 20
     permissions:
@@ -89,6 +105,7 @@ jobs:
           cache: npm
 
       - name: Resolve release metadata
+        if: env.BUILD_PORTABLE == 'true'
         id: release_metadata
         shell: pwsh
         run: |
@@ -129,9 +146,11 @@ jobs:
           }
 
       - name: Build portable Windows EXE
+        if: env.BUILD_PORTABLE == 'true'
         run: npm run build:portable -- --publish never "-c.extraMetadata.version=${{ steps.release_metadata.outputs.app_version }}" "-c.extraMetadata.releaseBuild=${{ github.run_number }}" "-c.extraMetadata.releaseTag=${{ steps.release_metadata.outputs.tag }}" "-c.extraMetadata.releaseCommit=${{ github.sha }}"
 
       - name: Verify portable EXE and record checksum
+        if: env.BUILD_PORTABLE == 'true'
         shell: pwsh
         run: |
           $exe = Get-Item "dist/ContextHalo-Windows-x64.exe"
@@ -141,6 +160,7 @@ jobs:
           Write-Host "Portable EXE SHA-256: $hash"
 
       - name: Record portable EXE Authenticode state
+        if: env.BUILD_PORTABLE == 'true'
         shell: pwsh
         run: |
           $exe = (Get-Item "dist/ContextHalo-Windows-x64.exe").FullName
@@ -161,6 +181,7 @@ jobs:
           }
 
       - name: Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale
+        if: env.BUILD_PORTABLE == 'true'
         shell: pwsh
         run: |
           $exe = (Get-Item "dist/ContextHalo-Windows-x64.exe").FullName
@@ -219,6 +240,7 @@ jobs:
           retention-days: 7
 
       - name: Upload portable EXE artifact
+        if: env.BUILD_PORTABLE == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ContextHalo-Windows-x64-Portable
