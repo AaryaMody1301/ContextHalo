@@ -2,24 +2,11 @@ const storage = require('../storage');
 const { formatRetrievedContext, normalizeText, retrieveChunks } = require('./knowledgeCore');
 const { getEnabledDocuments } = require('./knowledgeStore');
 
+const { chatRequestScope, getProviderSessionPack } = require('./sessionPackMain');
+
 const KNOWLEDGE_MARKER = '[ContextHalo knowledge]';
 let installed = false;
 let fetchPatched = false;
-
-function requestUrl(input) {
-    try {
-        if (typeof input === 'string' || input instanceof URL) return new URL(input.toString());
-        if (input && typeof input.url === 'string') return new URL(input.url);
-    } catch {}
-    return null;
-}
-
-function isChatRequest(url) {
-    if (!url) return false;
-    if (url.hostname === 'api.groq.com' && url.pathname.includes('/chat/completions')) return true;
-    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') return true;
-    return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/v1/chat/completions');
-}
 
 function messageText(content) {
     if (typeof content === 'string') return content;
@@ -40,16 +27,15 @@ function lastUserQuery(messages) {
     return '';
 }
 
-function sessionSeed() {
-    const pack = storage.getPreferences()?.sessionPack;
-    if (!pack || typeof pack !== 'object') return '';
-    return normalizeText([pack.goal, pack.notes, pack.clipboardText].filter(Boolean).join('\n'), 10_000);
-}
-
 function retrieveContext(query, options = {}) {
+    const preferences = storage.getPreferences();
+    const scope = options.scope || 'cloud';
+    if (scope !== 'local' && preferences?.cloudKnowledgeEnabled !== true) return '';
     const documents = getEnabledDocuments();
     if (!documents.length) return '';
-    const effectiveQuery = normalizeText(query, 12_000) || sessionSeed();
+    const pack = getProviderSessionPack(scope, preferences);
+    const seed = normalizeText([pack.goal, pack.notes, pack.clipboardText].filter(Boolean).join('\n'), 10_000);
+    const effectiveQuery = normalizeText(query, 12_000) || seed;
     const results = effectiveQuery
         ? retrieveChunks(documents, effectiveQuery, { limit: options.limit || 5, maxChars: options.maxChars || 7200 })
         : documents.slice(0, 4).flatMap(document => (document.chunks || []).slice(0, 1).map(chunk => ({
@@ -69,9 +55,9 @@ function appendContext(base, context) {
     return text ? `${text}\n\n${context}` : context;
 }
 
-function augmentMessages(messages) {
+function augmentMessages(messages, scope) {
     if (!Array.isArray(messages)) return messages;
-    const context = retrieveContext(lastUserQuery(messages));
+    const context = retrieveContext(lastUserQuery(messages), { scope });
     if (!context) return messages;
 
     let updated = false;
@@ -88,15 +74,17 @@ function patchProviderFetch() {
     if (fetchPatched || typeof global.fetch !== 'function') return;
     const previousFetch = global.fetch.bind(global);
     global.fetch = (input, init = {}) => {
-        const url = requestUrl(input);
-        if (!isChatRequest(url) || typeof init.body !== 'string') return previousFetch(input, init);
-        try {
-            const body = JSON.parse(init.body);
-            if (Array.isArray(body.messages)) body.messages = augmentMessages(body.messages);
-            return previousFetch(input, { ...init, body: JSON.stringify(body) });
-        } catch {
-            return previousFetch(input, init);
+        const scope = chatRequestScope(input);
+        if (scope && typeof init.body === 'string') {
+            try {
+                const body = JSON.parse(init.body);
+                const messages = augmentMessages(body.messages, scope);
+                if (messages !== body.messages) init = { ...init, redirect: 'error', body: JSON.stringify({ ...body, messages }) };
+            } catch {
+                // Send the original request if optional context could not be added.
+            }
         }
+        return previousFetch(input, init);
     };
     fetchPatched = true;
 }

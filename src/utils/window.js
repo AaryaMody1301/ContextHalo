@@ -103,7 +103,7 @@ function isTrustedMainFramePermission(webContents, mainWindow, permission, detai
     return true;
 }
 
-function createWindow(sendToRenderer, geminiSessionRef) {
+function createWindow(sendToRenderer, { emergencyErase, isErasing = () => false } = {}) {
     const workArea = screen.getPrimaryDisplay().workArea;
     const mainWindow = new BrowserWindow({
         width: Math.min(DEFAULT_MAIN_WINDOW_SIZE.width, workArea.width),
@@ -147,10 +147,10 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     });
 
     appSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-        callback(isTrustedMainFramePermission(webContents, mainWindow, permission, details));
+        callback(!isErasing() && isTrustedMainFramePermission(webContents, mainWindow, permission, details));
     });
     appSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-        return isTrustedMainFramePermission(webContents, mainWindow, permission, details, requestingOrigin);
+        return !isErasing() && isTrustedMainFramePermission(webContents, mainWindow, permission, details, requestingOrigin);
     });
 
     let boundsTimer;
@@ -200,9 +200,9 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     mainWindow.loadFile(MAIN_PAGE_PATH);
 
     installRecovery(mainWindow, windowModeController);
-    updateGlobalShortcuts({ ...getDefaultKeybinds(), ...storage.getKeybinds() }, mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
+    updateGlobalShortcuts({ ...getDefaultKeybinds(), ...storage.getKeybinds() }, mainWindow, sendToRenderer, emergencyErase, windowModeController);
 
-    setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, windowModeController);
+    setupWindowIpcHandlers(mainWindow, windowModeController);
     // Establish capture protection and tray/taskbar recovery before first display.
     mainWindow.show();
     return mainWindow;
@@ -219,7 +219,7 @@ function getDefaultKeybinds() {
     };
 }
 
-function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef, windowModeController) {
+function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, emergencyErase, windowModeController) {
     const moveWindow = (dx, dy) => {
         const { width, height } = screen.getPrimaryDisplay().workAreaSize;
         const increment = Math.floor(Math.min(width, height) * 0.1);
@@ -245,13 +245,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         nextResponse: () => sendToRenderer('navigate-next-response'),
         scrollUp: () => sendToRenderer('scroll-response-up'),
         scrollDown: () => sendToRenderer('scroll-response-down'),
-        emergencyErase: () => {
-            if (mainWindow.isDestroyed()) return;
-            mainWindow.hide();
-            if (geminiSessionRef.current) { Promise.resolve(geminiSessionRef.current.close()).catch(() => {}); geminiSessionRef.current = null; }
-            sendToRenderer('clear-sensitive-data');
-            setTimeout(() => app.quit(), 300);
-        },
+        emergencyErase: () => emergencyErase?.().catch(() => console.warn('Could not show the Emergency Erase result.')),
     };
     shortcutOwner = { actions };
     configuredBindings = { ...keybinds };
@@ -319,7 +313,7 @@ function saveGlobalShortcuts(input) {
     }
 }
 
-function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef, windowModeController) {
+function setupWindowIpcHandlers(mainWindow, windowModeController) {
     ipcMain.on('view-changed', (event, view) => {
         if (!isTrustedEvent(event, mainWindow) || typeof view !== 'string' || mainWindow.isDestroyed()) return;
         const isLiveMode = view === 'assistant';

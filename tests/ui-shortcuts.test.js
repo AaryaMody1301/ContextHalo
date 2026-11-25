@@ -67,8 +67,8 @@ function nativeShortcuts(options = {}) {
     const api = loadMain('src/utils/window.js', {
         electron, '../storage': { setKeybinds(value) { writes.push(value); if (options.writeFail) return false; saved = { ...value }; return true; } },
     });
-    api.updateGlobalShortcuts(api.getDefaultKeybinds(), win, () => {}, { current: null }, { reassertHudMode() {} });
-    api.setupWindowIpcHandlers(win, () => {}, { current: null }, { reassertHudMode() {} });
+    api.updateGlobalShortcuts(api.getDefaultKeybinds(), win, () => {}, undefined, { reassertHudMode() {} });
+    api.setupWindowIpcHandlers(win, { reassertHudMode() {} });
     return { api, held, writes, removed, win, ipc, saved: () => saved };
 }
 

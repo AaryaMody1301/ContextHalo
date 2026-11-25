@@ -34,12 +34,23 @@ const DEFAULT_PREFERENCES = {
     audioMode: 'speaker_only',
     fontSize: 20,
     backgroundTransparency: 0.8,
+    cloudKnowledgeEnabled: false,
+    cloudClipboardEnabled: false,
     googleSearchEnabled: false,
     localLlmModel: 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M',
     localModelDefaultVersion: 1,
     whisperModel: 'tiny.en',
 };
 const DEFAULT_KEYBINDS = null;
+// Chromium may share this directory on Windows. Remove only app-managed files here.
+const PERSONAL_ENTRIES = new Set([
+    'config.json', 'credentials.json', 'preferences.json', 'keybinds.json', 'limits.json',
+    'history', 'knowledge', 'practice', 'logs',
+]);
+const PERSONAL_TEMP_FILE = /^(?:config|credentials|preferences|keybinds|limits)\.json\.[0-9a-f-]{36}\.tmp$/;
+const DOWNLOAD_DIRECTORIES = ['binaries', 'models'];
+const DATA_SCOPES = new Set(['personal', 'downloads', 'all']);
+let dataEraseInProgress = false;
 const DEFAULT_LIMITS = { data: [] };
 
 const RETIRED_GEMINI_LIVE_MODELS = new Set([
@@ -107,6 +118,7 @@ function readJsonFile(filePath, defaultValue) {
 }
 
 function writeJsonFile(filePath, data) {
+    if (dataEraseInProgress) return false;
     const temporary = `${filePath}.${randomUUID()}.tmp`;
     try {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -321,6 +333,9 @@ function migratePreferences(rawPreferences = {}) {
         preferences.localLlmModel = DEFAULT_PREFERENCES.localLlmModel;
     }
     preferences.localModelDefaultVersion = 1;
+
+    preferences.cloudKnowledgeEnabled = preferences.cloudKnowledgeEnabled === true;
+    preferences.cloudClipboardEnabled = preferences.cloudClipboardEnabled === true;
 
     if (typeof preferences.googleSearchEnabled === 'string') {
         preferences.googleSearchEnabled = preferences.googleSearchEnabled === 'true';
@@ -552,21 +567,91 @@ function deleteAllSessions() {
         return false;
     }
 }
-function clearAllData() {
-    credentialWriteQueue = credentialWriteQueue.catch(() => {}).then(() => {
-        try {
-            fs.rmSync(getConfigDir(), { recursive: true, force: true });
-            credentialCache = { ...DEFAULT_CREDENTIALS };
-            credentialStorageReady = os.platform() !== 'win32';
-            credentialStorageLocked = false;
-            initializeStorage();
-            return true;
-        } catch (error) {
-            console.error('Error clearing data:', error.message);
-            return false;
+async function localDataEntries() {
+    const root = getConfigDir();
+    try {
+        const stat = await fs.promises.lstat(root);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid local data directory');
+        return await fs.promises.readdir(root);
+    } catch (error) {
+        if (error.code === 'ENOENT') return [];
+        throw new Error('Could not access the ContextHalo data folder. Check its location and permissions and retry.');
+    }
+}
+
+async function directoryBytes(directory) {
+    let stat;
+    try {
+        stat = await fs.promises.lstat(directory);
+    } catch (error) {
+        if (error.code === 'ENOENT') return 0;
+        throw error;
+    }
+    if (stat.isFile()) return stat.size;
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return 0;
+    let bytes = 0;
+    for await (const entry of await fs.promises.opendir(directory)) {
+        bytes += await directoryBytes(path.join(directory, entry.name));
+    }
+    return bytes;
+}
+
+async function getDownloadBytes() {
+    const entries = await localDataEntries();
+    let bytes = 0;
+    for (const name of entries) {
+        if (DOWNLOAD_DIRECTORIES.includes(name.toLowerCase())) bytes += await directoryBytes(path.join(getConfigDir(), name));
+    }
+    return bytes;
+}
+
+function setDataEraseInProgress(value) {
+    dataEraseInProgress = value;
+}
+
+function clearLocalData(scope) {
+    // Credential writes already in progress must finish before their files can be removed.
+    const operation = credentialWriteQueue.catch(() => {}).then(async () => {
+        if (!DATA_SCOPES.has(scope)) throw new Error('Choose a valid data deletion scope.');
+        const entries = await localDataEntries();
+        const selected = entries.filter(name => {
+            const lower = name.toLowerCase();
+            if (DOWNLOAD_DIRECTORIES.includes(lower)) return scope !== 'personal';
+            return scope !== 'downloads' && (PERSONAL_ENTRIES.has(lower) || PERSONAL_TEMP_FILE.test(lower));
+        });
+        let failures = 0;
+        for (const name of selected) {
+            try {
+                await fs.promises.rm(path.join(getConfigDir(), name), { recursive: true, force: true });
+            } catch {
+                failures += 1;
+            }
         }
+        if (scope !== 'downloads') {
+            sessionMetadata.clear();
+            if (!fs.existsSync(getCredentialsPath())) {
+                credentialCache = { ...DEFAULT_CREDENTIALS };
+                credentialStorageReady = os.platform() !== 'win32';
+                credentialStorageLocked = false;
+            }
+        }
+        if (failures) {
+            return { success: false, error: 'Some selected data could not be removed. Close any other ContextHalo instances, check folder permissions, and retry.' };
+        }
+        return { success: true };
     });
-    return credentialWriteQueue;
+    credentialWriteQueue = operation;
+    return operation;
+}
+
+async function clearAllData() {
+    try {
+        const result = await clearLocalData('all');
+        if (result.success) initializeStorage();
+        return result.success;
+    } catch {
+        return false;
+    }
 }
 
 module.exports = {
@@ -594,5 +679,8 @@ module.exports = {
     getAllSessions,
     deleteSession,
     deleteAllSessions,
+    clearLocalData,
+    getDownloadBytes,
+    setDataEraseInProgress,
     clearAllData,
 };

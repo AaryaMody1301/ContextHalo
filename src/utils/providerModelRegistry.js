@@ -3,14 +3,17 @@ const { GEMINI_SCREEN_MODEL_IDS, GEMINI_LIVE_SELECTABLE_IDS, GEMINI_LIVE_MAPPED_
     geminiModelPolicy, geminiCapabilityLabel } = require('./geminiModelPolicy');
 const { groqModelPolicy, groqCapabilityLabel } = require('./groqModelPolicy');
 
+const { abortable } = require('./requestDeadline');
+
 const GEMINI_MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const STALE_TTL_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 const cache = new Map();
 
 function keyFingerprint(apiKey) {
-    return crypto.createHash('sha256').update(String(apiKey || '')).digest('hex').slice(0, 16);
+    return crypto.createHash('sha256').update(String(apiKey || '')).digest('hex');
 }
 
 function modelId(value) {
@@ -159,8 +162,8 @@ async function fetchJson(url, options = {}) {
 
     try {
         const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
-        const response = await fetch(url, { ...options, signal });
-        const text = await response.text();
+        const response = await abortable(() => fetch(url, { ...options, signal }), signal);
+        const text = await abortable(() => response.text(), signal);
         if (!response.ok) {
             let detail = text;
             try {
@@ -211,47 +214,98 @@ async function fetchGroqCatalog(apiKey, signal) {
     return buildGroqCatalog(Array.isArray(body.data) ? body.data : []);
 }
 
+function discardCatalog(entry) {
+    clearTimeout(entry.expiration);
+    entry.expiration = null;
+    entry.catalog = null;
+}
+
+function clearProviderModelCache(provider) {
+    const providers = provider === undefined ? [...cache.keys()] : [provider];
+    for (const name of providers) {
+        const entry = cache.get(name);
+        cache.delete(name);
+        if (entry) {
+            discardCatalog(entry);
+            entry.refresh?.controller.abort();
+        }
+    }
+}
+
+function startRefresh(entry, provider, apiKey) {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const fetchCatalog = provider === 'gemini' ? fetchGeminiCatalog : fetchGroqCatalog;
+    const refresh = { controller, waiters: 0 };
+    entry.refresh = refresh;
+    refresh.promise = fetchCatalog(apiKey, signal).then(catalog => {
+        signal.throwIfAborted();
+        discardCatalog(entry);
+        entry.catalog = catalog;
+        entry.expiration = setTimeout(() => discardCatalog(entry), STALE_TTL_MS);
+        entry.expiration.unref();
+        entry.fetchedAt = Date.now();
+        return { ...catalog, fetchedAt: entry.fetchedAt, source: 'api', stale: false };
+    }).catch(error => {
+        signal.throwIfAborted();
+        if (!entry.catalog || Date.now() - entry.fetchedAt >= STALE_TTL_MS) {
+            discardCatalog(entry);
+            throw error;
+        }
+        return {
+            ...entry.catalog,
+            fetchedAt: entry.fetchedAt,
+            source: 'cache',
+            stale: true,
+            warning: 'Could not refresh the provider model catalog.',
+        };
+    }).finally(() => {
+        if (entry.refresh === refresh) entry.refresh = null;
+    });
+    return refresh;
+}
+
 async function listProviderModels(provider, apiKey, options = {}) {
     options.signal?.throwIfAborted();
     const normalizedProvider = String(provider || '').toLowerCase();
     if (!['gemini', 'groq'].includes(normalizedProvider)) throw new Error('Unsupported provider');
-    if (!apiKey || !String(apiKey).trim()) {
+    const key = String(apiKey || '').trim();
+    if (!key) {
+        clearProviderModelCache(normalizedProvider);
         const name = normalizedProvider === 'gemini' ? 'Gemini' : 'Groq';
         throw new Error(`${name} API key is not configured`);
     }
 
-    const cacheKey = `${normalizedProvider}:${keyFingerprint(apiKey)}`;
-    const existing = cache.get(cacheKey);
-    const now = Date.now();
-
-    if (!options.forceRefresh && existing && now - existing.fetchedAt < CACHE_TTL_MS) {
-        return { ...existing.catalog, fetchedAt: existing.fetchedAt, source: 'cache', stale: false };
+    const fingerprint = keyFingerprint(key);
+    let entry = cache.get(normalizedProvider);
+    if (entry?.fingerprint !== fingerprint) {
+        clearProviderModelCache(normalizedProvider);
+        entry = { fingerprint, catalog: null, fetchedAt: 0, expiration: null, refresh: null };
+        cache.set(normalizedProvider, entry);
     }
 
+    const age = Date.now() - entry.fetchedAt;
+    if (entry.catalog && age >= STALE_TTL_MS) discardCatalog(entry);
+    if (!options.forceRefresh && entry.catalog && age < CACHE_TTL_MS) {
+        return { ...entry.catalog, fetchedAt: entry.fetchedAt, source: 'cache', stale: false };
+    }
+
+    const refresh = entry.refresh || startRefresh(entry, normalizedProvider, key);
+    refresh.waiters += 1;
     try {
-        const catalog = normalizedProvider === 'gemini'
-            ? await fetchGeminiCatalog(String(apiKey).trim(), options.signal)
-            : await fetchGroqCatalog(String(apiKey).trim(), options.signal);
-        const fetchedAt = Date.now();
-        cache.set(cacheKey, { catalog, fetchedAt });
-        return { ...catalog, fetchedAt, source: 'api', stale: false };
-    } catch (error) {
-        if (options.signal?.aborted) throw options.signal.reason;
-        if (existing) {
-            return {
-                ...existing.catalog,
-                fetchedAt: existing.fetchedAt,
-                source: 'cache',
-                stale: true,
-                warning: error?.message || String(error),
-            };
+        return await (options.signal ? abortable(() => refresh.promise, options.signal) : refresh.promise);
+    } finally {
+        refresh.waiters -= 1;
+        if (!refresh.waiters && entry.refresh === refresh) {
+            entry.refresh = null;
+            refresh.controller.abort();
         }
-        throw error;
     }
 }
 
 module.exports = {
     listProviderModels,
+    clearProviderModelCache,
     _test: {
         modelId,
         normalizeGeminiModel,

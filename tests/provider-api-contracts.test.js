@@ -104,7 +104,7 @@ test('final Groq requests combine all context before applying Qwen roles', async
     const image = Buffer.alloc(1100).toString('base64');
     const f = geminiFixture({
         config: { groqModel: 'qwen/qwen3.8-27b', groqImageModel: 'qwen/qwen3.8-27b' },
-        preferences: { sessionPack: { title: 'Database review', goal: 'Explain the query plan' } },
+        preferences: { cloudKnowledgeEnabled: true, sessionPack: { title: 'Database review', goal: 'Explain the query plan' } },
         knowledgeDocuments: [{ id: 'db', title: 'Database notes', enabled: true,
             chunks: [{ id: 'chunk', text: 'Query plans use indexes to reduce database scan cost.' }] }],
         fetch: async (_url, init) => { bodies.push(JSON.parse(init.body)); return sseAnswer('Answer'); },

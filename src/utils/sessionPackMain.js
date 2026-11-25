@@ -16,7 +16,13 @@ function formatSessionPack(value) {
     return lines.length ? `${SESSION_PACK_MARKER}\n${lines.join('\n\n')}` : '';
 }
 
-function appendSessionPack(text, pack = storage.getPreferences()?.sessionPack) {
+function getProviderSessionPack(scope, preferences = storage.getPreferences()) {
+    const pack = sanitizeSessionPack(preferences?.sessionPack);
+    if (scope !== 'local' && preferences?.cloudClipboardEnabled !== true) pack.clipboardText = '';
+    return pack;
+}
+
+function appendSessionPack(text, pack = getProviderSessionPack('cloud')) {
     const base = String(text || '').trim();
     if (base.includes(SESSION_PACK_MARKER)) return base;
     const formatted = formatSessionPack(pack);
@@ -24,9 +30,9 @@ function appendSessionPack(text, pack = storage.getPreferences()?.sessionPack) {
     return base ? `${base}\n\n${formatted}` : formatted;
 }
 
-function appendPackToMessages(messages) {
+function appendPackToMessages(messages, scope) {
     if (!Array.isArray(messages)) return messages;
-    const pack = storage.getPreferences()?.sessionPack;
+    const pack = getProviderSessionPack(scope);
     if (!formatSessionPack(pack)) return messages;
 
     let updated = false;
@@ -47,26 +53,29 @@ function requestUrl(input) {
     return null;
 }
 
-function isChatRequest(url) {
-    if (!url) return false;
-    if (url.hostname === 'api.groq.com' && url.pathname.includes('/chat/completions')) return true;
-    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') return true;
-    return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/v1/chat/completions');
+function chatRequestScope(input) {
+    const url = requestUrl(input);
+    if (!url || !url.pathname.endsWith('/v1/chat/completions')) return null;
+    if (url.protocol === 'https:' && ['api.groq.com', 'api.mistral.ai'].includes(url.hostname)) return 'cloud';
+    if (url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)) return 'local';
+    return null;
 }
 
 function patchProviderFetch() {
     if (fetchPatched || typeof global.fetch !== 'function') return;
     const previousFetch = global.fetch.bind(global);
     global.fetch = (input, init = {}) => {
-        const url = requestUrl(input);
-        if (!isChatRequest(url) || typeof init.body !== 'string') return previousFetch(input, init);
-        try {
-            const body = JSON.parse(init.body);
-            if (Array.isArray(body.messages)) body.messages = appendPackToMessages(body.messages);
-            return previousFetch(input, { ...init, body: JSON.stringify(body) });
-        } catch {
-            return previousFetch(input, init);
+        const scope = chatRequestScope(input);
+        if (scope && typeof init.body === 'string') {
+            try {
+                const body = JSON.parse(init.body);
+                const messages = appendPackToMessages(body.messages, scope);
+                if (messages !== body.messages) init = { ...init, redirect: 'error', body: JSON.stringify({ ...body, messages }) };
+            } catch {
+                // Send the original request if optional context could not be added.
+            }
         }
+        return previousFetch(input, init);
     };
     fetchPatched = true;
 }
@@ -82,5 +91,7 @@ module.exports = {
     sanitizeSessionPack,
     formatSessionPack,
     appendSessionPack,
+    getProviderSessionPack,
+    chatRequestScope,
     installSessionPackMain,
 };

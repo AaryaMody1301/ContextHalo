@@ -28,6 +28,8 @@ let currentSystemPrompt = null;
 let currentLanguage = 'en';
 let isLocalActive = false;
 let initializationController = null;
+let initializationWork = null;
+const stoppingRunners = new Set();
 let initializationFailure = null;
 
 let isSpeaking = false;
@@ -446,7 +448,15 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
     await waitForServer(`${llamaBaseUrl}/health`, llamaProcess, 30 * 60 * 1000, signal);
 }
 
-async function initializeLocalSession(model, whisperModel, profile, customPrompt, language = 'en-US') {
+function initializeLocalSession(...args) {
+    const work = runLocalInitialization(...args).finally(() => {
+        if (initializationWork === work) initializationWork = null;
+    });
+    initializationWork = work;
+    return work;
+}
+
+async function runLocalInitialization(model, whisperModel, profile, customPrompt, language = 'en-US') {
     console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile, language: currentLanguage });
     sendToRenderer('session-initializing', true);
     closeLocalSession();
@@ -484,7 +494,7 @@ async function initializeLocalSession(model, whisperModel, profile, customPrompt
             if (!accelerated) throw error;
             // Download success does not prove that the GPU backend can start.
             // Stop the failed process before trying the verified CPU runner.
-            stopNativeServer(llamaProcess);
+            stopLocalRunner(llamaProcess);
             llamaProcess = null;
             llamaBaseUrl = null;
             sendToRenderer('update-status', 'The Vulkan runner could not start. Loading the same local model with the verified CPU runner.');
@@ -556,12 +566,26 @@ function processLocalAudio(monoChunk24k) {
     }
 }
 
+function stopLocalRunner(child) {
+    if (child?.pid && child.exitCode === null && child.signalCode === null) {
+        const closed = new Promise(resolve => child.once('close', resolve));
+        stoppingRunners.add(closed);
+        void closed.then(() => stoppingRunners.delete(closed));
+    }
+    stopNativeServer(child);
+}
+
+async function waitForLocalShutdown() {
+    await initializationWork;
+    await Promise.all(stoppingRunners);
+}
+
 function closeLocalSession() {
     isLocalActive = false;
     initializationController?.abort();
     initializationController = null;
-    stopNativeServer(llamaProcess);
-    stopNativeServer(whisperProcess);
+    stopLocalRunner(llamaProcess);
+    stopLocalRunner(whisperProcess);
     llamaProcess = null;
     whisperProcess = null;
     llamaBaseUrl = null;
@@ -664,6 +688,7 @@ module.exports = {
     getLocalInitializationFailure: () => initializationFailure,
     cancelLocalInitialization,
     processLocalAudio,
+    waitForLocalShutdown,
     closeLocalSession,
     isLocalSessionActive,
     sendLocalText,

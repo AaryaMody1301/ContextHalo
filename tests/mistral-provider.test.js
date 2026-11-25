@@ -169,7 +169,7 @@ test('Mistral 429 details reach typed and screen IPC without private body or suc
 
 test('Mistral routes text and JPEG screenshots independently with pinned model and context', async () => {
     const requests = [];
-    const f = geminiFixture({ search: true, preferences: { responseMode: 'detailed', sessionPack: { goal: 'Mistral test goal' } },
+    const f = geminiFixture({ search: true, preferences: { responseMode: 'detailed', cloudKnowledgeEnabled: true, sessionPack: { goal: 'Mistral test goal' } },
         knowledgeDocuments: [{ id: 'diagram-guide', title: 'Diagram guide', chunks: [{ id: 'chunk-1', text: 'Explain the diagram: orange nodes represent ingestion stages.' }] }], fetch: async (url, init) => {
         requests.push({ url, headers: init.headers, body: JSON.parse(init.body) });
         return completion('Mistral answer');

@@ -79,7 +79,7 @@ function windowFixture(t, options = {}) {
     const api = loadMain('src/utils/window.js', {
         electron, '../storage': { getConfig: () => ({}), getKeybinds: () => ({}), updateConfig() {} },
     }, { process: { argv: options.smoke ? ['electron', '--ci-smoke-test'] : ['electron'] } });
-    const win = api.createWindow((...args) => messages.push(args), sessionRef);
+    const win = api.createWindow((...args) => messages.push(args), { emergencyErase: options.emergencyErase });
     t.after(() => win.close());
     const event = { sender: win.webContents, senderFrame: win.webContents.mainFrame };
     return { api, win, initial, shows, shortcuts, trays, taskbarChanges, messages, sessionRef, session,
@@ -138,7 +138,7 @@ test('shortcut, IPC, tray and minimize recovery preserve taskbar hiding and the 
     }
     assert.equal(f.sessionRef.current, f.session);
     assert.equal(f.sessionCloses(), 0);
-    assert.equal(f.messages.some(([channel]) => channel === 'clear-sensitive-data'), false);
+    assert.equal(f.messages.some(([channel]) => channel === 'stop-capture-for-erase'), false);
 });
 
 test('tray failure retains taskbar recovery before first show and throughout layout transitions', t => {

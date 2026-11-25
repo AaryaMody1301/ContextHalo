@@ -58,7 +58,7 @@
             async saveSession(sessionId, data) { return persistStorage('storage:save-session', sessionId, data); },
             async deleteSession(sessionId) { return persistStorage('storage:delete-session', sessionId); },
             async deleteAllSessions() { return persistStorage('storage:delete-all-sessions'); },
-            async clearAll() { return persistStorage('storage:clear-all'); },
+            async clearLocalData(scope) { return persistStorage('storage:clear-data', scope); },
         };
 
         let preferencesCache = null;
