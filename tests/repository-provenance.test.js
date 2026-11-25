@@ -37,6 +37,15 @@ test('Phase 1 baseline inventory remains accounted for by current files or expli
     }
 });
 
+test('package dependency declarations match the lockfile root', () => {
+    const pkg = JSON.parse(read('package.json'));
+    const lock = JSON.parse(read('package-lock.json'));
+    const lockedRoot = lock.packages[''];
+
+    assert.deepEqual(lockedRoot.dependencies, pkg.dependencies, 'Sync the production declarations in package-lock.json.');
+    assert.deepEqual(lockedRoot.devDependencies, pkg.devDependencies, 'Sync the development declarations in package-lock.json.');
+});
+
 test('machine-readable npm provenance matches the production lockfile', () => {
     const lock = JSON.parse(read('package-lock.json'));
     const provenance = JSON.parse(read('docs/THIRD_PARTY_PROVENANCE.json'));
@@ -52,7 +61,7 @@ test('machine-readable npm provenance matches the production lockfile', () => {
         }))
         .sort((a, b) => a.package.localeCompare(b.package));
 
-    assert.deepEqual(provenance.productionNpm, expected);
+    assert.deepEqual(provenance.productionNpm, expected, 'Sync the production inventory in docs/THIRD_PARTY_PROVENANCE.json with package-lock.json.');
     assert.ok(provenance.productionNpm.some(item => item.package === '@google/genai'));
 });
 
@@ -85,7 +94,11 @@ test('vendored and native provenance records point to owned artifacts', () => {
 
     assert.match(notices, /GPL-3\.0/);
     assert.match(notices, /Lit 3\.3\.3/);
-    assert.ok(notices.includes(`Marked | ${JSON.parse(read('package.json')).dependencies.marked} locked`));
+    const lock = JSON.parse(read('package-lock.json'));
+    for (const [component, name] of [['Electron', 'electron'], ['@google/genai', '@google/genai'], ['Marked', 'marked']]) {
+        const version = lock.packages[`node_modules/${name}`].version;
+        assert.ok(notices.includes(`${component} | ${version} locked`), `Update THIRD_PARTY_NOTICES.md for ${component} ${version}.`);
+    }
     assert.match(notices, /highlight\.js 11\.9\.0[^\n]*removed/i);
     assert.match(notices, /b10964/);
     assert.match(notices, /b5130/);
