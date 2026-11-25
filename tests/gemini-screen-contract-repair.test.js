@@ -43,6 +43,7 @@ test('Instant text and screenshots use minimal thinking only on explicitly selec
         ['gemini-3.8-flash', 'low'], ['gemini-3.7-flash', 'low'],
         ['gemini-3.6-flash', 'minimal'], ['gemini-3.5-flash', 'minimal'],
         ['gemini-3.5-flash-lite', 'minimal'], ['gemini-3.1-flash-lite', 'minimal'],
+        ['gemini-2.5-flash-lite', undefined],
         ['custom-model', undefined],
     ]) {
         const f = geminiFixture({ model, preferences: { responseMode: 'instant' } });
@@ -56,6 +57,19 @@ test('Instant text and screenshots use minimal thinking only on explicitly selec
         assert.equal(f.connections.length, 1, 'HTTP thinking must not reconnect Live');
         await f.close();
     }
+});
+
+test('a Live-only selection is rejected by the independent HTTP routes', async t => {
+    const f = geminiFixture({ model: 'gemini-3.8-live' });
+    t.after(() => f.close());
+    assert.equal((await f.start()).success, true);
+    for (const [channel, input] of [['send-text-message', 'What is next?'], ['send-image-content', screenshot]]) {
+        const result = await f.call(channel, input);
+        assert.equal(result.success, false);
+        assert.match(result.error, /text and screen/i);
+    }
+    assert.equal(f.generated.length, 0);
+    assert.equal(f.connections.length, 1);
 });
 
 test('a failed HTTP attempt is cancelled before its retry starts', async t => {

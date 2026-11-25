@@ -78,7 +78,7 @@ test('model discovery leaves manual choices intact and late catalogs do not upda
     const {Target,context}=componentClass('src/components/views/MainView.js','MainView');
     const view=Object.assign(Object.create(Target.prototype),{_geminiLiveModel:'manual-model',_catalogEpochs:{gemini:0},_keySavePromise:Promise.resolve(),isConnected:true,requestUpdate(){}});
     context.window.electronAPI.invoke=async()=>({success:true,data:{all:[{id:'different'}],live:[{id:'different'}],recommended:{live:'different'}}});
-    await view._refreshProviderModels('gemini'); assert.equal(view._geminiLiveModel,'manual-model'); assert.match(view._geminiCatalogError,/preserved/);
+    await view._refreshProviderModels('gemini'); assert.equal(view._geminiLiveModel,'manual-model'); assert.match(view._geminiCatalogError,/absent from this account catalog/);
     const catalog=view._geminiCatalog; view.isConnected=false; await view._refreshProviderModels('gemini'); assert.equal(view._geminiCatalog,catalog);
 });
 test('failed credential writes block Start until a newer value is securely saved',async()=>{

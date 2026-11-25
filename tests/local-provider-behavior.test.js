@@ -77,6 +77,7 @@ test('concurrent Local AI text and screen requests retain both successful turns'
 
 test('a Vulkan startup failure falls back once to the verified CPU runner without changing the selected model', async t => {
     const started = [], stopped = [], binaries = [], bodies = [];
+    let gpuFails = true;
     const native = {
         ensureNativeBinary: async (type, _progress, _signal, options) => {
             binaries.push([type, options]);
@@ -86,7 +87,11 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
         getAvailablePort: async () => 1234, getModelsDirectory: () => '/models',
         startNativeServer: options => { started.push(options); return options; },
         stopNativeServer: process => { if (process) stopped.push(process); },
-        waitForServer: async (_url, process) => { if (process.executablePath.includes('vulkan')) throw new Error('GPU backend failed'); },
+        waitForServer: async (_url, process) => {
+            if (!process.executablePath.includes('vulkan')) return;
+            if (gpuFails) throw new Error('GPU backend failed');
+            process.gpuLayers = { offloaded: 8, total: 12 };
+        },
     };
     const api = loadMain('src/utils/localai.js', {
         fs: { existsSync: () => true, readdirSync: () => [] }, './native-ai-runtime': native, './sessionRequests': requests,
@@ -97,7 +102,10 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
         return new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
     } });
     t.after(() => { requests.closeSessionRequests(); api.closeLocalSession(); });
-    assert.equal(await api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US'), true);
+    const start = options => api.initializeLocalSession('my-selected-model', 'tiny.en', 'interview', '', 'en-US', options);
+    assert.equal(await start({ offline: true }), true);
+    assert.deepEqual(api.getLocalRuntime(), { runner: 'cpu', offline: true, fallback: 'vulkan-start-failed', gpuLayers: null });
+    assert.ok(binaries.every(([, options]) => options.offline));
     assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/binaries/llama-b10964-vulkan/llama-server.exe', '/binaries/llama-b10964-cpu/llama-server.exe']);
     assert.deepEqual(started[0].arguments.slice(0, 6), ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
     assert.equal(started[0].arguments[6], '--request-path');
@@ -122,6 +130,13 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     assert.equal(bodies[0].max_tokens, 768);
     assert.equal(bodies[0].cache_prompt, true);
     assert.deepEqual(bodies[0].chat_template_kwargs, { enable_thinking: false });
+    gpuFails = false;
+    assert.equal(await start({ offline: true }), true);
+    assert.deepEqual(api.getLocalRuntime(), { runner: 'vulkan', offline: true, fallback: null, gpuLayers: { offloaded: 8, total: 12 } });
+    assert.equal(await start({ offline: true, cpuOnly: true }), true);
+    assert.deepEqual(api.getLocalRuntime(), { runner: 'cpu', offline: true, fallback: null, gpuLayers: null });
+    const cpuArguments = started.at(-1).arguments;
+    assert.equal(cpuArguments[cpuArguments.indexOf('--n-gpu-layers') + 1], '0');
 });
 
 

@@ -55,6 +55,7 @@ export class ContextHaloApp extends LitElement {
         _updateAvailable: { state: true },
         _updateState: { state: true },
         _whisperDownloading: { state: true },
+        _localRuntime: { state: true },
         _localAiDownloadProgress: { state: true },
     };
 
@@ -68,6 +69,7 @@ export class ContextHaloApp extends LitElement {
         this.isInitializing = false;
         this.lifecycleState = 'idle';
         this.providerState = 'disconnected';
+        this._localRuntime = null;
         this.providerMode = 'groq';
         this.providerError = null;
         this.captureState = { state: 'stopped', audioReady: false, screen: false, warning: '' };
@@ -273,6 +275,7 @@ export class ContextHaloApp extends LitElement {
         if (data.uiEpoch !== undefined && data.uiEpoch !== this._uiSessionEpoch) return;
         this.providerState = data.state;
         if (data.provider) this.providerMode = data.provider;
+        if (Object.hasOwn(data, 'localRuntime')) this._localRuntime = data.localRuntime;
         if (data.search) this.searchState = data.search;
         this.providerError = data.error || null;
         this._scheduleRecoveryRefresh();
@@ -511,6 +514,7 @@ export class ContextHaloApp extends LitElement {
         this.startError = '';
         this.providerError = null;
         this.providerState = 'disconnected';
+        this._localRuntime = null;
         this._setLifecycle('preparing', 'Loading saved session settings...');
         try {
             if (this._unsavedSession) {
@@ -1004,6 +1008,17 @@ export class ContextHaloApp extends LitElement {
 
     closeSessionDetails() { this.shadowRoot.querySelector('.session-details')?.close(); }
 
+    renderLocalRuntimeDetails() {
+        const runtime = this._localRuntime;
+        if (this.providerMode !== 'local' || !runtime) return '';
+        return html`<p>${runtime.offline ? 'Offline session.' : 'Online setup enabled.'} ${runtime.runner === 'vulkan' ? 'Vulkan runner.' : 'CPU runner.'}
+            ${runtime.runner === 'vulkan' ? (runtime.gpuLayers
+                ? `${runtime.gpuLayers.offloaded} of ${runtime.gpuLayers.total} model layers offloaded to the GPU.`
+                : 'GPU offload was unreported by the runner.') : ''}
+            ${runtime.fallback === 'vulkan-start-failed' ? 'Vulkan startup failed. The selected model started on CPU.'
+                : runtime.fallback === 'vulkan-unavailable' ? 'Vulkan was unavailable. The selected model started on CPU.' : ''}</p>`;
+    }
+
     renderSessionDetails() {
         return html`<dialog class="session-details" aria-labelledby="session-details-title">
             <div class="details-header session-actions"><h2 id="session-details-title">Session details</h2>
@@ -1045,6 +1060,7 @@ export class ContextHaloApp extends LitElement {
                         <p>${owner.model || 'Selected model'} · ${owner.outcome}. First text: ${metrics.firstTextMs === null ? 'unavailable' : `${(metrics.firstTextMs / 1000).toFixed(2)} s`}. Total: ${(metrics.totalMs / 1000).toFixed(2)} s (including queue and retries).</p>
                         <p>Provider-reported tokens: ${Object.entries(metrics.usage || {}).map(([key, value]) => `${key}: ${value}`).join(', ') || 'unavailable'}. Token counts are not a billing estimate.</p>`;
                 })}
+                ${this.renderLocalRuntimeDetails()}
                 <details><summary>Connection and capture status</summary><p>${this.statusText || this._readyStatus()}</p></details>
                 ${this.searchState.liveReason ? html`<p>Live Search: ${this.searchState.liveReason}</p>` : ''}
                 ${this.searchState.httpReason ? html`<p>Text/screen Search: ${this.searchState.httpReason}</p>` : ''}

@@ -37,6 +37,8 @@ const DEFAULT_PREFERENCES = {
     cloudKnowledgeEnabled: false,
     cloudClipboardEnabled: false,
     googleSearchEnabled: false,
+    localOffline: false,
+    localBackend: 'auto',
     localLlmModel: 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M',
     localModelDefaultVersion: 1,
     whisperModel: 'tiny.en',
@@ -64,7 +66,6 @@ const RETIRED_GEMINI_HTTP_MODELS = new Set([
     'gemini-2.0-flash',
     'gemini-2.0-flash-001',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
     'gemini-2.5-pro',
 ]);
 const RETIRED_GROQ_MODELS = new Set([
@@ -289,10 +290,12 @@ function migrateConfig(rawConfig = {}) {
     const previousVersion = Number(source.configVersion) || 0;
     const config = { ...DEFAULT_CONFIG, ...source, configVersion: CONFIG_VERSION };
 
-    if (!config.geminiLiveModel || RETIRED_GEMINI_LIVE_MODELS.has(config.geminiLiveModel)) {
+    if (typeof config.geminiLiveModel !== 'string' || !config.geminiLiveModel.trim()
+        || (previousVersion < CONFIG_VERSION && RETIRED_GEMINI_LIVE_MODELS.has(config.geminiLiveModel))) {
         config.geminiLiveModel = DEFAULT_CONFIG.geminiLiveModel;
     }
-    if (!config.geminiHttpModel || RETIRED_GEMINI_HTTP_MODELS.has(config.geminiHttpModel)) {
+    if (typeof config.geminiHttpModel !== 'string' || !config.geminiHttpModel.trim()
+        || (previousVersion < CONFIG_VERSION && RETIRED_GEMINI_HTTP_MODELS.has(config.geminiHttpModel))) {
         config.geminiHttpModel = DEFAULT_CONFIG.geminiHttpModel;
     }
     if (previousVersion < 4 && source.groqModel === 'qwen/qwen3.6-27b') {
@@ -332,6 +335,8 @@ function migratePreferences(rawPreferences = {}) {
         && (!source.localLlmModel || source.localLlmModel === 'unsloth/Qwen3.5-4B-GGUF:Q4_K_M')) {
         preferences.localLlmModel = DEFAULT_PREFERENCES.localLlmModel;
     }
+    preferences.localOffline = preferences.localOffline === true;
+    preferences.localBackend = preferences.localBackend === 'cpu' ? 'cpu' : 'auto';
     preferences.localModelDefaultVersion = 1;
 
     preferences.cloudKnowledgeEnabled = preferences.cloudKnowledgeEnabled === true;

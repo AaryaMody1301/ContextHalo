@@ -79,6 +79,15 @@ test('current Gemini 3.8 Live starts without a blocking advisory model-list requ
     assert.equal(f.connections.length, 1);
 });
 
+test('a saved Extended Thinking Live model explains its unsupported interaction lifecycle', async t => {
+    const f = geminiFixture({ config: { geminiLiveModel: 'gemini-3.8-live-extended-thinking' } });
+    t.after(() => f.close());
+    const result = await f.start();
+    assert.equal(result.success, false);
+    assert.match(result.error, /interactionStatus/);
+    assert.equal(f.connections.length, 0);
+});
+
 test('ending a session during model discovery promptly releases Start and permits another provider', async t => {
     let release;
     const f = geminiFixture({ config: { geminiLiveModel: 'gemini-3.1-flash-live-preview' }, catalog: () => new Promise(resolve => { release = resolve; }) });

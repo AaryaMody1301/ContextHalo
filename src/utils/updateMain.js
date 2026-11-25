@@ -139,6 +139,7 @@ function createPortableUpdateController({
     fetchImpl = globalThis.fetch,
     platform = process.platform,
     arch = process.arch,
+    isOffline = () => false,
     smokeMode = false,
     packageMetadata = PACKAGE_METADATA,
     now = Date.now,
@@ -202,11 +203,12 @@ function createPortableUpdateController({
     }
 
     async function check() {
+        if (isOffline()) return { status: 'offline', ...publicCurrent(current()) };
         const timestamp = now();
         if (cached && timestamp - cached.checkedAt < CACHE_MS) return { ...cached.value };
         if (inFlight) return inFlight;
         inFlight = performCheck().then(value => {
-            cached = { checkedAt: now(), value };
+            if (!isOffline()) cached = { checkedAt: now(), value };
             return { ...value };
         }).finally(() => { inFlight = null; });
         return inFlight;

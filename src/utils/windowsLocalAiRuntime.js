@@ -120,7 +120,7 @@ async function extractVulkanRuntime(archivePath, runtimeDirectory, run = runFile
     }
 }
 
-async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
+async function ensureVulkanLlamaRuntime(runtime, onProgress, signal, offline) {
     const binariesDirectory = path.join(path.dirname(runtime.getModelsDirectory()), 'binaries');
     const runtimeDirectory = path.join(binariesDirectory, `llama-${VULKAN_LLAMA_RELEASE.tag}-vulkan`);
     const archivePath = path.join(binariesDirectory, VULKAN_LLAMA_RELEASE.archive);
@@ -135,12 +135,12 @@ async function ensureVulkanLlamaRuntime(runtime, onProgress, signal) {
             && source.sha256 === VULKAN_LLAMA_RELEASE.sha256
             && source.url === VULKAN_LLAMA_RELEASE.url;
     } catch {}
-    if (existing && sourceMatches && await matchesChecksum(archivePath, VULKAN_LLAMA_RELEASE.sha256)) return existing;
+    if (existing && sourceMatches && await matchesChecksum(archivePath, VULKAN_LLAMA_RELEASE.sha256, signal)) return existing;
 
     const acceleratorTimeout = AbortSignal.timeout(120000);
     const acceleratorSignal = signal ? AbortSignal.any([signal, acceleratorTimeout]) : acceleratorTimeout;
     await installVerifiedFile({ url: VULKAN_LLAMA_RELEASE.url, destinationPath: archivePath,
-        sha256: VULKAN_LLAMA_RELEASE.sha256, onProgress, signal: acceleratorSignal });
+        sha256: VULKAN_LLAMA_RELEASE.sha256, onProgress, signal: acceleratorSignal, offline, artifact: 'Vulkan runner files' });
     signal?.throwIfAborted();
     return extractVulkanRuntime(archivePath, runtimeDirectory, runFile, acceleratorSignal);
 }
@@ -202,14 +202,14 @@ function installWindowsLocalAiRuntime() {
     const originalEnsureLlamaModel = runtime.ensureLlamaModel.bind(runtime);
     const originalEnsureNativeBinary = runtime.ensureNativeBinary.bind(runtime);
 
-    runtime.ensureNativeBinary = async (type, onProgress, signal, { cpuOnly = false } = {}) => {
-        if (type !== 'llama' || cpuOnly) return originalEnsureNativeBinary(type, onProgress, signal);
+    runtime.ensureNativeBinary = async (type, onProgress, signal, { cpuOnly = false, offline = false } = {}) => {
+        if (type !== 'llama' || cpuOnly) return originalEnsureNativeBinary(type, onProgress, signal, { offline });
         try {
-            return await ensureVulkanLlamaRuntime(runtime, onProgress, signal);
+            return await ensureVulkanLlamaRuntime(runtime, onProgress, signal, offline);
         } catch (error) {
             signal?.throwIfAborted();
             console.warn('Verified Vulkan llama.cpp runtime unavailable; falling back to the verified CPU Local AI runner:', error?.message || error);
-            return originalEnsureNativeBinary(type, onProgress, signal);
+            return originalEnsureNativeBinary(type, onProgress, signal, { offline });
         }
     };
 
@@ -220,6 +220,7 @@ function installWindowsLocalAiRuntime() {
         try {
             return await originalEnsureLlamaModel(...args);
         } catch (error) {
+            if (args[4]?.offline) throw error;
             const message = String(error?.message || error);
             const metadataFailure = message.includes('checksum metadata') || message.includes('does not provide a supported multimodal projector');
             if (!metadataFailure) throw error;
