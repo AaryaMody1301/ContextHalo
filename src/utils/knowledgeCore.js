@@ -26,7 +26,7 @@ function tokenize(value) {
     return matches.filter(token => token.length > 1 && !STOP_WORDS.has(token));
 }
 
-function splitOversizedBlock(block, maxChars, overlapChars) {
+function splitOversizedBlock(block, maxChars, overlapChars, offset) {
     const chunks = [];
     let start = 0;
     while (start < block.length) {
@@ -41,8 +41,9 @@ function splitOversizedBlock(block, maxChars, overlapChars) {
             );
             if (boundary > start + Math.floor(maxChars * 0.55)) end = boundary + 1;
         }
-        const text = block.slice(start, end).trim();
-        if (text) chunks.push(text);
+        const slice = block.slice(start, end);
+        const text = slice.trim();
+        if (text) chunks.push({ text, start: offset + start + slice.length - slice.trimStart().length });
         if (end >= block.length) break;
         start = Math.max(start + 1, end - overlapChars);
     }
@@ -57,44 +58,75 @@ function chunkText(value, options = {}) {
     const overlapChars = Math.max(0, Math.min(Math.floor(maxChars / 3), Number(options.overlapChars) || DEFAULT_OVERLAP_CHARS));
     const blocks = text.split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
     const chunks = [];
+    const positions = [];
     let pending = '';
+    let pendingStart = 0;
+    let nextBlockStart = 0;
+    let sourceCursor = 0;
 
     const flush = () => {
-        const clean = pending.trim();
-        if (clean) chunks.push(clean);
+        if (pending) chunks.push({ text: pending, start: pendingStart });
         pending = '';
     };
 
     for (const block of blocks) {
+        const blockStart = nextBlockStart;
+        nextBlockStart += block.length + 2;
+        if (options.includeSpans) {
+            const sourceStart = text.indexOf(block, sourceCursor);
+            positions.push({ start: blockStart, end: blockStart + block.length, sourceStart });
+            sourceCursor = sourceStart + block.length;
+        }
         if (block.length > maxChars) {
             flush();
-            chunks.push(...splitOversizedBlock(block, maxChars, overlapChars));
+            chunks.push(...splitOversizedBlock(block, maxChars, overlapChars, blockStart));
             continue;
         }
 
         const candidate = pending ? `${pending}\n\n${block}` : block;
         if (candidate.length <= maxChars) {
+            if (!pending) pendingStart = blockStart;
             pending = candidate;
             continue;
         }
 
-        const overlap = pending.slice(Math.max(0, pending.length - overlapChars)).trim();
+        const tail = pending.slice(Math.max(0, pending.length - overlapChars));
+        const overlap = tail.trim();
+        const overlapStart = pendingStart + pending.length - tail.trimStart().length;
         flush();
         pending = overlap ? `${overlap}\n\n${block}` : block;
+        pendingStart = overlap ? overlapStart : blockStart;
         if (pending.length > maxChars) {
-            const split = splitOversizedBlock(pending, maxChars, overlapChars);
+            const split = splitOversizedBlock(pending, maxChars, overlapChars, pendingStart);
             chunks.push(...split.slice(0, -1));
-            pending = split.at(-1) || '';
+            const last = split.at(-1);
+            pending = last?.text || '';
+            pendingStart = last?.start ?? blockStart;
         }
     }
     flush();
 
-    return chunks.map((textValue, index) => ({
+    // Chunking joins trimmed blocks with two newlines. Map chunk coordinates
+    // back to the stored text so excerpts retain the original separators.
+    const sourceOffset = offset => {
+        let low = 0;
+        let high = positions.length;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (positions[mid].end <= offset) low = mid + 1;
+            else high = mid;
+        }
+        const block = positions[low];
+        return block.sourceStart + offset - block.start;
+    };
+
+    return chunks.map(({ text: textValue, start }, index) => ({
         id: `chunk-${index + 1}`,
         index,
         text: textValue,
         chars: textValue.length,
         tokens: tokenize(textValue),
+        ...(options.includeSpans ? { start: sourceOffset(start), end: sourceOffset(start + textValue.length - 1) + 1 } : {}),
     }));
 }
 

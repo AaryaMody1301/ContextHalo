@@ -28,7 +28,6 @@ function chooseBlank(sentence) {
 }
 
 function buildQuestion(source, sentence, index) {
-    const expectedTokens = [...new Set(tokenize(sentence))].slice(0, 32);
     const cloze = index % 2 === 0 ? chooseBlank(sentence) : null;
     if (cloze) {
         return {
@@ -50,7 +49,6 @@ function buildQuestion(source, sentence, index) {
         prompt: `Explain the key point about ${topic} in your own words.`,
         sourceId: source.id,
         sourceTitle: source.title,
-        expectedTokens,
         reference: sentence,
     };
 }
@@ -79,11 +77,27 @@ function generatePracticeQuestions(sources, count = 6) {
 function gradeAnswer(question, answer) {
     const cleanAnswer = normalizeText(answer, 5000);
     const expected = [...new Set(Array.isArray(question?.expectedTokens) ? question.expectedTokens : [])].filter(Boolean);
+    if (question?.type === 'choice') {
+        const correct = cleanAnswer === String(question.correctChoice);
+        return {
+            score: correct ? 1 : 0,
+            level: correct ? 'strong' : 'retry',
+            feedback: correct ? 'Correct.' : 'Incorrect. Review the explanation below.',
+            matched: [],
+            missing: [],
+        };
+    }
+    if (question?.type === 'recall') {
+        return {
+            score: null,
+            level: 'review',
+            feedback: 'Self-review. Compare the meaning of your explanation with the reference.',
+            matched: [],
+            missing: [],
+        };
+    }
     if (!cleanAnswer) {
         return { score: 0, level: 'retry', feedback: 'Add an answer before checking it.', matched: [], missing: expected.slice(0, 8) };
-    }
-    if (!expected.length) {
-        return { score: 0.5, level: 'partial', feedback: 'Compare your answer with the reference.', matched: [], missing: [] };
     }
 
     if (question?.type === 'cloze') {
@@ -98,22 +112,7 @@ function gradeAnswer(question, answer) {
         };
     }
 
-    const answerTokens = new Set(tokenize(cleanAnswer));
-    const matched = expected.filter(token => answerTokens.has(token));
-    const score = Math.max(0, Math.min(1, matched.length / Math.max(3, Math.min(expected.length, 12))));
-    const level = score >= 0.72 ? 'strong' : score >= 0.38 ? 'partial' : 'retry';
-    const feedback = level === 'strong'
-        ? 'Strong recall. Your answer covers most of the important concepts.'
-        : level === 'partial'
-            ? 'Partially correct. Add the missing concepts and make the relationship between them explicit.'
-            : 'Review the reference and try again using the important terms in your own explanation.';
-    return {
-        score: Number(score.toFixed(2)),
-        level,
-        feedback,
-        matched: matched.slice(0, 12),
-        missing: expected.filter(token => !answerTokens.has(token)).slice(0, 10),
-    };
+    return { score: null, level: 'review', feedback: 'Compare your answer with the reference.', matched: [], missing: [] };
 }
 
 function flattenSessionText(session) {

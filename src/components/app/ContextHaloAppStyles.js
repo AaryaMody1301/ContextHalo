@@ -92,7 +92,7 @@ export const contextHaloAppStyles = css`
     .phase4-form.visible { display: grid; }
     .phase4-practice-question { font-size: 14px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; user-select: text; margin: 12px 0; }
     .phase4-progress { color: var(--text-secondary); font-size: 13px; }
-    .phase4-feedback { margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--bg-elevated); font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+    .phase4-feedback { white-space: pre-wrap; margin-top: 10px; padding: 10px; border-radius: 9px; background: var(--bg-elevated); font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
     .phase4-feedback.strong { background: rgba(34,197,94,.08); color: var(--text-primary); }
     .phase4-feedback.partial { background: rgba(234,179,8,.08); color: var(--text-primary); }
     .phase4-feedback.retry { background: rgba(248,113,113,.08); color: var(--text-primary); }

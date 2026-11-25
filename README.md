@@ -18,8 +18,8 @@ ContextHalo is an open-source, context-aware AI desktop assistant for Windows. I
 - Instant, Balanced, and Detailed response modes plus Important/Decision/Action/Question markers
 - Multi-monitor/window capture selection, protected region analysis, and explicit copied-text context
 - Session Packs for goals, notes, and reusable session context
-- Local Knowledge Library with dependency-free retrieval for text, code, logs, CSV/JSON, SQL, YAML, and related text formats
-- Practice Lab generated locally from knowledge sources or previous sessions, with keyword-overlap feedback (not an expert assessment)
+- Local Knowledge Library with dependency-free search across text, code, logs, and structured files. Search results can open the matching excerpt and line range in the imported copy.
+- Offline Practice Lab with scored SQL, Python, and data engineering questions, plus fill-in-the-blank exercises and free-text self-review from local sources or saved sessions
 - Session Review for topics, decisions, actions, questions, markers, and follow-up practice
 - Conversation and screen-analysis history stored locally
 - Windows DPAPI-backed API-key protection through Electron safeStorage
