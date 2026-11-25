@@ -9,9 +9,6 @@ const {
     installWindowsIpcHardening,
 } = require('./utils/windowsRuntimeMain');
 const { installWindowsLocalAiRuntime } = require('./utils/windowsLocalAiRuntime');
-const { installRealtimeContextMain } = require('./utils/realtimeContextMain');
-const { installSessionPackMain } = require('./utils/sessionPackMain');
-const { installKnowledgeRagMain } = require('./utils/knowledgeRagMain');
 const { setupContextCaptureMain } = require('./utils/contextCaptureMain');
 const { setupPhase4Main } = require('./utils/phase4Main');
 const { normalizeExternalUrl } = require('./utils/electronSecurity');
@@ -31,11 +28,8 @@ if (WINDOWS_SMOKE_MODE) {
 // Provider networking, Local AI compatibility and context observers must be installed
 // before gemini.js/localai.js capture their dependencies.
 installOfflineNetworkBoundary();
-installWindowsProviderTransport();
+installWindowsProviderTransport(() => require('./utils/gemini').getActiveSessionId());
 installWindowsLocalAiRuntime();
-installRealtimeContextMain(() => require('./utils/gemini').getActiveSessionId());
-installSessionPackMain();
-installKnowledgeRagMain();
 
 const { createWindow, getShortcutState, saveGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, sendToRenderer, stopProviderForDataErase, isProviderBusy } = require('./utils/gemini');

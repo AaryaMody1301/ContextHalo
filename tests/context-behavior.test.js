@@ -184,27 +184,27 @@ test('late transcription from a closed provider session is discarded', async () 
     let owner = '100';
     let requests = 0;
     const responses = [late.promise, { ok: true, clone: () => ({ json: () => body.promise }) }, transcription('Current text')];
-    const host = { fetch: async () => responses[requests++] };
+    const send = async () => responses[requests++];
     function transcription(text) {
         return { ok: true, clone: () => ({ json: async () => ({ text }) }) };
     }
-    const main = loadMain('src/utils/realtimeContextMain.js', {
+    const { createProviderFetch } = loadMain('src/utils/providerRequestMain.js', {
         electron: { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false,
             webContents: { send: (event, data) => sent.push([event, data.sessionId, data.text]) } }] } },
         '../storage': { getPreferences: () => ({}) },
         './sessionRequests': { requestIsCurrent: () => true },
-    }, { global: host });
-    main.installRealtimeContextMain(() => owner);
+    });
+    const fetch = createProviderFetch(send, () => owner);
 
-    const inFlight = host.fetch('http://127.0.0.1/inference');
+    const inFlight = fetch('http://127.0.0.1/inference');
     owner = null;
     owner = '200';
     late.resolve(transcription('Old text'));
     await inFlight;
-    await host.fetch('http://127.0.0.1/inference');
+    await fetch('http://127.0.0.1/inference');
     owner = '300';
     body.resolve({ text: 'Stale response body' });
-    await host.fetch('http://127.0.0.1/inference');
+    await fetch('http://127.0.0.1/inference');
     await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(sent, [['live-transcript', '300', 'Current text']]);
 });

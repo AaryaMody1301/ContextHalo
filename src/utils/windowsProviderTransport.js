@@ -3,6 +3,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const { getRequestSignal } = require('./sessionRequests');
 const { abortable, deadlineSignal } = require('./requestDeadline');
+const { classifyProviderRequest, createProviderFetch } = require('./providerRequestMain');
 const { guardGeminiStream } = require('./geminiStreamGuard');
 
 const providerScope = new AsyncLocalStorage();
@@ -31,62 +32,6 @@ function createAbortError(message) {
     const error = new Error(message);
     error.name = 'AbortError';
     return error;
-}
-
-function requestUrl(input) {
-    try {
-        if (typeof input === 'string' || input instanceof URL) return new URL(input.toString());
-        if (input && typeof input.url === 'string') return new URL(input.url);
-    } catch {}
-    return null;
-}
-
-function bodyContainsImage(body) {
-    if (typeof body !== 'string') return false;
-    return body.includes('image_url') || body.includes('data:image/');
-}
-
-function classifyProviderRequest(input, init = {}) {
-    const url = requestUrl(input);
-    if (!url) return null;
-
-    if (url.hostname === 'api.groq.com') {
-        if (url.pathname.includes('/audio/transcriptions')) return 'groq-transcription';
-        if (url.pathname.includes('/chat/completions')) {
-            return bodyContainsImage(init.body) ? 'groq-image' : 'groq-text';
-        }
-        return null;
-    }
-
-    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') {
-        return bodyContainsImage(init.body) ? 'mistral-image' : 'mistral-text';
-    }
-
-    if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') {
-        if (url.pathname.includes('/v1/chat/completions')) {
-            return bodyContainsImage(init.body) ? 'local-image' : 'local-text';
-        }
-        if (url.pathname.includes('/inference')) return 'local-whisper';
-        return 'local-health';
-    }
-
-    return null;
-}
-
-function tuneProviderRequest(kind, init) {
-    if (kind !== 'groq-text' || typeof init.body !== 'string') return init;
-
-    try {
-        const body = JSON.parse(init.body);
-        if (!String(body.model || '').startsWith('openai/gpt-oss-')) return init;
-
-        body.reasoning_effort ??= 'low';
-        body.include_reasoning = false;
-        body.max_completion_tokens = Math.max(Number(body.max_completion_tokens) || 0, 4096);
-        return { ...init, body: JSON.stringify(body) };
-    } catch {
-        return init;
-    }
 }
 
 function parseRetryAfterMs(headers) {
@@ -231,16 +176,9 @@ async function geminiHttpResponse(input, init) {
     });
 }
 
-async function boundedFetch(input, init = {}) {
-    const url = requestUrl(input);
-    if (url?.hostname === 'generativelanguage.googleapis.com'
-        && /^\/v1(?:beta|alpha)?\/models\/[^/]+:(?:generateContent|streamGenerateContent)$/.test(url.pathname)) {
-        return geminiHttpResponse(input, init);
-    }
-    const kind = classifyProviderRequest(input, init);
-    if (!kind || !POLICIES[kind] || !originalFetch) return originalFetch(input, init);
-
-    const requestInit = tuneProviderRequest(kind, init);
+async function boundedFetch(input, requestInit = {}, kind = classifyProviderRequest(input, requestInit)) {
+    if (kind === 'gemini-http') return geminiHttpResponse(input, requestInit);
+    if (!kind || !POLICIES[kind]) return originalFetch(input, requestInit);
     const policy = POLICIES[kind];
     const startedAt = Date.now();
     let lastError = null;
@@ -311,11 +249,12 @@ async function boundedFetch(input, init = {}) {
     throw lastError || createAbortError(`${kind} request failed`);
 }
 
-function installWindowsProviderTransport() {
-    if (installed || process.platform !== 'win32') return;
+function installWindowsProviderTransport(getActiveSessionId) {
+    if (installed) return;
     if (typeof global.fetch !== 'function') throw new Error('Global fetch is unavailable');
     originalFetch = global.fetch.bind(global);
-    global.fetch = boundedFetch;
+    const send = process.platform === 'win32' ? boundedFetch : originalFetch;
+    global.fetch = createProviderFetch(send, getActiveSessionId);
     installed = true;
 }
 
@@ -366,10 +305,8 @@ module.exports = {
     runWithProviderScope,
     abortProviderSession,
     resetProviderSession,
-    classifyProviderRequest,
     parseRetryAfterMs,
     getRetryDelayMs,
-    tuneProviderRequest,
     boundedFetch,
     setFetchImplementationForTests,
     POLICIES,

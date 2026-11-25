@@ -18,10 +18,10 @@ function prependInstruction(content, instruction) {
     return content.map((part, index) => index === textIndex ? { ...part, text: prefix + part.text } : part);
 }
 
-function buildGroqMessages(model, systemPrompt, messages = [], maxInstructionChars) {
+function buildGroqMessages(systemPrompt, messages = [], maxInstructionChars) {
     const instruction = normalizedInstruction(systemPrompt, maxInstructionChars);
     const input = Array.isArray(messages) ? messages : [];
-    return formatGroqMessages(model, [{ role: 'system', content: instruction }, ...input]);
+    return [{ role: 'system', content: instruction }, ...input];
 }
 
 function formatGroqMessages(model, messages) {

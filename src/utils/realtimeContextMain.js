@@ -1,67 +1,18 @@
 const { requestIsCurrent } = require('./sessionRequests');
-const { BrowserWindow } = require('electron');
-const storage = require('../storage');
-const { formatGroqMessages } = require('./groqRequestPolicy');
 const {
-    normalizeResponseMode,
     applyResponseModeInstruction,
-    tuneChatRequestBody,
     normalizeTranscriptEvent,
 } = require('./realtimeContextCore');
-
-let installed = false;
-let fetchPatched = false;
 
 function emitLiveTranscript(payload) {
     if (!payload?.sessionId || !requestIsCurrent()) return;
     const event = normalizeTranscriptEvent(payload);
     if (!event) return;
 
+    const { BrowserWindow } = require('electron');
     for (const window of BrowserWindow.getAllWindows()) {
         if (!window || window.isDestroyed()) continue;
         window.webContents.send('live-transcript', { ...event, sessionId: payload.sessionId });
-    }
-}
-
-function getResponseMode() {
-    return normalizeResponseMode(storage.getPreferences()?.responseMode);
-}
-
-function requestUrl(input) {
-    try {
-        if (typeof input === 'string' || input instanceof URL) return new URL(input.toString());
-        if (input && typeof input.url === 'string') return new URL(input.url);
-    } catch {}
-    return null;
-}
-
-function isChatRequest(url) {
-    if (!url) return false;
-    if (url.hostname === 'api.groq.com' && url.pathname.includes('/chat/completions')) return true;
-    if (url.hostname === 'api.mistral.ai' && url.pathname === '/v1/chat/completions') return true;
-    return (url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/v1/chat/completions');
-}
-
-function getTranscriptProvider(url) {
-    if (!url) return null;
-    if (url.hostname === 'api.groq.com' && url.pathname.includes('/audio/transcriptions')) return 'groq';
-    if ((url.hostname === '127.0.0.1' || url.hostname === 'localhost') && url.pathname.includes('/inference')) return 'local';
-    return null;
-}
-
-function tuneRequestInit(url, init = {}) {
-    if (!isChatRequest(url) || typeof init.body !== 'string') return init;
-
-    try {
-        const body = JSON.parse(init.body);
-        const tuned = tuneChatRequestBody(body, getResponseMode());
-        if (url.hostname === 'api.mistral.ai') tuned.max_tokens = Math.min(Number(tuned.max_tokens) || 2048, 2048);
-        if (url.hostname === 'api.groq.com' && Array.isArray(tuned.messages)) {
-            tuned.messages = formatGroqMessages(tuned.model, tuned.messages);
-        }
-        return { ...init, body: JSON.stringify(tuned) };
-    } catch {
-        return init;
     }
 }
 
@@ -76,23 +27,6 @@ function observeTranscriptResponse(response, provider, sessionId, getActiveSessi
             emitLiveTranscript({ provider, text, final: true, timestamp: Date.now(), sessionId });
         }).catch(() => {});
     } catch {}
-}
-
-function patchProviderFetch(getActiveSessionId) {
-    if (fetchPatched || typeof global.fetch !== 'function') return;
-
-    const previousFetch = global.fetch.bind(global);
-    global.fetch = async (input, init = {}) => {
-        const url = requestUrl(input);
-        const nextInit = tuneRequestInit(url, init);
-        const provider = getTranscriptProvider(url);
-        const sessionId = provider ? getActiveSessionId() : null;
-        const response = await previousFetch(input, nextInit);
-        observeTranscriptResponse(response, provider, sessionId, getActiveSessionId);
-        return response;
-    };
-
-    fetchPatched = true;
 }
 
 function extractGeminiTranscript(message, field) {
@@ -128,14 +62,8 @@ function tuneLiveSystemInstruction(systemInstruction, mode) {
 
 const { sanitizeTranscriptHistory, sanitizeMarkers } = require('./sessionData');
 
-function installRealtimeContextMain(getActiveSessionId = () => null) {
-    if (installed) return;
-    patchProviderFetch(getActiveSessionId);
-    installed = true;
-}
-
 module.exports = {
-    installRealtimeContextMain,
+    observeTranscriptResponse,
     emitLiveTranscript,
     extractGeminiTranscript,
     tuneLiveSystemInstruction,

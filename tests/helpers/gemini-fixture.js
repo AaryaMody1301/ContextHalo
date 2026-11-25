@@ -115,19 +115,14 @@ function geminiFixture(options = {}) {
             return actual(name);
         },
     };
-    // Exercise the production fetch composition, including final provider role formatting.
-    scope.global.fetch = scope.fetch;
-    const middlewareMocks = {
+    // Use the same request composition as the installed application.
+    const requestMocks = {
         '../storage': storage,
         electron: { BrowserWindow: { getAllWindows: () => [] } },
         './knowledgeStore': { getEnabledDocuments: () => options.knowledgeDocuments || [] },
     };
-    for (const [file, install] of [
-        ['realtimeContextMain', 'installRealtimeContextMain'],
-        ['sessionPackMain', 'installSessionPackMain'],
-        ['knowledgeRagMain', 'installKnowledgeRagMain'],
-    ]) loadMain(`src/utils/${file}.js`, middlewareMocks, { global: scope.global })[install]();
-    scope.fetch = scope.global.fetch;
+    const { createProviderFetch } = loadMain('src/utils/providerRequestMain.js', requestMocks);
+    scope.fetch = createProviderFetch(scope.fetch, () => api?.getActiveSessionId());
     vm.runInNewContext(fs.readFileSync(filename, 'utf8'), scope, { filename });
     api = scope.module.exports;
     api.setupGeminiIpcHandlers({ current: null });

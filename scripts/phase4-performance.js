@@ -52,8 +52,14 @@ async function main() {
             injected = init.body.includes('[ContextHalo knowledge]');
             return new Response(null, { status: 204 });
         };
-        app('utils/sessionPackMain').installSessionPackMain();
-        rag.installKnowledgeRagMain();
+        const providerRequest = path.join(checkout, 'src/utils/providerRequestMain.js');
+        if (fs.existsSync(providerRequest)) {
+            global.fetch = require(providerRequest).createProviderFetch(global.fetch);
+        } else {
+            // Older comparison checkouts install individual context wrappers.
+            app('utils/sessionPackMain').installSessionPackMain();
+            rag.installKnowledgeRagMain();
+        }
         const results = [];
         for (const count of [10, 100, 500]) {
             home = path.join(fixture, String(count));
