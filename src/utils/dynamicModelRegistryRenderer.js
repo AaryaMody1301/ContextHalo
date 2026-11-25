@@ -63,11 +63,12 @@ function renderModelPicker(view, options) {
         `;
     }
 
+    // Let the options set selection as they render. Setting the select value
+    // before replacement options exist can clear its saved selection.
     return html`
         <div class="form-group">
             <label class="form-label" for=${fieldId}>${label}</label>
-            <select id=${fieldId} .value=${value || ''} aria-describedby=${status ? statusId : ''} @change=${event => onSave.call(view, event.target.value)}>
-                ${retained ? html`<option value=${value} .selected=${true}>${value} (saved model)</option>` : ''}
+            <select id=${fieldId} aria-describedby=${status ? statusId : ''} @change=${event => onSave.call(view, event.target.value)}>
                 ${preferredModels.length ? html`
                     <optgroup label="Compatible / recommended">
                         ${preferredModels.map(model => html`
@@ -86,6 +87,7 @@ function renderModelPicker(view, options) {
                         `)}
                     </optgroup>
                 ` : ''}
+                ${retained ? html`<option value=${value} .selected=${true}>${value} (saved model)</option>` : ''}
             </select>
             ${status ? html`<div id=${statusId} class="form-hint" role="status">${status}</div>` : ''}
             ${helper ? html`<div class="form-hint">${helper}</div>` : ''}
