@@ -98,18 +98,19 @@ test('Gemini knowledge retrieval uses the current question after a long unrelate
 
 test('outgoing provider requests require separate cloud consent for knowledge and clipboard', async () => {
     const preferences = { sessionPack: { title: 'Fixture review', clipboardText: 'private clipboard fixture' } };
+    let preferenceReads = 0;
     const sent = [];
-    const globals = { global: { fetch: async (input, init) => { sent.push({ input, ...init }); } } };
+    const send = async (input, init) => { sent.push({ input, ...init }); };
     const mocks = {
-        '../storage': { getPreferences: () => preferences },
+        '../storage': { getPreferences: () => { preferenceReads += 1; return preferences; } },
         './knowledgeStore': { getEnabledDocuments: () => [
             { id: 'doc', title: 'Fixture document', chunks: [{ id: 'chunk', text: 'Database indexes reduce scan cost.' }] },
         ] },
     };
-    const pack = loadMain('src/utils/sessionPackMain.js', mocks, globals);
-    const rag = loadMain('src/utils/knowledgeRagMain.js', mocks, globals);
-    pack.installSessionPackMain();
-    rag.installKnowledgeRagMain();
+    const pack = loadMain('src/utils/sessionPackMain.js', mocks);
+    const rag = loadMain('src/utils/knowledgeRagMain.js', mocks);
+    const { createProviderFetch } = loadMain('src/utils/providerRequestMain.js', mocks);
+    const fetch = createProviderFetch(send);
     const question = 'Explain database indexes.';
     const params = { contents: question, config: { systemInstruction: pack.appendSessionPack('Respond.') } };
     assert.match(params.config.systemInstruction, /Fixture review/);
@@ -126,7 +127,9 @@ test('outgoing provider requests require separate cloud consent for knowledge an
         assert.equal(rag.augmentLiveTextPayload({ text: question }).text.includes('reduce scan cost'), knowledge);
         assert.equal(rag.augmentGenerateParams(params).config.systemInstruction.includes('reduce scan cost'), knowledge);
         for (const host of hosts) {
-            await globals.global.fetch(host + '/chat/completions', { body: JSON.stringify({ messages: [{ role: 'user', content: question }] }) });
+            const reads = preferenceReads;
+            await fetch(host + '/chat/completions', { body: JSON.stringify({ messages: [{ role: 'user', content: question }] }) });
+            assert.equal(preferenceReads - reads, 1, 'each request reads preferences once');
             const { body, redirect } = sent.at(-1);
             assert.match(body, /Fixture review/);
             assert.equal(body.includes('reduce scan cost'), knowledge || host.startsWith('http:'));
@@ -134,6 +137,11 @@ test('outgoing provider requests require separate cloud consent for knowledge an
             assert.equal(redirect, 'error');
         }
     }
+    const request = { body: JSON.stringify({ messages: [{ role: 'user', content: question }] }) };
+    const reads = preferenceReads;
+    await fetch('https://api.groq.com/openai/v1/chat/completions/other', request);
+    assert.deepEqual(sent.at(-1), { input: 'https://api.groq.com/openai/v1/chat/completions/other', ...request });
+    assert.equal(preferenceReads, reads);
 });
 
 test('practice questions and grading work without a provider', () => {

@@ -588,8 +588,8 @@ async function sendToGroqNow(transcription) {
             },
             body: JSON.stringify({
                 model: modelToUse,
-                // Apply the model role policy after context middleware assembles all instructions.
-                messages: buildGroqMessages('', currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
+                // The provider request pipeline applies model roles after assembling context.
+                messages: buildGroqMessages(currentSystemPrompt, requestHistory, GROQ_MAX_SYSTEM_PROMPT_CHARS),
                 stream: true,
                 temperature: 0.7,
                 max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
@@ -699,7 +699,7 @@ async function sendImageToGroq(base64Data, prompt) {
             },
             body: JSON.stringify({
                 model,
-                messages: buildGroqMessages('', currentSystemPrompt, [
+                messages: buildGroqMessages(currentSystemPrompt, [
                     {
                         role: 'user',
                         content: [

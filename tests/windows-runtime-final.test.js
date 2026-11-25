@@ -6,14 +6,13 @@ const os = require('node:os');
 
 const {
     boundedFetch,
-    classifyProviderRequest,
     parseRetryAfterMs,
-    tuneProviderRequest,
     runWithProviderScope,
     resetProviderSession,
     setFetchImplementationForTests,
 } = require('../src/utils/windowsProviderTransport');
 const { loadMain } = require('./helpers/native-boundary');
+const { classifyProviderRequest } = require('../src/utils/providerRequestMain');
 const { mixPcm16 } = loadMain('src/utils/windowsRuntimeMain.js');
 const { normalizeEtag, parseModelReference, extractVulkanRuntime, VULKAN_LLAMA_RELEASE } = loadMain('src/utils/windowsLocalAiRuntime.js');
 
@@ -31,6 +30,31 @@ test('Windows provider transport classifies cloud and local runtime calls', () =
     assert.equal(classifyProviderRequest('http://127.0.0.1:1234/v1/chat/completions', { body: imageBody }), 'local-image');
     assert.equal(classifyProviderRequest('http://127.0.0.1:1234/v1/chat/completions', { body: textBody }), 'local-text');
     assert.equal(classifyProviderRequest('http://127.0.0.1:1234/inference', {}), 'local-whisper');
+});
+
+test('chat routing uses the exact provider route and structured image parts', () => {
+    const typed = { body: JSON.stringify({
+        model: 'openai/gpt-oss-120b',
+        messages: [{ role: 'user', content: 'Explain the image_url field and data:image/ syntax.' }],
+    }) };
+    const image = { body: JSON.stringify({
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Explain this' },
+            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AA==' } }] }],
+    }) };
+    const expected = [
+        ['https://api.groq.com/openai/v1/chat/completions', 'groq'],
+        ['https://api.mistral.ai/v1/chat/completions', 'mistral'],
+        ['http://127.0.0.1:1234/v1/chat/completions', 'local'],
+    ];
+    for (const [endpoint, provider] of expected) {
+        assert.equal(classifyProviderRequest(endpoint, typed), provider + '-text');
+        assert.equal(classifyProviderRequest(new URL(endpoint), image), provider + '-image');
+        assert.equal(classifyProviderRequest({ url: endpoint + '/other' }, image), null);
+    }
+    assert.equal(classifyProviderRequest('http://api.groq.com/openai/v1/chat/completions', typed), null);
+    assert.equal(classifyProviderRequest('https://api.groq.com/openai/v1/audio/transcriptions/other'), null);
+    assert.equal(classifyProviderRequest('http://127.0.0.1/' + 'a'.repeat(48) + '/inference'), 'local-whisper');
+    assert.equal(classifyProviderRequest('http://127.0.0.1/' + 'a'.repeat(48) + '/health'), 'local-health');
 });
 
 test('Groq Retry-After is honored before retrying a 429', async () => {
@@ -117,20 +141,6 @@ test('provider scope rejects work that ignores cancellation at the hard deadline
         /test provider timed out/i
     );
     assert.ok(Date.now() - startedAt < 500, 'scope should reject close to its own deadline');
-});
-
-test('GPT-OSS text requests are tuned for low-latency free-tier use', () => {
-    const tuned = tuneProviderRequest('groq-text', {
-        body: JSON.stringify({
-            model: 'openai/gpt-oss-120b',
-            messages: [],
-            max_completion_tokens: 2048,
-        }),
-    });
-    const body = JSON.parse(tuned.body);
-    assert.equal(body.reasoning_effort, 'low');
-    assert.equal(body.include_reasoning, false);
-    assert.equal(body.max_completion_tokens, 4096);
 });
 
 test('Windows both-audio mixer produces one clipped PCM16 stream', () => {
@@ -233,8 +243,15 @@ test('Windows security and packaging configuration are enabled together', () => 
     assert.equal(Object.keys(packageJson.devDependencies).some(name => name.startsWith('@electron-forge/')), false);
     assert.equal(packageJson.devDependencies['@reforged/maker-appimage'], undefined);
     assert.equal(indexSource.includes('electron-squirrel-startup'), false);
-    assert.ok(indexSource.indexOf('installWindowsProviderTransport();') < indexSource.indexOf("require('./utils/gemini')"));
-    assert.ok(indexSource.indexOf('installWindowsLocalAiRuntime();') < indexSource.indexOf("require('./utils/gemini')"));
+    const geminiImport = indexSource.indexOf("= require('./utils/gemini');");
+    for (const setup of [
+        'installOfflineNetworkBoundary();',
+        'installWindowsProviderTransport(() =>',
+        'installWindowsLocalAiRuntime();',
+    ]) {
+        const position = indexSource.indexOf(setup);
+        assert.ok(position >= 0 && position < geminiImport, setup);
+    }
 });
 
 test('Retry-After numeric values are interpreted as seconds', () => {

@@ -53,6 +53,7 @@ test('Groq typed and vision requests serialize the documented current contracts'
 
     const textBody = calls[0].body;
     assert.equal(textBody.model, 'openai/gpt-oss-120b');
+    assert.equal(textBody.max_completion_tokens, 4096);
     assert.equal(textBody.reasoning_effort, 'low');
     assert.equal(textBody.include_reasoning, false);
     assert.equal(Object.hasOwn(textBody, 'reasoning_format'), false);
@@ -104,7 +105,10 @@ test('final Groq requests combine all context before applying Qwen roles', async
     const image = Buffer.alloc(1100).toString('base64');
     const f = geminiFixture({
         config: { groqModel: 'qwen/qwen3.8-27b', groqImageModel: 'qwen/qwen3.8-27b' },
-        preferences: { cloudKnowledgeEnabled: true, sessionPack: { title: 'Database review', goal: 'Explain the query plan' } },
+        preferences: {
+            cloudKnowledgeEnabled: true, cloudClipboardEnabled: true,
+            sessionPack: { title: 'Database review', goal: 'Explain the query plan', clipboardText: 'Clipboard fixture' },
+        },
         knowledgeDocuments: [{ id: 'db', title: 'Database notes', enabled: true,
             chunks: [{ id: 'chunk', text: 'Query plans use indexes to reduce database scan cost.' }] }],
         fetch: async (_url, init) => { bodies.push(JSON.parse(init.body)); return sseAnswer('Answer'); },
@@ -118,9 +122,11 @@ test('final Groq requests combine all context before applying Qwen roles', async
             assert.equal(body.messages.some(message => message.role === 'system'), false);
             const current = body.messages.at(-1).content;
             const text = typeof current === 'string' ? current : current.find(part => part.type === 'text').text;
-            for (const marker of ['[ContextHalo knowledge]', '[ContextHalo session pack]', '[ContextHalo response mode:']) {
-                assert.equal(text.split(marker).length - 1, 1, marker);
-            }
+            const markers = ['[ContextHalo knowledge]', '[ContextHalo session pack]', '[ContextHalo response mode:'];
+            for (const marker of markers) assert.equal(text.split(marker).length - 1, 1, marker);
+            const positions = markers.map(marker => text.indexOf(marker));
+            assert.ok(positions[0] < positions[1] && positions[1] < positions[2]);
+            assert.match(text, /Clipboard fixture/);
             assert.match(text, /Query plans use indexes/);
             assert.match(text, /Goal: Explain the query plan/);
             assert.ok(text.endsWith('Explain database query plans'));

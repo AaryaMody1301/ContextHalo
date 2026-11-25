@@ -2,11 +2,9 @@ const storage = require('../storage');
 const { formatRetrievedContext, normalizeText, retrieveChunks, retrievePreviewChunks } = require('./knowledgeCore');
 const { getEnabledDocuments } = require('./knowledgeStore');
 
-const { chatRequestScope, getProviderSessionPack } = require('./sessionPackMain');
+const { getProviderSessionPack } = require('./sessionPackMain');
 
 const KNOWLEDGE_MARKER = '[ContextHalo knowledge]';
-let installed = false;
-let fetchPatched = false;
 
 function messageText(content) {
     if (typeof content === 'string') return content;
@@ -27,8 +25,7 @@ function lastUserQuery(messages) {
     return '';
 }
 
-function retrieveContext(query, options = {}) {
-    const preferences = storage.getPreferences();
+function retrieveContext(query, options = {}, preferences = storage.getPreferences()) {
     const scope = options.scope || 'cloud';
     if (scope !== 'local' && preferences?.cloudKnowledgeEnabled !== true) return '';
     const documents = getEnabledDocuments();
@@ -49,9 +46,9 @@ function appendContext(base, context) {
     return text ? `${text}\n\n${context}` : context;
 }
 
-function augmentMessages(messages, scope) {
+function augmentMessages(messages, scope, preferences) {
     if (!Array.isArray(messages)) return messages;
-    const context = retrieveContext(lastUserQuery(messages), { scope });
+    const context = retrieveContext(lastUserQuery(messages), { scope }, preferences);
     if (!context) return messages;
 
     let updated = false;
@@ -62,25 +59,6 @@ function augmentMessages(messages, scope) {
     });
     if (!updated) next.unshift({ role: 'system', content: context });
     return next;
-}
-
-function patchProviderFetch() {
-    if (fetchPatched || typeof global.fetch !== 'function') return;
-    const previousFetch = global.fetch.bind(global);
-    global.fetch = (input, init = {}) => {
-        const scope = chatRequestScope(input);
-        if (scope && typeof init.body === 'string') {
-            try {
-                const body = JSON.parse(init.body);
-                const messages = augmentMessages(body.messages, scope);
-                if (messages !== body.messages) init = { ...init, redirect: 'error', body: JSON.stringify({ ...body, messages }) };
-            } catch {
-                // Send the original request if optional context could not be added.
-            }
-        }
-        return previousFetch(input, init);
-    };
-    fetchPatched = true;
 }
 
 function appendContextToInstruction(systemInstruction, context) {
@@ -134,15 +112,8 @@ function augmentLiveTextPayload(payload) {
     };
 }
 
-function installKnowledgeRagMain() {
-    if (installed) return;
-    patchProviderFetch();
-    installed = true;
-}
-
 module.exports = {
     KNOWLEDGE_MARKER,
-    installKnowledgeRagMain,
     retrieveContext,
     augmentMessages,
     augmentGenerateParams,

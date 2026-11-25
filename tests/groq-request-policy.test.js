@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildGroqMessages, getGroqReasoningOptions } = require('../src/utils/groqRequestPolicy');
+const { buildGroqMessages, formatGroqMessages, getGroqReasoningOptions } = require('../src/utils/groqRequestPolicy');
 
 test('Qwen text requests keep instructions in the latest user message', () => {
     const history = [
@@ -8,7 +8,7 @@ test('Qwen text requests keep instructions in the latest user message', () => {
         { role: 'assistant', content: 'Earlier answer' },
         { role: 'user', content: 'Current question' },
     ];
-    const messages = buildGroqMessages('qwen/qwen3.8-27b', 'Interview instructions', history, 6000);
+    const messages = formatGroqMessages('qwen/qwen3.8-27b', buildGroqMessages('Interview instructions', history, 6000));
 
     assert.equal(messages.some(message => message.role === 'system'), false);
     assert.equal(messages[0].content, 'Earlier question');
@@ -20,7 +20,7 @@ test('Qwen text requests keep instructions in the latest user message', () => {
 test('Qwen vision requests preserve image input and prepend instructions to text', () => {
     const image = { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } };
     const source = [{ role: 'user', content: [{ type: 'text', text: 'Analyze this screen' }, image] }];
-    const messages = buildGroqMessages('qwen/qwen3.8-27b', 'Screen instructions', source, 6000);
+    const messages = formatGroqMessages('qwen/qwen3.8-27b', buildGroqMessages('Screen instructions', source, 6000));
 
     assert.equal(messages.length, 1);
     assert.equal(messages[0].role, 'user');
@@ -31,7 +31,7 @@ test('Qwen vision requests preserve image input and prepend instructions to text
 
 test('GPT-OSS preserves the system-role hierarchy', () => {
     const history = [{ role: 'user', content: 'Question' }];
-    const messages = buildGroqMessages('openai/gpt-oss-120b', 'Interview instructions', history, 6000);
+    const messages = formatGroqMessages('openai/gpt-oss-120b', buildGroqMessages('Interview instructions', history, 6000));
 
     assert.deepEqual(messages, [
         { role: 'system', content: 'Interview instructions' },
@@ -40,7 +40,7 @@ test('GPT-OSS preserves the system-role hierarchy', () => {
 });
 
 test('provider instructions remain bounded before being inserted', () => {
-    const messages = buildGroqMessages('qwen/qwen3.8-27b', 'abcdef', [{ role: 'user', content: 'Question' }], 3);
+    const messages = formatGroqMessages('qwen/qwen3.8-27b', buildGroqMessages('abcdef', [{ role: 'user', content: 'Question' }], 3));
     assert.match(messages[0].content, /Instructions for this request:\nabc\n\nRequest:\nQuestion$/);
     assert.doesNotMatch(messages[0].content, /abcdef/);
 });

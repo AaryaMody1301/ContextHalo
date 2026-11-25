@@ -110,6 +110,12 @@ Mistral applies organization/model request and token limits, included monthly us
 
 Text and screen failures show their sanitized explanation directly in Session details, including the model, known HTTP status and retry availability.
 
+### Request composition
+
+Groq, Mistral, and Local AI chat requests pass through [one request composer](src/utils/providerRequestMain.js). It matches the known endpoint, reads the original message structure to detect image attachments, and adds knowledge, the session pack, and response style in that order. It then applies the selected provider's message format and token settings. Hosted knowledge and clipboard consent are checked before their content is added. Requests with added context reject redirects.
+
+Gemini builds Live and HTTP requests through its SDK. The Windows transport applies request deadlines, cancellation, and retries after composition. Audio transcription keeps its provider-specific multipart format, and transcript events are bound to their original session.
+
 ## Security and privacy
 
 - API credentials are never committed to the repository.
