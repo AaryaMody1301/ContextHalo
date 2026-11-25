@@ -109,10 +109,12 @@ function scoreChunks(documents, query) {
     const candidates = [];
     for (const document of Array.isArray(documents) ? documents : []) {
         if (!document || document.enabled === false || !Array.isArray(document.chunks)) continue;
+        const titleTokens = new Set(tokenize(document.title || ''));
+        const titleBoost = queryTokens.filter(token => titleTokens.has(token)).length * 0.8;
         for (const chunk of document.chunks) {
             const tokens = Array.isArray(chunk.tokens) ? chunk.tokens : tokenize(chunk.text);
             if (!tokens.length) continue;
-            candidates.push({ document, chunk, tokens, counts: termCounts(tokens) });
+            candidates.push({ document, chunk, tokens, counts: termCounts(tokens), titleBoost });
         }
     }
     if (!candidates.length) return [];
@@ -121,13 +123,13 @@ function scoreChunks(documents, query) {
         return candidates.map((candidate, index) => ({ ...candidate, score: 1 / (index + 1) }));
     }
 
-    const documentFrequency = new Map();
+    const inverseFrequency = new Map();
     for (const token of queryTokens) {
         let count = 0;
         for (const candidate of candidates) {
             if (candidate.counts.has(token)) count += 1;
         }
-        documentFrequency.set(token, count);
+        inverseFrequency.set(token, Math.log(1 + (candidates.length - count + 0.5) / (count + 0.5)));
     }
 
     const averageLength = candidates.reduce((sum, candidate) => sum + candidate.tokens.length, 0) / candidates.length;
@@ -139,35 +141,25 @@ function scoreChunks(documents, query) {
         for (const token of queryTokens) {
             const tf = candidate.counts.get(token) || 0;
             if (!tf) continue;
-            const df = documentFrequency.get(token) || 0;
-            const idf = Math.log(1 + (candidates.length - df + 0.5) / (df + 0.5));
             const denominator = tf + k1 * (1 - b + b * candidate.tokens.length / Math.max(1, averageLength));
-            score += idf * ((tf * (k1 + 1)) / denominator);
+            score += inverseFrequency.get(token) * ((tf * (k1 + 1)) / denominator);
         }
-
-        const titleTokens = tokenize(candidate.document.title || '');
-        const titleHits = queryTokens.filter(token => titleTokens.includes(token)).length;
-        score += titleHits * 0.8;
-        return { ...candidate, score };
+        return { ...candidate, score: score + candidate.titleBoost };
     });
 }
 
-function retrieveChunks(documents, query, options = {}) {
+function collectSnippets(candidates, options) {
     const limit = Math.max(1, Math.min(12, Number(options.limit) || 5));
-    const maxChars = Math.max(1000, Math.min(20_000, Number(options.maxChars) || 7500));
-    const scored = scoreChunks(documents, query)
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score || a.chunk.index - b.chunk.index);
-
+    const maxChars = Math.max(1, Math.min(20_000, Number(options.maxChars) || 7500));
     const results = [];
     const seen = new Set();
     let chars = 0;
-    for (const item of scored) {
+    for (const item of candidates) {
         const key = `${item.document.id}:${item.chunk.id || item.chunk.index}`;
         if (seen.has(key)) continue;
-        const text = normalizeText(item.chunk.text, 5000);
+        const text = normalizeText(item.chunk.text, results.length ? 5000 : Math.min(maxChars, 5000));
         if (!text) continue;
-        if (results.length && chars + text.length > maxChars) break;
+        if (chars + text.length > maxChars) break;
         seen.add(key);
         results.push({
             documentId: item.document.id,
@@ -181,6 +173,19 @@ function retrieveChunks(documents, query, options = {}) {
         if (results.length >= limit) break;
     }
     return results;
+}
+
+function retrieveChunks(documents, query, options = {}) {
+    const scored = scoreChunks(documents, query)
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score || a.chunk.index - b.chunk.index);
+    return collectSnippets(scored, options);
+}
+
+function retrievePreviewChunks(documents, options = {}) {
+    const firstChunks = documents.slice(0, 4).flatMap(document =>
+        (document.chunks || []).slice(0, 1).map(chunk => ({ document, chunk, score: 0 })));
+    return collectSnippets(firstChunks, options);
 }
 
 function formatRetrievedContext(results, marker = '[ContextHalo knowledge]') {
@@ -207,6 +212,7 @@ module.exports = {
     tokenize,
     chunkText,
     retrieveChunks,
+    retrievePreviewChunks,
     formatRetrievedContext,
     topKeywords,
 };

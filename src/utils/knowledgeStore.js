@@ -16,8 +16,22 @@ const SUPPORTED_EXTENSIONS = new Set([
     '.sql', '.yaml', '.yml', '.toml', '.ini', '.properties', '.xml', '.css', '.scss', '.sh', '.ps1',
 ]);
 
-const documentSummaries = new Map();
-let summariesDirectory;
+// Limit retained documents by their combined serialized size. Large stores still
+// search files beyond this budget without clearing already cached documents.
+const MAX_CACHED_DOCUMENT_BYTES = 24 * 1024 * 1024;
+const documentEntries = new Map();
+let cachedDocumentBytes = 0;
+let entriesDirectory;
+
+function forgetDocument(id) {
+    cachedDocumentBytes -= documentEntries.get(id)?.bytes || 0;
+    documentEntries.delete(id);
+}
+
+function clearDocumentEntries() {
+    documentEntries.clear();
+    cachedDocumentBytes = 0;
+}
 
 function getKnowledgeDir() {
     return path.join(storage.getConfigDir(), 'knowledge');
@@ -85,11 +99,19 @@ function readStoredIndex() {
 }
 
 function documentIds(index) {
+    const directory = getDocumentsDir();
+    if (entriesDirectory !== directory) {
+        clearDocumentEntries();
+        entriesDirectory = directory;
+    }
     const present = new Set();
-    for (const entry of fs.readdirSync(getDocumentsDir(), { withFileTypes: true })) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
         const id = entry.name.slice(0, -5);
         if (DOCUMENT_ID.test(id)) present.add(id);
+    }
+    for (const id of documentEntries.keys()) {
+        if (!present.has(id)) forgetDocument(id);
     }
     const indexed = (index?.documents ?? []).map(item => item.id).filter(id => present.delete(id));
     return [...indexed, ...[...present].sort()];
@@ -100,43 +122,41 @@ function documentPath(id) {
     return path.join(getDocumentsDir(), `${id}.json`);
 }
 
-function documentSummary(id) {
+function readDocumentEntry(id, includeDocument = false) {
     try {
-        const stat = fs.statSync(documentPath(id));
+        const file = documentPath(id);
+        const stat = fs.statSync(file);
         const version = `${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-        const cached = documentSummaries.get(id);
-        if (cached?.version === version) return cached.metadata;
+        const cached = documentEntries.get(id);
+        const unchanged = cached?.version === version;
+        if (unchanged && (!includeDocument || cached.document)) return cached;
+
         const document = loadDocument(id);
-        if (!document) {
-            documentSummaries.delete(id);
-            return null;
-        }
-        const metadata = metadataFromDocument(document);
-        documentSummaries.set(id, { version, metadata });
-        return metadata;
+        forgetDocument(id);
+        if (!document) return null;
+
+        const metadata = unchanged ? cached.metadata : metadataFromDocument(document);
+        const retainDocument = includeDocument && cachedDocumentBytes + stat.size <= MAX_CACHED_DOCUMENT_BYTES;
+        const bytes = retainDocument ? stat.size : 0;
+        const entry = { version, metadata, document: retainDocument ? document : null, bytes };
+        cachedDocumentBytes += bytes;
+        documentEntries.set(id, entry);
+        return includeDocument && !retainDocument ? { ...entry, document } : entry;
     } catch {
-        documentSummaries.delete(id);
+        forgetDocument(id);
         return null;
     }
 }
 
 function readInventory() {
     initializeKnowledgeStore();
-    const directory = getDocumentsDir();
-    if (summariesDirectory !== directory) {
-        documentSummaries.clear();
-        summariesDirectory = directory;
-    }
     const stored = readStoredIndex();
     const ids = new Set(documentIds(stored.data));
-    for (const id of documentSummaries.keys()) {
-        if (!ids.has(id)) documentSummaries.delete(id);
-    }
     const documents = [];
     const unreadableFiles = [];
     for (const id of ids) {
-        const metadata = documentSummary(id);
-        if (metadata) documents.push(metadata);
+        const entry = readDocumentEntry(id);
+        if (entry) documents.push(entry.metadata);
         else unreadableFiles.push(`${id}.json`);
     }
     return { stored, ids, index: { version: KNOWLEDGE_VERSION, documents }, unreadableFiles };
@@ -204,7 +224,7 @@ function saveDocument(document, inventory) {
     }
     applyIndexChange(inventory, documents, () => safeWriteJson(documentPath(document.id), document));
     inventory.ids.add(document.id);
-    documentSummaries.delete(document.id);
+    forgetDocument(document.id);
     return metadata;
 }
 
@@ -349,17 +369,15 @@ function loadDocuments(ids = null) {
     const allowed = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null;
     return documentIds(readStoredIndex().data)
         .filter(id => !allowed || allowed.has(id))
-        .map(loadDocument)
+        .map(id => readDocumentEntry(id, true)?.document)
         .filter(Boolean);
 }
 
 function setDocumentEnabled(id, enabled) {
     const inventory = readInventory();
-    const document = loadDocument(String(id));
+    const document = readDocumentEntry(String(id), true)?.document;
     if (!document) throw new Error('Knowledge source could not be read. Refresh the library to check its status.');
-    document.enabled = enabled === true;
-    document.updatedAt = Date.now();
-    return saveDocument(document, inventory);
+    return saveDocument({ ...document, enabled: enabled === true, updatedAt: Date.now() }, inventory);
 }
 
 function deleteDocument(id) {
@@ -376,7 +394,7 @@ function deleteDocument(id) {
             }
         }
     });
-    documentSummaries.delete(id);
+    forgetDocument(id);
     return true;
 }
 
@@ -390,7 +408,7 @@ function getEnabledDocuments() {
 
 function clearKnowledge() {
     fs.rmSync(getKnowledgeDir(), { recursive: true, force: true });
-    documentSummaries.clear();
+    clearDocumentEntries();
     initializeKnowledgeStore();
     return true;
 }

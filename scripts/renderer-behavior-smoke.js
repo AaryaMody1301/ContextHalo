@@ -2,6 +2,7 @@
 // storage, knowledge, practice and review IPC use their real main-process handlers.
 const { extendedWindowsAcceptance } = require('./windows-acceptance');
 async function rendererBehaviorSmoke() {
+    const measurements = {};
     const checks = [];
     const verify = (condition, label) => { if (!condition) throw new Error(label); checks.push(label); };
     const settle = async element => { await element.updateComplete; await new Promise(resolve => setTimeout(resolve, 25)); };
@@ -212,7 +213,9 @@ async function rendererBehaviorSmoke() {
     const call=async(channel,...args)=>{const result=await ipc.invoke(channel,...args);if(!result?.success)throw new Error(channel+': '+result?.error);return result.data;};
     const text='The data pipeline uses idempotent ingestion to prevent duplicate events. Atomic checkpoints record the last committed offset so interrupted jobs resume safely. Partitioned tables and bounded retries improve recovery without silently discarding records.';
     const knowledgeDoc=await call('knowledge:add-text','Smoke test data pipeline',text);
+    const knowledgeStart = performance.now();
     const hits=await call('knowledge:search','idempotent ingestion');
+    measurements.oneSourceKnowledgeIpcMs = performance.now() - knowledgeStart;
     verify(hits.some(hit=>hit.text.includes('idempotent')),'Knowledge add and retrieval use real IPC');
     const practice=await call('practice:generate',{sourceType:'knowledge',documentIds:[knowledgeDoc.id],count:2});
     verify(practice.questions.length>0,'Practice generation creates source-grounded questions');
@@ -227,9 +230,12 @@ async function rendererBehaviorSmoke() {
     verify(saved.liveTranscript.length===1 && saved.markers.length===1 && saved.sessionPack.title==='Smoke session','Session updates preserve transcript, markers and context pack');
     const review=await call('review:get',sessionId);
     verify(Boolean(review && typeof review==='object'),'Session review reads persisted context');
-    app.navigate('history'); await settle(app);
+    const historyStart = performance.now();
+    app.navigate('history'); await app.updateComplete;
     const historyView = app.shadowRoot.querySelector('history-view');
     await waitUntil(() => !historyView.loading);
+    await historyView.updateComplete;
+    measurements.oneSessionHistoryOpenMs = performance.now() - historyStart;
     verify(historyView.sessions.some(session => session.title === 'Smoke session'), 'Saved titles arrive in History list metadata');
     historyView.searchQuery = 'Smoke session'; await settle(historyView);
     verify(historyView.shadowRoot.querySelector('.session-profile')?.textContent === 'Smoke session', 'History titles are primary labels and searchable');
@@ -396,7 +402,7 @@ async function rendererBehaviorSmoke() {
     app.addNewResponse('A newly arrived voice answer', {requestId:'reading-voice-new',kind:'voice'});
     await settle(app); await settle(reading);
     verify(app.currentResponseIndex === 0 && scroll.scrollTop === latestPosition, 'A new voice card does not replace the latest answer while its earlier paragraphs are being read');
-    return checks;
+    return { checks, measurements };
 }
 
 
@@ -540,8 +546,24 @@ function installWindowsSmokeCheck(window) {
                 result?.singleScrollOwner === true;
             if (!ready) throw new Error(`unexpected renderer state ${JSON.stringify(result)}`);
             
-            const checks = await window.webContents.executeJavaScript(`(${rendererBehaviorSmoke.toString()})()`, true);
+            const { monitorEventLoopDelay } = require('node:perf_hooks');
+            const { aggregateProcessMetrics } = require('../src/utils/reliabilityAcceptanceMain');
+            const loop = monitorEventLoopDelay({ resolution: 10 });
+            app.getAppMetrics();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const { totalCpuPercent, totalWorkingSetKb } = aggregateProcessMetrics(app.getAppMetrics());
+            const idle = { sampleMs: 1000, totalCpuPercent, totalWorkingSetKb };
+            let smoke;
+            loop.enable();
+            try {
+                smoke = await window.webContents.executeJavaScript(`(${rendererBehaviorSmoke.toString()})()`, true);
+            } finally {
+                loop.disable();
+            }
+            const { checks, measurements } = smoke;
+            const performanceEvidence = { ...measurements, idle, mainLoopP95Ms: loop.percentile(95) / 1e6 };
             console.log('[Windows behavior smoke] ' + JSON.stringify(checks));
+            console.log('[Windows performance] ' + JSON.stringify(performanceEvidence));
             const fs = require('node:fs');
             const path = require('node:path');
             fs.mkdirSync(directory, { recursive: true });
@@ -577,7 +599,7 @@ function installWindowsSmokeCheck(window) {
                 }
             }
             const { minimum, keyboard, accessibility, compositor } = await extendedWindowsAcceptance(window, directory);
-            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, appearance, minimum, keyboard, accessibility, compositor, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
+            fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify({ shell: result, behavior: checks, performance: performanceEvidence, appearance, minimum, keyboard, accessibility, compositor, rendererErrors, scaleMode: 'Chromium device scale factor; not physical Windows DPI acceptance' }, null, 2));
             if (rendererErrors.length) throw new Error('Renderer console errors: '+rendererErrors.join('; '));
             finish(true, 'sandboxed preload, navigation, typed composer, response routing, knowledge, practice and review verified');
         } catch (error) {

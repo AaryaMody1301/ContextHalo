@@ -75,6 +75,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - name: Upload validation source snapshot
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -136,6 +137,37 @@ jobs:
 
       - name: Run all regression tests
         run: npm test
+
+      - name: Compare synthetic retrieval performance
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: pwsh
+        run: |
+          $changed = @(git diff --name-only $env:PR_BASE_SHA HEAD -- scripts/phase4-performance.js)
+          if ($LASTEXITCODE -ne 0) { throw "Could not inspect benchmark changes" }
+          if (!$changed -or !(Test-Path 'scripts/phase4-performance.js' -PathType Leaf)) { return }
+
+          $baseline = Join-Path $env:RUNNER_TEMP 'contexthalo-perf-base'
+          git worktree add --detach $baseline $env:PR_BASE_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Could not check out the performance baseline" }
+          New-Item -ItemType Directory -Force -Path 'qa-results' | Out-Null
+          $before = node --expose-gc scripts/phase4-performance.js $baseline | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "Baseline benchmark failed" }
+          $after = node --expose-gc scripts/phase4-performance.js | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "Updated benchmark failed" }
+          $before | Set-Content 'qa-results/phase4-before.json' -Encoding utf8
+          $after | Set-Content 'qa-results/phase4-after.json' -Encoding utf8
+          Write-Host "[Phase 4 before] $(ConvertTo-Json (ConvertFrom-Json $before) -Depth 12 -Compress)"
+          Write-Host "[Phase 4 after] $(ConvertTo-Json (ConvertFrom-Json $after) -Depth 12 -Compress)"
+          $baseResults = (ConvertFrom-Json $before).results
+          $updatedResults = (ConvertFrom-Json $after).results
+          for ($i = 0; $i -lt $baseResults.Count; $i++) {
+            if ($baseResults[$i].corpusBytes -ne $updatedResults[$i].corpusBytes -or
+                $baseResults[$i].rankingSha256 -ne $updatedResults[$i].rankingSha256) {
+              throw "Synthetic corpus or ranked result changed"
+            }
+          }
 
       - name: Run Electron behavior and layout smoke test
         shell: pwsh

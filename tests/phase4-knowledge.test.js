@@ -42,6 +42,16 @@ test('knowledge core chunks text and ranks relevant local context', () => {
     assert.match(formatRetrievedContext(results), /ContextHalo knowledge/);
 });
 
+test('knowledge retrieval clips an oversized first match within the text budget', () => {
+    const text = 'Database isolation protects each concurrent transaction. '.repeat(40).trim();
+    const docs = [{ id: 'db', title: 'Database guide', sourceType: 'file',
+        chunks: chunkText(text, { maxChars: 2000 }) }];
+    const [unclipped] = retrieveChunks(docs, 'database isolation', { maxChars: 5000 });
+    const results = retrieveChunks(docs, 'database isolation', { maxChars: 1000 });
+    assert.ok(unclipped.text.length > 1000);
+    assert.deepEqual(results, [{ ...unclipped, text: unclipped.text.slice(0, 1000) }]);
+});
+
 test('disabled knowledge sources do not participate in retrieval', () => {
     const docs = [
         { id: 'off', title: 'Secret', enabled: false, chunks: chunkText('zebra migration protocol uses violet tokens') },
@@ -60,6 +70,7 @@ test('request retrieval loads enabled documents once and reuses them for ranking
     });
     assert.match(rag.retrieveContext('database query indexes'), /indexes reduce query/);
     assert.equal(reads, 1);
+    assert.match(rag.retrieveContext('', { maxChars: 12 }), /Source 1: Database\nDatabase ind$/);
 });
 
 test('Gemini knowledge retrieval uses the current question after a long unrelated history', () => {
@@ -277,8 +288,20 @@ test('failed knowledge writes preserve valid documents, indexes and practice his
 function knowledgeFixture(t, failures = {}) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-library-'));
     t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+    const documentReads = new Map();
     const boundaryFs = {
         ...fs,
+        readFileSync(file, ...args) {
+            if (typeof file === 'string' && path.basename(path.dirname(file)) === 'documents') {
+                documentReads.set(file, (documentReads.get(file) || 0) + 1);
+            }
+            return fs.readFileSync(file, ...args);
+        },
+        statSync(file, ...args) {
+            const stat = fs.statSync(file, ...args);
+            if (failures.oversized === file) stat.size = 25 * 1024 * 1024;
+            return stat;
+        },
         unlinkSync(file) {
             if (failures.remove === file) throw Object.assign(new Error('File locked'), { code: 'EBUSY' });
             return fs.unlinkSync(file);
@@ -312,8 +335,43 @@ function knowledgeFixture(t, failures = {}) {
         fs.writeFileSync(indexFile, JSON.stringify({ version: 1, documents }));
         return documents;
     }
-    return { home, root, knowledge, reload, storage, indexFile, documentFile, seedSources };
+    return { home, root, knowledge, reload, storage, indexFile, documentFile, seedSources, documentReads };
 }
+
+test('file-backed retrieval reuses unchanged files and sees replacements, disable, and deletion', t => {
+    const overrides = {};
+    const { knowledge, storage, documentFile, documentReads } = knowledgeFixture(t, overrides);
+    const first = knowledge.addText('Database', 'Database transactions use locks to preserve isolation during conflicting writes.');
+    const second = knowledge.addText('Dashboard', 'A dashboard reads metrics on a regular cadence and updates its charts.');
+    documentReads.clear();
+    const before = knowledge.searchKnowledge('database isolation');
+    assert.ok(before.some(item => item.documentId === first.id));
+    const reads = new Map(documentReads);
+    assert.deepEqual(knowledge.searchKnowledge('database isolation'), before);
+    knowledge.listDocuments();
+    assert.deepEqual(documentReads, reads, 'unchanged documents should be parsed once across search and listing');
+
+    const file = documentFile(first.id);
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const content = 'Transaction snapshots let readers see a consistent version without blocking on updating rows.';
+    assert.ok(storage.writeJsonFile(file, { ...doc, content, chunks: chunkText(content) }));
+    const after = knowledge.searchKnowledge('transaction snapshots');
+    assert.match(after[0].text, /consistent version/);
+    assert.equal(after[0].documentId, first.id);
+    assert.equal(documentReads.get(documentFile(second.id)), reads.get(documentFile(second.id)));
+    knowledge.setDocumentEnabled(first.id, false);
+    assert.deepEqual(knowledge.searchKnowledge('transaction snapshots'), []);
+    knowledge.setDocumentEnabled(first.id, true);
+    assert.equal(knowledge.searchKnowledge('transaction snapshots')[0].documentId, first.id);
+    fs.unlinkSync(file);
+    assert.deepEqual(knowledge.searchKnowledge('transaction snapshots'), []);
+
+    const oversized = documentFile(second.id);
+    overrides.oversized = oversized;
+    const start = documentReads.get(oversized);
+    for (let i = 0; i < 2; i++) assert.equal(knowledge.searchKnowledge('dashboard')[0].documentId, second.id);
+    assert.equal(documentReads.get(oversized), start + 2, 'an oversized source remains searchable without being retained');
+});
 
 test('the knowledge limit rejects new sources without changing existing files or the index', t => {
     const { knowledge, indexFile, documentFile, seedSources } = knowledgeFixture(t);
