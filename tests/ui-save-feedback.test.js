@@ -119,7 +119,8 @@ test('Home missing credentials guides setup; saved settings never claim verified
     const f = home(); await f.view._handleStart(); assert.equal(f.started(), 0); assert.equal(f.view._setupOpen, true);
     assert.match(f.view.startError, /API key/);
     f.view._geminiKey = 'fixture'; f.view._keyError = false; await f.view._handleStart(); assert.equal(f.started(), 1);
-    assert.match(f.view._readinessSummary(), /checked when connecting/);
+    assert.match(f.view._readinessSummary(), /Gemini Live checks access when connecting/);
+    assert.match(f.view._readinessSummary(), /Text and screen access are checked on use/);
     assert.equal(f.view._geminiLiveModel, 'manual-live');
 });
 
