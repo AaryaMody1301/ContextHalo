@@ -1,5 +1,5 @@
 const storage = require('../storage');
-const { formatRetrievedContext, normalizeText, retrieveChunks } = require('./knowledgeCore');
+const { formatRetrievedContext, normalizeText, retrieveChunks, retrievePreviewChunks } = require('./knowledgeCore');
 const { getEnabledDocuments } = require('./knowledgeStore');
 
 const { chatRequestScope, getProviderSessionPack } = require('./sessionPackMain');
@@ -36,16 +36,10 @@ function retrieveContext(query, options = {}) {
     const pack = getProviderSessionPack(scope, preferences);
     const seed = normalizeText([pack.goal, pack.notes, pack.clipboardText].filter(Boolean).join('\n'), 10_000);
     const effectiveQuery = normalizeText(query, 12_000) || seed;
+    const budget = { limit: options.limit || 5, maxChars: options.maxChars || 7200 };
     const results = effectiveQuery
-        ? retrieveChunks(documents, effectiveQuery, { limit: options.limit || 5, maxChars: options.maxChars || 7200 })
-        : documents.slice(0, 4).flatMap(document => (document.chunks || []).slice(0, 1).map(chunk => ({
-            documentId: document.id,
-            title: document.title,
-            sourceType: document.sourceType,
-            chunkId: chunk.id,
-            text: chunk.text,
-            score: 0,
-        })));
+        ? retrieveChunks(documents, effectiveQuery, budget)
+        : retrievePreviewChunks(documents, budget);
     return formatRetrievedContext(results, KNOWLEDGE_MARKER);
 }
 
