@@ -53,13 +53,15 @@ ContextHalo currently ships as a portable Windows executable. Packaged releases 
 
 The portable app does not silently download, replace, or execute an update. Replace the executable manually after verifying the release/checksum. Release builds embed the exact portable SemVer (for example, `0.8.0-portable.372` for tag `v0.8.0-portable.372`) and the source commit used to build them. A future installer-based auto-update channel requires a signed Windows distribution identity and separate validation before it can replace this portable/manual path.
 
-Main-branch release artifacts also receive GitHub artifact provenance attestations. With the GitHub CLI installed, a downloaded executable can be checked against this repository with:
+Pushes and pull requests to `main` run source and provenance checks, then build and test the portable app. To publish a release, open [Build ContextHalo Windows Portable EXE](https://github.com/AaryaMody1301/ContextHalo/actions/workflows/build-windows.yml), select **Run workflow** on `main` and enable **publish**. That run validates and attests the artifacts before publication. Repository maintenance follows a verified release.
+
+Release artifacts receive GitHub artifact provenance attestations. With the GitHub CLI installed, a downloaded executable can be checked against this repository with:
 
 ```bash
 gh attestation verify ContextHalo-Windows-x64.exe --repo AaryaMody1301/ContextHalo
 ```
 
-The repository's Phase 8 governance policy additionally requires pull requests, the Windows build check, resolved review threads, no force-pushes/deletions on `main`, and immutable releases. Signed-commit enforcement is intentionally deferred until the PR head-commit path itself produces verified signatures, so the rule cannot deadlock normal merges. The machine-readable target policy is in [`docs/PHASE_8_REPOSITORY_GOVERNANCE.json`](docs/PHASE_8_REPOSITORY_GOVERNANCE.json).
+The repository's Phase 8 governance policy additionally requires pull requests, both the source/provenance check and Windows build check, resolved review threads, no force-pushes/deletions on `main`, and immutable releases. Signed-commit enforcement is intentionally deferred until the PR head-commit path itself produces verified signatures, so the rule cannot deadlock normal merges. The machine-readable target policy is in [`docs/PHASE_8_REPOSITORY_GOVERNANCE.json`](docs/PHASE_8_REPOSITORY_GOVERNANCE.json).
 
 ## Validation
 

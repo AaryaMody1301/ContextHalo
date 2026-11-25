@@ -26,7 +26,9 @@ npm test
 npm run build:portable
 ```
 
-The GitHub Actions workflow also launches the real Electron renderer in sandboxed mode and verifies the portable Windows executable.
+GitHub Actions checks source syntax and dependency provenance before launching the sandboxed Electron renderer and verifying the portable Windows executable.
+
+For dependency changes, run `node --test tests/repository-provenance.test.js`. Keep the production inventory in `docs/THIRD_PARTY_PROVENANCE.json` and the locked runtime versions in `THIRD_PARTY_NOTICES.md` in sync with `package-lock.json`.
 
 ## Pull request guidelines
 

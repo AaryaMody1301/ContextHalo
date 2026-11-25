@@ -6,17 +6,46 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a Windows portable release from main after validation
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: contexthalo-windows-portable-${{ github.workflow }}-${{ github.ref }}
+  group: >-
+    contexthalo-windows-portable-${{ github.workflow }}-${{ github.ref }}-${{
+    github.event_name == 'workflow_dispatch' && inputs.publish == true && 'release' || 'validation' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  source-check:
+    name: Check ContextHalo source and provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Verify lockfile and dependency provenance
+        run: node --test tests/repository-provenance.test.js
+
+      - name: Run source validation
+        run: npm run check
+
   build:
     name: Build ContextHalo Windows x64 EXE
+    needs: source-check
     runs-on: windows-2022
     timeout-minutes: 20
     permissions:
@@ -87,9 +116,6 @@ jobs:
             if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
           }
           throw "Production dependency audit failed after 3 attempts."
-
-      - name: Run source validation
-        run: npm run check
 
       - name: Run all regression tests
         run: npm test
@@ -205,7 +231,7 @@ jobs:
   attest-release:
     name: Attest ContextHalo Windows release
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'AaryaMody1301/ContextHalo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -230,7 +256,7 @@ jobs:
   publish-release:
     name: Publish ContextHalo GitHub Release
     needs: [build, attest-release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'AaryaMody1301/ContextHalo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true
     runs-on: windows-2022
     timeout-minutes: 10
     permissions:
@@ -272,3 +298,13 @@ jobs:
           if (!$release.immutable) {
             Write-Warning "Repository immutable releases are not enabled yet; apply docs/PHASE_8_REPOSITORY_GOVERNANCE.json with an Administration token."
           }
+
+  maintain-release:
+    name: Maintain ContextHalo after release
+    needs: publish-release
+    uses: ./.github/workflows/repository-maintenance.yml
+    permissions:
+      contents: write
+      pull-requests: read
+    with:
+      apply: true

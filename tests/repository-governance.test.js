@@ -5,11 +5,18 @@ const { samePolicy, governanceStatus, readPolicy } = require('../scripts/reposit
 
 const read = path => fs.readFileSync(path, 'utf8');
 
+function workflowJob(workflow, jobId) {
+    return workflow.split(`\n  ${jobId}:\n`)[1]?.split(/\n  [\w-]+:\n/)[0] || '';
+}
+
 test('Phase 8 policy protects main without making a solo repository require an outside reviewer or signed feature commits', () => {
     const policy = readPolicy();
     assert.equal(policy.repository, 'AaryaMody1301/ContextHalo');
     assert.equal(policy.immutableReleases, true);
-    assert.equal(policy.requiredStatusCheck, 'Build ContextHalo Windows x64 EXE');
+    assert.deepEqual(policy.requiredStatusChecks, [
+        'Check ContextHalo source and provenance',
+        'Build ContextHalo Windows x64 EXE',
+    ]);
     assert.equal(policy.mainRuleset.enforcement, 'active');
     assert.deepEqual(policy.mainRuleset.conditions.ref_name.include, ['~DEFAULT_BRANCH']);
     assert.equal(policy.mainRuleset.bypass_actors, undefined);
@@ -25,6 +32,7 @@ test('Phase 8 policy protects main without making a solo repository require an o
     assert.equal(byType.pull_request.parameters.required_approving_review_count, 0);
     assert.equal(byType.pull_request.parameters.required_review_thread_resolution, true);
     assert.deepEqual(byType.required_status_checks.parameters.required_status_checks, [
+        { context: 'Check ContextHalo source and provenance' },
         { context: 'Build ContextHalo Windows x64 EXE' },
     ]);
     assert.equal(byType.required_status_checks.parameters.strict_required_status_checks_policy, true);
@@ -67,10 +75,29 @@ test('governance application cannot run accidentally under the normal Actions to
     assert.doesNotMatch(workflows, /repository-governance\.js\s+--apply/);
 });
 
-test('release workflow attests only validated main artifacts and verifies published identity', () => {
-    const workflow = read('.github/workflows/build-windows.yml');
+test('source and dependency checks gate the Windows build for pushes and PRs', () => {
+    const workflow = read('.github/workflows/build-windows.yml').replace(/\r\n/g, '\n');
+    assert.match(workflow, /^  push:\n    branches: \[main\]\n  pull_request:\n    branches: \[main\]$/m);
+
+    const sourceCheck = workflowJob(workflow, 'source-check');
+    assert.match(sourceCheck, /^    name: Check ContextHalo source and provenance$/m);
+    assert.match(sourceCheck, /^        run: node --test tests\/repository-provenance\.test\.js$/m);
+    assert.match(sourceCheck, /^        run: npm run check$/m);
+
+    const build = workflowJob(workflow, 'build');
+    assert.match(build, /^    name: Build ContextHalo Windows x64 EXE$/m);
+    assert.match(build, /^    needs: source-check$/m);
+});
+
+test('release workflow requires explicit publication from main and verifies published identity', () => {
+    const workflow = read('.github/workflows/build-windows.yml').replace(/\r\n/g, '\n');
+    const releaseGate = "github.repository == 'AaryaMody1301/ContextHalo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true";
+    assert.match(workflow, /^  workflow_dispatch:\n    inputs:\n      publish:\n(?:        [^\n]+\n)*        type: boolean\n        default: false$/m);
+    for (const jobId of ['attest-release', 'publish-release']) {
+        const condition = workflowJob(workflow, jobId).match(/^    if: (.+)$/m)?.[1];
+        assert.equal(condition, releaseGate, jobId);
+    }
     assert.match(workflow, /Attest validated release artifacts/);
-    assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
     assert.match(workflow, /actions\/attest@1e69f48acb82d1966a394da916b4c1698aa569d6/);
     assert.match(workflow, /name: Attest ContextHalo Windows release/);
     assert.match(workflow, /needs: build/);
@@ -82,6 +109,20 @@ test('release workflow attests only validated main artifacts and verifies publis
     assert.match(workflow, /fail_on_unmatched_files: true/);
     assert.match(workflow, /Published release target does not match workflow commit/);
     assert.match(workflow, /asset\[0\]\.digest -notmatch '\^sha256:/);
+});
+
+test('automatic release maintenance follows successful publication', () => {
+    const workflow = read('.github/workflows/build-windows.yml').replace(/\r\n/g, '\n');
+    const maintenance = read('.github/workflows/repository-maintenance.yml');
+    const call = workflowJob(workflow, 'maintain-release');
+    assert.match(call, /^    needs: publish-release$/m);
+    assert.match(call, /^    uses: \.\/\.github\/workflows\/repository-maintenance\.yml$/m);
+    assert.match(call, /^    with:\n      apply: true$/m);
+    assert.doesNotMatch(call, /\balways\(\)/);
+    assert.doesNotMatch(maintenance, /^\s*workflow_run:/m);
+    assert.match(maintenance, /^  workflow_call:/m);
+    assert.match(maintenance, /^  workflow_dispatch:/m);
+    assert.match(maintenance, /default: false/);
 });
 
 test('electron-builder v27 is evaluated but intentionally excluded from the governance PR', () => {

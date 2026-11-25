@@ -1,10 +1,11 @@
 name: Maintain ContextHalo branches and releases
 
 on:
-  workflow_run:
-    workflows: [Build ContextHalo Windows Portable EXE]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+    inputs:
+      apply:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       apply:
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   maintain:
-    if: github.repository == 'AaryaMody1301/ContextHalo' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    if: github.repository == 'AaryaMody1301/ContextHalo' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -38,7 +39,7 @@ jobs:
       - name: Prune merged branches and retain recent build releases
         env:
           GH_TOKEN: ${{ github.token }}
-          APPLY: ${{ github.event_name == 'workflow_run' || inputs.apply }}
+          APPLY: ${{ inputs.apply }}
         run: |
           if [ "$APPLY" = "true" ]; then
             node scripts/repository-maintenance.js --apply
