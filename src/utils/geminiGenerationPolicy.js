@@ -5,7 +5,7 @@ const { geminiModelPolicy } = require('./geminiModelPolicy');
 // response-mode instruction; never try to turn Flash 3.8 thinking off.
 function geminiOutputTokenLimit(model, answerTokens, thinkingLevel = 'low') {
     const policy = geminiModelPolicy(model);
-    if (!policy || policy.route !== 'generate') return answerTokens;
+    if (!policy || policy.route !== 'generate' || !policy.thinkingLevels.length) return answerTokens;
     const thinkingAllowance = thinkingLevel === 'medium' ? 8192 : 4096;
     return Math.min(policy.outputTokenLimit, answerTokens + thinkingAllowance);
 }

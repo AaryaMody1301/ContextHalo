@@ -309,7 +309,8 @@ async function initializeLocal(profile = 'interview', language = 'en-US', option
     const result = await ipcRenderer.invoke('initialize-local', localLlmModel, whisperModel, profile, customPrompt, language, options);
     if (options.uiEpoch !== undefined && options.uiEpoch !== contextHaloApp._uiSessionEpoch) return false;
     const success = result === true || result?.success === true;
-    contextHaloApp.setProviderState({ state: success ? 'ready' : 'failed', provider: 'local', error: result?.failure, search: result?.search });
+    contextHaloApp.setProviderState({ state: success ? 'ready' : 'failed', provider: 'local',
+        error: result?.failure, search: result?.search, localRuntime: result?.localRuntime, uiEpoch: options.uiEpoch });
     if (success) {
         contextHaloApp.setStatus('Local AI connected');
         return true;

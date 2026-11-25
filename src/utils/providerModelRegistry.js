@@ -71,7 +71,7 @@ function buildGeminiCatalog(rawModels) {
     const liveMapped = all.filter(model => model.methods.includes('bidiGenerateContent') && mappedLiveIds.has(model.id));
     const generate = all.filter(model => model.methods.includes('generateContent'));
     const screenIds = new Set(GEMINI_SCREEN_MODEL_IDS);
-    const screen = generate.filter(model => screenIds.has(model.id) && model.lifecycle === 'stable');
+    const screen = generate.filter(model => screenIds.has(model.id));
 
     const pick = (list, preferredIds) => {
         for (const id of preferredIds) {
@@ -90,7 +90,7 @@ function buildGeminiCatalog(rawModels) {
         screen,
         recommended: {
             live: pick(live, ['gemini-3.8-live']),
-            screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest']),
+            screen: pick(screen, ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']),
         },
     };
 }

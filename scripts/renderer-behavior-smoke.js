@@ -277,6 +277,36 @@ async function rendererBehaviorSmoke() {
         render(home._renderLocalMode(), picker);
         verify(picker.querySelector('#local-model').value === 'custom', 'Initial Local AI picker preserves a custom model selection');
     } finally { home._useCustomLocalLlmModel = customModel; }
+    const savedLocalSettings = await api.storage.getPreferences();
+    const savedHttpModel = (await api.storage.getConfig()).geminiHttpModel;
+    try {
+        await api.storage.updateConfig('geminiHttpModel', 'gemini-2.5-flash-lite');
+        verify((await api.storage.getConfig()).geminiHttpModel === 'gemini-2.5-flash-lite', 'Gemini HTTP selection survives a real storage round trip');
+        await api.storage.updatePreference('localBackend', 'cpu');
+        await api.storage.updatePreference('localOffline', true);
+        await api.storage.updatePreference('providerMode', 'local');
+        const preferences = await api.storage.getPreferences();
+        render(home._renderLocalRuntimeControls.call({ _localOffline: preferences.localOffline, _localBackend: preferences.localBackend }), picker);
+        verify(picker.querySelector('#local-offline').checked && picker.querySelector('#local-backend').value === 'cpu', 'Local AI shows the persisted Offline and CPU settings');
+        const update = await ipc.invoke('updates:check');
+        verify(update.data?.status === 'offline', 'Offline skips release checks');
+        const discovery = await ipc.invoke('provider-models:list', 'gemini', true);
+        const hosted = await ipc.invoke('initialize-gemini', '', 'interview', 'en-US', 'byok');
+        verify(discovery.code === 'OFFLINE_MODE' && hosted.code === 'OFFLINE_MODE', 'Offline blocks cloud discovery and initialization');
+        const emptyCache = await ipc.invoke('initialize-local', 'fixture/model:Q4', 'tiny.en', 'interview', '', 'en-US');
+        verify(emptyCache.success === false && emptyCache.failure?.code === 'OFFLINE_CACHE_MISSING', 'Offline startup returns a missing-cache error on the isolated profile');
+        render(app.renderLocalRuntimeDetails.call({ providerMode: 'local', _localRuntime: {
+            runner: 'vulkan', offline: true, gpuLayers: { offloaded: 8, total: 12 }, fallback: null,
+        } }), picker);
+        verify(picker.textContent.includes('Offline session') && picker.textContent.includes('8 of 12 model layers'), 'Session details displays the Offline runner and reported GPU offload');
+    } finally {
+        await ipc.invoke('close-session');
+        await api.storage.updatePreference('providerMode', savedLocalSettings.providerMode);
+        await api.storage.updatePreference('localOffline', savedLocalSettings.localOffline);
+        await api.storage.updatePreference('localBackend', savedLocalSettings.localBackend);
+        await api.storage.updateConfig('geminiHttpModel', savedHttpModel);
+    }
+
     const settingsPrototype = customElements.get('customize-view').prototype;
     render(settingsPrototype.renderLanguageSection.call({ selectedLanguage: 'fr-FR', getLanguages: settingsPrototype.getLanguages }), picker);
     verify(picker.querySelector('#speech-language').value === 'fr-FR', 'Initial language picker displays the saved nondefault language');

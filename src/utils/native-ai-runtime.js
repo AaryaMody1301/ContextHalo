@@ -57,22 +57,23 @@ function getModelsDirectory() {
     return path.join(getConfigDir(), 'models');
 }
 
-async function calculateSha256(filePath) {
+async function calculateSha256(filePath, signal) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256');
-        const input = fs.createReadStream(filePath);
+        const input = fs.createReadStream(filePath, { signal });
         input.on('error', reject);
         input.on('data', chunk => hash.update(chunk));
         input.on('end', () => resolve(hash.digest('hex')));
     });
 }
 
-async function fileMatchesChecksum(filePath, expectedSha256) {
+async function fileMatchesChecksum(filePath, expectedSha256, signal) {
+    signal?.throwIfAborted();
     if (!fs.existsSync(filePath)) {
         return false;
     }
 
-    const actualSha256 = await calculateSha256(filePath);
+    const actualSha256 = await calculateSha256(filePath, signal);
     return actualSha256 === expectedSha256;
 }
 
@@ -120,16 +121,19 @@ async function downloadFile(url, destinationPath, onProgress, signal) {
     }
 }
 
-async function installVerifiedFile({ url, destinationPath, sha256, onProgress, signal }) {
-    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+function offlineCacheError(artifact) {
+    return Object.assign(new Error(`Offline requires verified cached ${artifact}. Turn off Offline and start Local AI to prepare it.`),
+        { code: 'OFFLINE_CACHE_MISSING' });
+}
 
-    if (await fileMatchesChecksum(destinationPath, sha256)) {
-        return destinationPath;
-    }
+async function installVerifiedFile({ url, destinationPath, sha256, onProgress, signal, offline = false, artifact = 'Local AI files' }) {
+    if (await fileMatchesChecksum(destinationPath, sha256, signal)) return destinationPath;
+    if (offline) throw offlineCacheError(artifact);
+    fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
 
     const temporaryPath = await downloadFile(url, destinationPath, onProgress, signal);
     try {
-        const downloadedSha256 = await calculateSha256(temporaryPath);
+        const downloadedSha256 = await calculateSha256(temporaryPath, signal);
     
         if (downloadedSha256 !== sha256) {
             fs.rmSync(temporaryPath, { force: true });
@@ -219,7 +223,7 @@ async function extractRuntimeArchive(archivePath, runtimeDirectory, release, run
     }
 }
 
-async function ensureNativeBinary(type, onProgress, signal) {
+async function ensureNativeBinary(type, onProgress, signal, { offline = false } = {}) {
     if (process.platform !== 'win32' || process.arch !== 'x64') {
         throw new Error(`Local AI is not available for ${process.platform}/${process.arch}`);
     }
@@ -229,10 +233,12 @@ async function ensureNativeBinary(type, onProgress, signal) {
     const archivePath = path.join(binariesDirectory, release.archive);
     const runtimeDirectory = path.join(binariesDirectory, `${type}-${release.tag}-cpu`);
     const existing = installedRuntimeMatches(runtimeDirectory, release);
-    if (existing && await fileMatchesChecksum(archivePath, release.sha256)) return existing;
+    if (existing && await fileMatchesChecksum(archivePath, release.sha256, signal)) return existing;
 
     await installVerifiedFile({
         url: release.url,
+        offline,
+        artifact: type === 'llama' ? 'CPU runner files' : 'Whisper runner files',
         destinationPath: archivePath,
         sha256: release.sha256,
         onProgress,
@@ -252,7 +258,7 @@ function normalizeWhisperModel(modelName) {
     return legacyModels[modelName] || modelName || 'tiny.en';
 }
 
-async function ensureWhisperModel(modelName, onProgress, signal) {
+async function ensureWhisperModel(modelName, onProgress, signal, { offline = false } = {}) {
     const normalizedModel = normalizeWhisperModel(modelName);
     const model = WHISPER_MODELS[normalizedModel];
 
@@ -264,6 +270,8 @@ async function ensureWhisperModel(modelName, onProgress, signal) {
     return installVerifiedFile({
         url: `https://huggingface.co/${WHISPER_MODEL_REPOSITORY}/resolve/${WHISPER_MODEL_REVISION}/${model.filename}`,
         destinationPath,
+        offline,
+        artifact: 'Whisper model files',
         sha256: model.sha256,
         onProgress,
         signal,
@@ -285,7 +293,8 @@ function parseHuggingFaceModelReference(modelReference) {
 
     const repository = modelReference.slice(0, separatorIndex);
     const quant = modelReference.slice(separatorIndex + 1);
-    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repository) || !/^[A-Za-z0-9._-]+$/.test(quant)) {
+    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repository) || !/^[A-Za-z0-9._-]+$/.test(quant)
+        || [...repository.split('/'), quant].some(part => part === '.' || part === '..')) {
         throw new Error('Language model reference contains unsupported characters');
     }
 
@@ -332,7 +341,8 @@ async function resolveHuggingFaceGguf(modelReference, signal) {
     };
 }
 
-async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProgress, signal) {
+async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProgress, signal, { offline = false } = {}) {
+    signal?.throwIfAborted();
     if (path.isAbsolute(modelReference)) {
         if (path.extname(modelReference).toLowerCase() !== '.gguf') {
             throw new Error('Custom language models must be regular .gguf files.');
@@ -358,13 +368,17 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
 
     const { repository, quant } = parseHuggingFaceModelReference(modelReference);
     const repositoryDirectory = path.join(getModelsDirectory(), 'llama', repository);
-    const model = readModelProvenance(repositoryDirectory, repository, quant) || await resolveHuggingFaceGguf(modelReference, signal);
+    const cached = readModelProvenance(repositoryDirectory, repository, quant);
+    if (offline && !cached) throw offlineCacheError('language model metadata');
+    const model = cached || await resolveHuggingFaceGguf(modelReference, signal);
     // Pin both artifacts before downloading so an interrupted setup resumes the same revision.
-    persistModelProvenance(repositoryDirectory, { schemaVersion: 1, ...model });
+    if (!cached) persistModelProvenance(repositoryDirectory, { schemaVersion: 1, ...model });
     onModelProgress?.({ phase: 'checking' });
     const modelPath = await installVerifiedFile({
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.model.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.model.path)),
+        offline,
+        artifact: 'language model files',
         sha256: model.model.sha256,
         onProgress: onModelProgress,
         signal,
@@ -373,6 +387,8 @@ async function ensureLlamaModel(modelReference, onModelProgress, onProjectorProg
     const projectorPath = await installVerifiedFile({
         url: `https://huggingface.co/${encodePathParts(model.repository)}/resolve/${model.revision}/${encodePathParts(model.projector.path)}`,
         destinationPath: path.join(repositoryDirectory, path.basename(model.projector.path)),
+        offline,
+        artifact: 'vision model files',
         sha256: model.projector.sha256,
         onProgress: onProjectorProgress,
         signal,
@@ -418,12 +434,22 @@ async function getAvailablePort() {
     });
 }
 
+function recordStartupOutput(childProcess, data) {
+    if (childProcess.startupReady) return;
+    childProcess.startupDiagnostics = ((childProcess.startupDiagnostics || '') + data).slice(-8192);
+    const match = /offloaded (\d{1,4})\/(\d{1,4}) layers to GPU/i.exec(childProcess.startupDiagnostics);
+    if (!match) return;
+    const [offloaded, total] = match.slice(1).map(Number);
+    if (total > 0 && offloaded <= total) childProcess.gpuLayers = { offloaded, total };
+}
+
 function attachProcessLogging(childProcess, name) {
     childProcess.stdout.on('data', data => {
+        recordStartupOutput(childProcess, data);
         process.stdout.write(`[${name}] ${data}`);
     });
     childProcess.stderr.on('data', data => {
-        if (!childProcess.startupReady) childProcess.startupDiagnostics = ((childProcess.startupDiagnostics || '') + data).slice(-8192);
+        recordStartupOutput(childProcess, data);
         process.stderr.write(`[${name}] ${data}`);
     });
 }

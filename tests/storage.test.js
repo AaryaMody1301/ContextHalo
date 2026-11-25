@@ -27,6 +27,22 @@ test('Mistral model migration preserves old selections and defaults new installs
     assert.equal(storage.getConfig().mistralModel, 'mistral-small-2603');
 });
 
+test('explicit Gemini selections survive migration and restart', { concurrency: false }, t => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-gemini-selection-'));
+    const originalHomedir = os.homedir;
+    os.homedir = () => tempHome;
+    const storagePath = require.resolve('../src/storage');
+    delete require.cache[storagePath];
+    const storage = require(storagePath);
+    t.after(() => { delete require.cache[storagePath]; os.homedir = originalHomedir; fs.rmSync(tempHome, { recursive: true, force: true }); });
+    storage.initializeStorage();
+    assert.equal(storage.updateConfig('geminiHttpModel', 'gemini-2.5-flash-lite'), true);
+    assert.equal(storage.updateConfig('geminiLiveModel', 'gemini-3.1-flash-live-preview'), true);
+    storage.initializeStorage();
+    assert.equal(storage.getAvailableModel(), 'gemini-2.5-flash-lite');
+    assert.equal(storage.getConfig().geminiLiveModel, 'gemini-3.1-flash-live-preview');
+});
+
 test('storage v10 migration upgrades provider models without deleting user data', { concurrency: false }, t => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-storage-'));
     const originalHomedir = os.homedir;
@@ -198,7 +214,7 @@ test('backend keeps providers isolated and routes screenshots to the matching pr
     const audio = fs.readFileSync(path.join(process.cwd(), 'src', 'utils', 'runtimeHardeningMain.js'), 'utf8');
     assert.match(audio, /groqTranscriptionModel/);
     assert.match(audio, /whisper-large-v3-turbo/);
-    assert.match(gemini, /const liveModel = String\(getConfig\(\)\.geminiLiveModel/);
+    assert.match(gemini, /const liveModel = normalizeGeminiModelId\(getConfig\(\)\.geminiLiveModel/);
     assert.match(gemini, /model: liveModel/);
 });
 

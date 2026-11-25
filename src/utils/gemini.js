@@ -1,4 +1,5 @@
 const { abortable, deadlineSignal } = require('./requestDeadline');
+const { OFFLINE_MESSAGE, isOfflineMode } = require('./offlineMode');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { getSystemPrompt } = require('./prompts');
@@ -23,7 +24,7 @@ const { recoverGeminiSetup } = require('./geminiSetupRecovery');
 const { groundingFragmentFromResponse, mergeGrounding, publicGrounding } = require('./geminiGrounding');
 const { appendModelParts, modelPartsForHistory } = require('./geminiWorkingContext');
 const { geminiOutputTokenLimit, assertGeminiGenerationOutcome } = require('./geminiGenerationPolicy');
-const { geminiModelPolicy } = require('./geminiModelPolicy');
+const { geminiModelPolicy, geminiModelRouteError, normalizeGeminiModelId } = require('./geminiModelPolicy');
 const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 let liveGeneration = 0;
 let manualReconnectPromise = null;
@@ -426,11 +427,24 @@ function stripThinkingTags(text) {
     return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
 }
 
+function assertGeminiModelRoute(model, operation) {
+    const message = geminiModelRouteError(model, operation === 'live' ? 'live' : 'generate');
+    if (message) throw failureError({ operation, model, category: 'invalid-configuration', message, retryable: false });
+}
+
 async function getGeminiLivePreflightError(apiKey, liveModel, signal) {
     const deadline = deadlineSignal(signal, 10000);
     try {
         const catalog = await abortable(() => listProviderModels('gemini', apiKey, { signal: deadline.signal }), deadline.signal);
-        if (!catalog?.stale && catalog?.live?.length && !catalog.live.some(model => model.id === liveModel)) {
+        if (!catalog?.stale && (catalog?.all?.length || catalog?.live?.length)
+            && !catalog.live?.some(model => model.id === liveModel)) {
+            const advertised = catalog.all?.find(model => model.id === liveModel);
+            if (advertised) {
+                const message = advertised.methods?.includes('bidiGenerateContent')
+                    ? 'Select a supported Live model in Home. ContextHalo uses a documented Live session protocol for audio.'
+                    : 'Choose a Gemini Live model for live audio. The selected model does not support the Live API.';
+                return failureError({ operation: 'live', model: liveModel, category: 'invalid-configuration', message, retryable: false });
+            }
             return Object.assign(new Error('Configured model not found in Live catalog'), { status: 404 });
         }
     } catch (error) {
@@ -784,7 +798,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     let modelTextBuffer = '';
     let audioTextBuffer = '';
     let liveGrounding;
-    const liveModel = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
+    const liveModel = normalizeGeminiModelId(getConfig().geminiLiveModel || 'gemini-3.8-live');
     if (!geminiLiveRuntime) {
         geminiLiveRuntime = createGeminiLiveRuntime({
             reconnect: async details => {
@@ -813,6 +827,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     };
     publishProviderState(isReconnect ? 'reconnecting' : 'connecting');
     try {
+        assertGeminiModelRoute(liveModel, 'live');
         if (!isReconnect) {
             startTransportLog(String(Date.now()));
             logTransportEvent('gemini.live.start', { model: liveModel, operation: 'live' });
@@ -1005,7 +1020,7 @@ async function attemptReconnect(details = {}) {
     const generation = liveGeneration;
     messageBuffer = '';
     currentTranscription = '';
-    const model = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
+    const model = normalizeGeminiModelId(getConfig().geminiLiveModel || 'gemini-3.8-live');
     const cooling = geminiCooldowns.get(cooldownKey(params.apiKey, model));
     if (cooling?.retryAt > Date.now()) {
         const delay = cooling.retryAt - Date.now();
@@ -1066,10 +1081,11 @@ async function sendAudioToGemini(base64Data, geminiSessionRef, mimeType = 'audio
 }
 
 async function sendImageToGeminiHttp(base64Data, prompt) {
-    const model = getAvailableModel();
+    const model = normalizeGeminiModelId(getAvailableModel());
     const apiKey = getApiKey();
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
     try {
+        assertGeminiModelRoute(model, 'screen');
         const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
         const tools = getHttpSearchTools();
         const mode = getResponseMode(getPreferences().responseMode);
@@ -1101,7 +1117,8 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
 async function sendTypedGeminiText(text) {
     const apiKey = getApiKey();
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
-    const model = getAvailableModel();
+    const model = normalizeGeminiModelId(getAvailableModel());
+    assertGeminiModelRoute(model, 'text');
     const session = require('../storage').getSession(currentSessionId);
     const transcript = (session?.liveTranscript || []).slice(-12).map(item => item.text).join('\n').slice(-6000);
     const history = conversationHistory.filter(turn => turn?.grounded !== true).slice(-6).flatMap(turn => [
@@ -1262,6 +1279,10 @@ async function stopProviderForDataErase(geminiSessionRef, signal) {
     currentSystemPrompt = null;
 }
 
+function isProviderBusy() {
+    return Boolean(initializePromise || mainSessionActive || global.geminiSessionRef?.current);
+}
+
 function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
@@ -1273,6 +1294,9 @@ function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
             return { success: false, error: 'Untrusted renderer' };
         }
         if (isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
+        if (isOfflineMode() && ['initialize-gemini', 'retry-session-connection'].includes(channel)) {
+            return { success: false, error: OFFLINE_MESSAGE, code: 'OFFLINE_MODE' };
+        }
         const initializing = channel.startsWith('initialize-');
         if (initializing && initializePromise && !liveController.signal.aborted) return initializePromise;
         if (initializing && initializePromise) {
@@ -1396,10 +1420,13 @@ function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
         providerUiEpoch = Number.isSafeInteger(options?.uiEpoch) ? options.uiEpoch : undefined;
         configureSearch('local');
         currentProviderMode = 'local';
-        const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt, language);
+        const success = await getLocalAi().initializeLocalSession(localLlmModel, whisperModel, profile, customPrompt, language, {
+            offline: isOfflineMode(), cpuOnly: getPreferences().localBackend === 'cpu',
+        });
         const failure = success ? null : getLocalAi().getLocalInitializationFailure?.();
         if (failure) publishProviderState('failed', failure);
         return { success: success === true, provider: 'local', search: { ...searchState },
+            localRuntime: success ? getLocalAi().getLocalRuntime?.() || null : null,
             ...(failure ? { failure, error: failure.message } : {}) };
     });
 
@@ -1566,7 +1593,7 @@ function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
         if (!options || typeof options !== 'object' || typeof options.withoutSearch !== 'boolean') return { success: false, error: 'Invalid recovery options' };
         if (currentProviderMode !== 'byok' || !sessionParams?.apiKey || !mainSessionActive) return { success: false, error: 'No Gemini session to reconnect' };
         if (manualReconnectPromise) return manualReconnectPromise.then(success => ({ success, failure: lastGeminiFailure, search: { ...searchState } }));
-        const model = String(getConfig().geminiLiveModel || 'gemini-3.8-live').replace(/^models\//, '').trim();
+        const model = normalizeGeminiModelId(getConfig().geminiLiveModel || 'gemini-3.8-live');
         const baseKey = cooldownKey(sessionParams.apiKey, model);
         const cooldown = [geminiCooldowns.get(baseKey),
             !options.withoutSearch && searchState.liveEffective && geminiCooldowns.get(`${baseKey}:live:search`)]
@@ -1604,6 +1631,7 @@ module.exports = {
     normalizeGeminiAudioPayload,
     sendImageToGeminiHttp,
     stopProviderForDataErase,
+    isProviderBusy,
     setupGeminiIpcHandlers,
     classifyGeminiFailure, runGeminiRequest, connectGeminiLiveWithGuard, groundingFromResponse, configureSearch,
     formatSpeakerResults,

@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { loadMain } = require('./helpers/native-boundary');
 const fs = require('node:fs');
 
 const {
@@ -62,6 +63,37 @@ function metadata(build = 367) {
         releaseCommit: COMMIT_A,
     };
 }
+
+test('Offline cancels external work, pauses updates and permits only non-redirecting loopback', async () => {
+    const calls = [];
+    const scope = { fetch: async (input, init) => {
+        calls.push({ input, init });
+        if (input.startsWith('http://127.0.0.1:')) return new Response('ready');
+        return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    } };
+    const gate = loadMain('src/utils/offlineMode.js', {}, { global: scope });
+    gate.installOfflineNetworkBoundary();
+    const inFlight = scope.fetch('https://api.example.test/catalog');
+    const inactive = createPortableUpdateController({
+        app: packagedApp(), packageMetadata: metadata(), platform: 'win32', arch: 'x64',
+        isOffline: gate.isOfflineMode, fetchImpl: scope.fetch,
+    });
+    gate.setOfflineMode(gate.offlineSelected({ providerMode: 'local', localOffline: true }));
+    await assert.rejects(inFlight, { code: 'OFFLINE_MODE' });
+    assert.equal((await inactive.check()).status, 'offline');
+    await assert.rejects(scope.fetch('https://example.test/model.gguf'), { code: 'OFFLINE_MODE' });
+    await assert.rejects(scope.fetch('http://localhost.example.test:1234/health'), { code: 'OFFLINE_MODE' });
+    assert.equal(await (await scope.fetch('http://127.0.0.1:1234/health')).text(), 'ready');
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].init.redirect, 'error');
+    gate.setOfflineMode(gate.offlineSelected({ providerMode: 'groq', localOffline: true }));
+    assert.equal(gate.isOfflineMode(), false);
+    const controller = new AbortController();
+    const resumed = scope.fetch('https://api.example.test/catalog', { signal: controller.signal });
+    controller.abort();
+    await assert.rejects(resumed, { name: 'AbortError' });
+    assert.equal(calls.length, 3);
+});
 
 test('portable release tags compare semantic version and CI build number', () => {
     const current = parsePortableReleaseTag('v0.8.0-portable.367');

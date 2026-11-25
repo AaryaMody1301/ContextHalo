@@ -82,15 +82,21 @@ Fresh installations select Groq. Existing saved provider selections are preserve
 
 Uses Gemini Live for real-time audio. Typed prompts and screen analysis use the selected Gemini text/analysis model through separate bounded HTTP requests. Typed questions include recent saved transcript, conversation, session-pack, knowledge, and screen-analysis context; they do not pause audio capture. Live and HTTP models are separate selections because not every model supports both APIs.
 
+The default Live selection is `gemini-3.8-live`. The default HTTP selection is `gemini-3.8-flash`. A saved `gemini-2.5-flash-lite` HTTP choice remains selectable for eligible projects that report it in model discovery. A saved model and a valid key still require project access. Limits apply per project and model. Google Search and Live access depend on the project and tier. [Gemini models and lifecycle](https://ai.google.dev/gemini-api/docs/deprecations) · [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+
 ### Groq API
 
 Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
+
+The default text, vision, and transcription models are `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, and `whisper-large-v3-turbo`. Rate limits depend on the account and model. Check the returned 429 status and any Retry-After value against your account’s limits. [Groq rate limits](https://console.groq.com/docs/rate-limits)
 
 ### Local AI
 
 Uses native whisper.cpp and llama.cpp runners with downloadable GGUF models. No cloud API key is required.
 
 Setup verifies both the language model and its matching vision projector before starting. Interrupted setup retains its immutable model revision and verified cached files for retry. A stalled download fails after 30 seconds without data; startup errors identify the failing stage. Vulkan startup can fall back to the verified CPU runner with the same model.
+
+Enable **Offline** in Home after selecting Local AI to use cached runners and models. While Offline is active, ContextHalo pauses hosted connections, model discovery, and release checks. If files are missing or fail verification, turn Offline off and select **Start Session** to prepare the downloads. Choose **CPU only** to use the CPU runner, or **Automatic** to prefer Vulkan and allow CPU fallback. Session details reports the selected runner and any GPU layers reported at startup.
 
 Native servers bind to loopback. The language-model server requires a fresh session key held by the main process, and Whisper routes use a fresh unguessable session prefix. Neither is returned to the renderer or saved as a provider credential.
 

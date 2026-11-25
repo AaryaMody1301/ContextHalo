@@ -697,6 +697,8 @@ export class MainView extends LitElement {
         _keyError: { state: true },
         // Local AI state
         _localLlmModel: { state: true },
+        _localOffline: { state: true },
+        _localBackend: { state: true },
         _useCustomLocalLlmModel: { state: true },
         _whisperModel: { state: true },
         selectedLanguage: { type: String },
@@ -740,6 +742,8 @@ export class MainView extends LitElement {
         this._keyError = false;
         this._showLocalHelp = false;
         this._localLlmModel = 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
+        this._localOffline = false;
+        this._localBackend = 'auto';
         this._useCustomLocalLlmModel = false;
         this._whisperModel = 'tiny.en';
         this.selectedLanguage = 'en-US';
@@ -783,6 +787,8 @@ export class MainView extends LitElement {
             // Load local AI settings
             this._localLlmModel = prefs.localLlmModel || 'unsloth/Qwen3.5-2B-GGUF:Q4_K_M';
             this._useCustomLocalLlmModel = !LOCAL_LLM_PRESETS.some(preset => preset.value === this._localLlmModel);
+            this._localOffline = prefs.localOffline === true;
+            this._localBackend = prefs.localBackend === 'cpu' ? 'cpu' : 'auto';
             this._whisperModel = prefs.whisperModel || 'tiny.en';
             this.selectedLanguage = prefs.selectedLanguage || 'en-US';
             if (this._savedKeys?.gemini) void this._refreshProviderModels('gemini');
@@ -831,7 +837,12 @@ export class MainView extends LitElement {
         this._mode = mode;
         this._keyError = false;
         this._setupOpen = !this._hasConfiguredProvider();
-        return this._persistConfiguration('preference', 'providerMode', mode);
+        const saved = await this._persistConfiguration('preference', 'providerMode', mode);
+        const provider = mode === 'byok' ? 'gemini' : mode;
+        if (saved && this._mode === mode && ['gemini', 'groq'].includes(provider) && this._savedKeys?.[provider]) {
+            void this._refreshProviderModels(provider);
+        }
+        return saved;
     }
 
     _persistConfiguration(kind, key, value) {
@@ -903,7 +914,7 @@ export class MainView extends LitElement {
     }
 
     async _refreshProviderModels(provider, forceRefresh = false) {
-        if (provider === 'mistral') return;
+        if (provider === 'mistral' || this._mode === 'local') return;
         const gemini = provider === 'gemini';
         const loading = gemini ? '_geminiCatalogLoading' : '_groqCatalogLoading';
         const errorKey = gemini ? '_geminiCatalogError' : '_groqCatalogError';
@@ -914,13 +925,16 @@ export class MainView extends LitElement {
         this.requestUpdate();
         try {
             await this._keySavePromise;
+            if (this._mode === 'local') return;
             const result = await window.electronAPI.invoke('provider-models:list', provider, forceRefresh === true);
-            if (!this.isConnected || epoch !== this._catalogEpochs[provider]) return;
+            if (!this.isConnected || this._mode === 'local' || epoch !== this._catalogEpochs[provider]) return;
             if (!result?.success) throw new Error('Model discovery failed. Check the provider key or retry.');
             this[gemini ? '_geminiCatalog' : '_groqCatalog'] = result.data;
-            const selected = gemini ? this._geminiLiveModel : this._groqModel;
-            if (selected && !result.data?.all?.some(model => model.id === selected)) {
-                this[errorKey] = 'The selected model is not in this catalog. Its manual ID is preserved; review the model or refresh.';
+            const selections = gemini ? [this._geminiLiveModel, this._geminiHttpModel] : [this._groqModel];
+            const missing = selections.filter(id => id && !result.data?.all?.some(model =>
+                model.id === (gemini ? id.trim().toLowerCase().replace(/^models\//, '') : id)));
+            if (missing.length) {
+                this[errorKey] = 'Some saved models are absent from this account catalog. Review the selection or refresh to check access.';
             }
             if (result.data?.stale) this[errorKey] = 'The provider catalog is cached. Saved and manual model IDs are preserved.';
         } catch {
@@ -990,6 +1004,16 @@ export class MainView extends LitElement {
         await this._saveLocalLlmModel(value);
     }
 
+    _saveLocalOffline(value) {
+        this._localOffline = value;
+        return this._persistConfiguration('preference', 'localOffline', value);
+    }
+
+    _saveLocalBackend(value) {
+        this._localBackend = value;
+        return this._persistConfiguration('preference', 'localBackend', value);
+    }
+
     _saveWhisperModel(value) {
         this._whisperModel = value;
         this.requestUpdate();
@@ -1055,6 +1079,7 @@ export class MainView extends LitElement {
         if (this._saveError || this._keyError) return 'Resolve the unsaved configuration below before starting.';
         if (this._localLanguageError()) return this._localLanguageError();
         if (!this._hasConfiguredProvider()) return 'First-time setup: add a provider key below, or choose Local AI.';
+        if (this._mode === 'local' && this._localOffline) return 'Offline is selected. Start checks the cached runners and models.';
         return this._mode === 'local' ? 'Local setup selected. Runners and models are checked on start; first use may require downloads.'
             : 'Provider settings saved locally. Credentials and model access are checked when connecting, not verified by this summary.';
     }
@@ -1253,6 +1278,21 @@ export class MainView extends LitElement {
         `;
     }
 
+    _renderLocalRuntimeControls() {
+        return html`<div class="form-group">
+            <label class="form-label" for="local-offline"><input type="checkbox" id="local-offline" .checked=${this._localOffline}
+                @change=${event => this._saveLocalOffline(event.target.checked)} /> Offline</label>
+            <span class="form-hint">Uses cached runners and models. Turn Offline off and select Start Session to prepare missing downloads.</span>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="local-backend">Local AI runner</label>
+            <select id="local-backend" .value=${this._localBackend} @change=${event => this._saveLocalBackend(event.target.value)}>
+                <option value="auto" .selected=${this._localBackend === 'auto'}>Automatic (Vulkan preferred)</option>
+                <option value="cpu" .selected=${this._localBackend === 'cpu'}>CPU only</option>
+            </select>
+        </div>`;
+    }
+
     _renderLocalMode() {
         return html`
             <details class="config-section">
@@ -1309,7 +1349,7 @@ export class MainView extends LitElement {
                             <option value="base.en" ?selected=${this._whisperModel === 'base.en'}>Base English (142 MB)</option>
                             <option value="small.en" ?selected=${this._whisperModel === 'small.en'}>Small English (466 MB, most accurate)</option>
                         </select>
-                        <div class="form-hint">${this.whisperDownloading ? 'Downloading model...' : 'Downloaded automatically on first use'}</div>
+                        <div class="form-hint">${this.whisperDownloading ? 'Downloading model...' : this._localOffline ? 'Uses the verified cached model' : 'Downloaded on the first online start'}</div>
                     </div>
                 </div>
             </details>
@@ -1339,7 +1379,7 @@ export class MainView extends LitElement {
             </div>
             ${this.sessionActive ? html`<p class="form-hint">Provider and profile changes apply after this session ends.</p>` : ''}
             <fieldset class="provider-fields" ?disabled=${this.isInitializing || this.sessionActive || this._configurationLoading}>
-                ${this._mode === 'local' ? html`<details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
+                ${this._mode === 'local' ? html`${this._renderLocalRuntimeControls()}<details class="config-section provider-setup" .open=${this._setupOpen} @toggle=${event => { this._setupOpen = event.target.open; }}>
                     <summary class="config-summary">Local model setup (advanced)</summary><div class="config-content">
                     <button type="button" class="mode-link" @click=${this._openLocalHelp}>Local AI setup help</button>${this._renderLocalMode()}</div></details>`
                     : this._renderHostedProvider(this._mode === 'byok' ? 'gemini' : this._mode)}
@@ -1368,8 +1408,8 @@ export class MainView extends LitElement {
                         <div class="help-section">
                             <div class="help-section-title">Automatic setup</div>
                             <div class="help-section-text">
-                                The correct native runners, selected Whisper model, and language model are downloaded and checksum-verified on first
-                                use. They are stored in the ContextHalo config directory.
+                                Start an online Local AI session to download and verify the selected models and runners. Enable Offline to reuse those
+                                files with local inference. Session details shows the runner and any GPU offload or CPU fallback.
                             </div>
                         </div>
 

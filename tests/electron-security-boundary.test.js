@@ -253,7 +253,11 @@ test('custom Local AI absolute paths are limited to regular GGUF model/projector
 
 test('credential initialization completes before the first BrowserWindow and key writes are awaited', () => {
     const index = read('src/index.js');
-    assert.match(index, /storage\.initializeStorage\(\);\s*await storage\.initializeCredentialStorage\(\);\s*createMainWindow\(\);/);
+    const startup = index.slice(index.indexOf('app.whenReady().then('));
+    const steps = ['storage.initializeStorage();', 'setOfflineMode(offlineSelected(storage.getPreferences()));',
+        'await storage.initializeCredentialStorage();', 'createMainWindow();'];
+    const order = steps.map(step => startup.indexOf(step));
+    assert.ok(order.every((position, i) => position >= 0 && (i === 0 || position > order[i - 1])));
     assert.match(index, /saved\(await storage\.setApiKey\(apiKey\)\)/);
     assert.match(index, /saved\(await storage\.setGroqApiKey\(groqApiKey\)\)/);
 });

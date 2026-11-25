@@ -42,6 +42,7 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             displayName: 'Gemini 3.1 Flash-Lite',
             supportedGenerationMethods: ['generateContent', 'countTokens'],
         },
+        { name: 'models/gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash-Lite', supportedGenerationMethods: ['generateContent'] },
         { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', supportedGenerationMethods: ['generateContent'] },
         { name: 'models/gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro Preview', supportedGenerationMethods: ['generateContent'] },
         {
@@ -57,11 +58,12 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     assert.equal(extended.contextHaloCompatibility, 'mapped-not-selectable');
     assert.match(extended.capabilityLabel, /Extended Thinking mapped, not enabled/);
     assert.deepEqual(catalog.screen.map(model => model.id).sort(), [
+        'gemini-2.5-flash-lite',
         'gemini-3.1-flash-lite',
         'gemini-3.5-flash-lite',
         'gemini-3.8-flash',
     ]);
-    assert.equal(catalog.screen.some(model => model.id.startsWith('gemini-2.5-')), false);
+    assert.equal(catalog.screen.some(model => model.id === 'gemini-2.5-flash'), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
     assert.equal(catalog.all.find(model => model.id === 'gemini-3.7-flash').lifecycle, 'deprecated');
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');

@@ -30,6 +30,7 @@ let isLocalActive = false;
 let initializationController = null;
 let initializationWork = null;
 const stoppingRunners = new Set();
+let localRuntime = null;
 let initializationFailure = null;
 
 let isSpeaking = false;
@@ -331,7 +332,7 @@ function sendDownloadProgress(label, progress = null) {
     });
 }
 
-async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onStage) {
+async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onStage, runtimeOptions) {
     const binaryProgress = label => progress => {
         signal.throwIfAborted();
         onStage(label);
@@ -341,12 +342,12 @@ async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onS
 
     sendDownloadProgress('Checking Llama runner');
     onStage('Llama runner');
-    const llamaBinaryPath = await ensureNativeBinary('llama', binaryProgress('Llama runner'), signal);
+    const llamaBinaryPath = await ensureNativeBinary('llama', binaryProgress('Llama runner'), signal, runtimeOptions);
     signal.throwIfAborted();
 
     sendDownloadProgress('Checking Whisper runner');
     onStage('Whisper runner');
-    const whisperBinaryPath = await ensureNativeBinary('whisper', binaryProgress('Whisper runner'), signal);
+    const whisperBinaryPath = await ensureNativeBinary('whisper', binaryProgress('Whisper runner'), signal, runtimeOptions);
     signal.throwIfAborted();
 
     let whisperModelPath;
@@ -354,7 +355,7 @@ async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onS
     try {
         sendDownloadProgress('Checking Whisper model');
         onStage('Whisper model');
-        whisperModelPath = await ensureWhisperModel(whisperModel, binaryProgress('Whisper model'), signal);
+        whisperModelPath = await ensureWhisperModel(whisperModel, binaryProgress('Whisper model'), signal, runtimeOptions);
     } finally {
         if (!signal.aborted) sendToRenderer('whisper-downloading', false);
     }
@@ -362,7 +363,7 @@ async function prepareNativeFiles(llamaModelReference, whisperModel, signal, onS
 
     sendDownloadProgress('Checking language model');
     onStage('Language model');
-    const llamaFiles = await ensureLlamaModel(llamaModelReference, binaryProgress('Language model'), binaryProgress('Vision model'), signal);
+    const llamaFiles = await ensureLlamaModel(llamaModelReference, binaryProgress('Language model'), binaryProgress('Vision model'), signal, runtimeOptions);
     return {
         llamaBinaryPath,
         whisperBinaryPath,
@@ -407,7 +408,7 @@ function localContextTokens(modelReference) {
     return /Qwen3\.5-(?:0\.8B|2B)-/i.test(String(modelReference || '')) ? LOCAL_FAST_CONTEXT_TOKENS : LOCAL_CONTEXT_TOKENS;
 }
 
-async function startLlamaServer(executablePath, modelPath, projectorPath, signal) {
+async function startLlamaServer(executablePath, modelPath, projectorPath, signal, cpuOnly) {
     if (!modelPath || !fs.existsSync(modelPath)) {
         throw new Error(`Language model path is invalid: ${modelPath}`);
     }
@@ -436,6 +437,7 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
     // Both audited b10964 Windows runners share the same llama.cpp CLI contract.
     if (/llama-b10964/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
 
+    if (cpuOnly) argumentsList.push('--n-gpu-layers', '0');
     llamaBaseUrl = `http://127.0.0.1:${port}`;
     llamaApiKey = randomBytes(32).toString('hex');
     llamaProcess = startNativeServer({
@@ -456,7 +458,7 @@ function initializeLocalSession(...args) {
     return work;
 }
 
-async function runLocalInitialization(model, whisperModel, profile, customPrompt, language = 'en-US') {
+async function runLocalInitialization(model, whisperModel, profile, customPrompt, language = 'en-US', { offline = false, cpuOnly = false } = {}) {
     console.log('[LocalAI] Initializing native local session:', { model, whisperModel, profile, language: currentLanguage });
     sendToRenderer('session-initializing', true);
     closeLocalSession();
@@ -471,7 +473,7 @@ async function runLocalInitialization(model, whisperModel, profile, customPrompt
         currentSystemPrompt = getSystemPrompt(profile, customPrompt, false);
         llamaModel = model;
 
-        const nativeFiles = await prepareNativeFiles(model, whisperModel, controller.signal, value => { stage = value; });
+        const nativeFiles = await prepareNativeFiles(model, whisperModel, controller.signal, value => { stage = value; }, { offline, cpuOnly });
         controller.signal.throwIfAborted();
         validatePreparedNativeFiles(nativeFiles);
 
@@ -481,27 +483,30 @@ async function runLocalInitialization(model, whisperModel, profile, customPrompt
         await startWhisperServer(nativeFiles.whisperBinaryPath, nativeFiles.whisperModelPath, controller.signal);
         controller.signal.throwIfAborted();
 
-        const accelerated = /vulkan/i.test(nativeFiles.llamaBinaryPath);
-        stage = accelerated ? 'Vulkan model startup' : 'CPU model startup';
-        sendToRenderer('update-status', accelerated
+        let vulkan = /(?:^|[\\/])llama-b[0-9]+-vulkan(?:[\\/]|$)/i.test(nativeFiles.llamaBinaryPath);
+        let fallback = !cpuOnly && !vulkan ? 'vulkan-unavailable' : null;
+        stage = vulkan ? 'Vulkan model startup' : 'CPU model startup';
+        sendToRenderer('update-status', vulkan
             ? 'Loading the Vulkan-capable local runner; device use depends on your GPU and driver...'
             : 'Loading local language model on CPU. Select a smaller model in Home for faster replies.');
         sendDownloadProgress('Loading language model');
         try {
-            await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
+            await startLlamaServer(nativeFiles.llamaBinaryPath, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal, !vulkan);
         } catch (error) {
             controller.signal.throwIfAborted();
-            if (!accelerated) throw error;
+            if (!vulkan) throw error;
             // Download success does not prove that the GPU backend can start.
             // Stop the failed process before trying the verified CPU runner.
             stopLocalRunner(llamaProcess);
             llamaProcess = null;
             llamaBaseUrl = null;
             sendToRenderer('update-status', 'The Vulkan runner could not start. Loading the same local model with the verified CPU runner.');
+            fallback = 'vulkan-start-failed';
+            vulkan = false;
             stage = 'CPU fallback';
-            const cpuBinary = await ensureNativeBinary('llama', undefined, controller.signal, { cpuOnly: true });
+            const cpuBinary = await ensureNativeBinary('llama', undefined, controller.signal, { cpuOnly: true, offline });
             controller.signal.throwIfAborted();
-            await startLlamaServer(cpuBinary, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal);
+            await startLlamaServer(cpuBinary, nativeFiles.llamaModelPath, nativeFiles.projectorPath, controller.signal, true);
         }
         controller.signal.throwIfAborted();
 
@@ -513,6 +518,8 @@ async function runLocalInitialization(model, whisperModel, profile, customPrompt
         resampleRemainder = Buffer.alloc(0);
         localConversationHistory = [];
 
+        localRuntime = { runner: vulkan ? 'vulkan' : 'cpu', offline, fallback,
+            gpuLayers: vulkan ? llamaProcess?.gpuLayers || null : null };
         initializeNewSession(profile, customPrompt);
         isLocalActive = true;
         initializationController = null;
@@ -544,6 +551,10 @@ function localInitializationFailure(error, stage) {
     const text = String(error?.message || '');
     const httpStatus = Number(text.match(/HTTP (\d{3})/)?.[1]) || null;
     const exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : null;
+    if (error?.code === 'OFFLINE_CACHE_MISSING') {
+        return { operation: 'initialization', category: 'local-setup', stage, code: error.code,
+            message: `Local AI - ${stage}: ${error.message}` };
+    }
     let reason = 'Setup could not finish. Retry setup; verified cached files are retained.';
     if (/English-only/.test(text)) reason = 'The selected Whisper model is English-only. Select English or a compatible transcription model.';
     else if (/out of memory|bad_alloc|not enough memory|failed to allocate/i.test(text)) reason = 'Not enough memory. Close other applications or explicitly select a smaller local model.';
@@ -581,6 +592,7 @@ async function waitForLocalShutdown() {
 }
 
 function closeLocalSession() {
+    localRuntime = null;
     isLocalActive = false;
     initializationController?.abort();
     initializationController = null;
@@ -685,6 +697,7 @@ async function sendLocalImage(base64Data, prompt) {
 
 module.exports = {
     initializeLocalSession,
+    getLocalRuntime: () => localRuntime,
     getLocalInitializationFailure: () => initializationFailure,
     cancelLocalInitialization,
     processLocalAudio,

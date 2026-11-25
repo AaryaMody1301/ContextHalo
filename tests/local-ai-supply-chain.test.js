@@ -133,6 +133,16 @@ test('dynamic GGUF download uses one immutable Hub revision and persists its art
     assert.equal(source.quant, 'Q4_K_M');
     assert.equal(source.model.sha256, digest(modelBytes));
     assert.equal(source.projector.sha256, digest(projectorBytes));
+
+    const offline = { offline: true };
+    const startLocal = () => native.ensureLlamaModel('owner/repo:Q4_K_M', null, null, undefined, offline);
+    assert.deepEqual(await startLocal(), result);
+    fs.writeFileSync(result.projectorPath, 'damaged cached fixture');
+    await assert.rejects(startLocal, { code: 'OFFLINE_CACHE_MISSING', message: /vision model files/ });
+    await assert.rejects(native.ensureLlamaModel('owner/uncached:Q4_K_M', null, null, undefined, offline),
+        { code: 'OFFLINE_CACHE_MISSING', message: /language model metadata/ });
+    await assert.rejects(native.ensureWhisperModel('tiny.en', null, undefined, offline), { code: 'OFFLINE_CACHE_MISSING' });
+    assert.equal(urls.length, 2, 'after the initial fixture seed there must be no download request');
 });
 
 test('model provenance cannot be persisted without a full immutable revision', async t => {
@@ -143,6 +153,19 @@ test('model provenance cannot be persisted without a full immutable revision', a
     });
     assert.throws(() => native.persistModelProvenance(root, { revision: 'main', quant: 'Q4' }), /immutable repository revision/);
     assert.equal(fs.readdirSync(root).length, 0);
+});
+
+test('native runner diagnostics handle split offload lines without exposing them in the GPU counts', () => {
+    const { EventEmitter } = require('node:events');
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter() });
+    const native = loadMain('src/utils/native-ai-runtime.js', {
+        child_process: { ...require('node:child_process'), spawn: () => child },
+    }, { process: { ...process, stdout: { write() {} }, stderr: { write() {} } } });
+    native.startNativeServer({ executablePath: 'fixture', arguments: [], name: 'Llama' });
+    child.stderr.emit('data', 'load_tensors: offloaded 8/');
+    assert.equal(child.gpuLayers, undefined);
+    child.stderr.emit('data', '12 layers to GPU\n');
+    assert.deepEqual(child.gpuLayers, { offloaded: 8, total: 12 });
 });
 
 test('both official b10964 llama runners use the same cache-reuse CLI contract', () => {

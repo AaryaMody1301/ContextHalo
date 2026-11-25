@@ -13,7 +13,7 @@ const {
 } = require('../src/utils/geminiModelPolicy');
 
 test('Gemini model policy matches the audited October 2026 stable model families', () => {
-    assert.deepEqual(GEMINI_SCREEN_MODEL_IDS, [
+    assert.deepEqual(GEMINI_SCREEN_MODEL_IDS.filter(id => geminiModelPolicy(id).lifecycle === 'stable'), [
         'gemini-3.8-flash',
         'gemini-3.6-flash',
         'gemini-3.5-flash-lite',
@@ -22,7 +22,7 @@ test('Gemini model policy matches the audited October 2026 stable model families
     assert.deepEqual(GEMINI_LIVE_SELECTABLE_IDS, ['gemini-3.8-live']);
     assert.deepEqual(GEMINI_LIVE_MAPPED_IDS, ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
 
-    for (const id of GEMINI_SCREEN_MODEL_IDS) {
+    for (const id of GEMINI_SCREEN_MODEL_IDS.filter(id => geminiModelPolicy(id).lifecycle === 'stable')) {
         const policy = geminiModelPolicy(id);
         assert.equal(policy.lifecycle, 'stable', id);
         assert.equal(policy.route, 'generate', id);
@@ -34,6 +34,15 @@ test('Gemini model policy matches the audited October 2026 stable model families
         assert.equal(policy.outputTokenLimit, 65536, id);
         assert.deepEqual(screenThinkingConfigForModel(id), { thinkingConfig: { thinkingLevel: 'low' } }, id);
     }
+});
+
+test('Gemini 2.5 Flash-Lite is offered for eligible projects and uses the legacy generation contract', () => {
+    const id = 'gemini-2.5-flash-lite';
+    assert.ok(GEMINI_SCREEN_MODEL_IDS.includes(id));
+    assert.equal(geminiModelPolicy(id).lifecycle, 'legacy');
+    assert.equal(geminiModelPolicy(id).route, 'generate');
+    assert.match(geminiCapabilityLabel(id), /Legacy project access/);
+    assert.deepEqual(screenThinkingConfigForModel(id), {});
 });
 
 test('deprecated Gemini aliases disclose provider redirects without changing saved selections', () => {

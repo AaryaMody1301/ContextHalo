@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { OFFLINE_MESSAGE, offlineSelected, isOfflineMode, setOfflineMode, installOfflineNetworkBoundary } = require('./utils/offlineMode');
 const { installIpcHandlerHardening } = require('./utils/runtimeHardeningMain');
 const {
     installWindowsProviderTransport,
@@ -29,6 +30,7 @@ if (WINDOWS_SMOKE_MODE) {
 
 // Provider networking, Local AI compatibility and context observers must be installed
 // before gemini.js/localai.js capture their dependencies.
+installOfflineNetworkBoundary();
 installWindowsProviderTransport();
 installWindowsLocalAiRuntime();
 installRealtimeContextMain(() => require('./utils/gemini').getActiveSessionId());
@@ -36,7 +38,7 @@ installSessionPackMain();
 installKnowledgeRagMain();
 
 const { createWindow, getShortcutState, saveGlobalShortcuts } = require('./utils/window');
-const { setupGeminiIpcHandlers, sendToRenderer, stopProviderForDataErase } = require('./utils/gemini');
+const { setupGeminiIpcHandlers, sendToRenderer, stopProviderForDataErase, isProviderBusy } = require('./utils/gemini');
 const storage = require('./storage');
 const { listProviderModels, clearProviderModelCache } = require('./utils/providerModelRegistry');
 const { createPortableUpdateController } = require('./utils/updateMain');
@@ -44,7 +46,7 @@ const { createPortableUpdateController } = require('./utils/updateMain');
 const { createDataDeletionController } = require('./utils/dataDeletionMain');
 
 const geminiSessionRef = { current: null };
-const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE });
+const updateController = createPortableUpdateController({ app, smokeMode: WINDOWS_SMOKE_MODE, isOffline: isOfflineMode });
 let mainWindow = null;
 let reliabilityAcceptance = null;
 
@@ -98,6 +100,7 @@ function validateObject(value) {
 
 app.whenReady().then(async () => {
     storage.initializeStorage();
+    setOfflineMode(offlineSelected(storage.getPreferences()));
     await storage.initializeCredentialStorage();
     createMainWindow();
 
@@ -202,7 +205,18 @@ function setupStorageIpcHandlers() {
     handle('storage:get-preferences', () => ({ success: true, data: storage.getPreferences() }));
     handle('storage:update-preference', (key, value) => {
         if (!validateString(key, 100)) throw new Error('Invalid preference key');
-        saved(storage.updatePreference(key, value)); return { success: true };
+        if (key === 'localOffline' && typeof value !== 'boolean') throw new Error('Choose whether to enable Offline.');
+        if (key === 'localBackend' && !['auto', 'cpu'].includes(value)) throw new Error('Choose a Local AI runner.');
+        const networkSetting = key === 'providerMode' || key === 'localOffline';
+        const nextOffline = networkSetting && offlineSelected({ ...storage.getPreferences(), [key]: value });
+        const changesNetwork = networkSetting && nextOffline !== isOfflineMode();
+        if (changesNetwork && isProviderBusy()) throw new Error('End the current session before changing Offline.');
+        saved(storage.updatePreference(key, value));
+        if (changesNetwork) {
+            setOfflineMode(nextOffline);
+            if (nextOffline) clearProviderModelCache();
+        }
+        return { success: true };
     });
 
     handle('storage:get-keybinds', () => getShortcutState());
@@ -234,6 +248,7 @@ function setupGeneralIpcHandlers() {
             return { success: false, error: 'Invalid provider model request' };
         }
         if (dataDeletion.isErasing()) return { success: false, error: 'Local data deletion is in progress.' };
+        if (isOfflineMode()) return { success: false, error: OFFLINE_MESSAGE, code: 'OFFLINE_MODE' };
         try {
             const apiKey = provider === 'gemini' ? storage.getApiKey() : storage.getGroqApiKey();
             const data = await listProviderModels(provider, apiKey, { forceRefresh: forceRefresh === true });

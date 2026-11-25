@@ -85,6 +85,21 @@ const GEMINI_MODEL_POLICY = Object.freeze({
         outputTokenLimit: 65536,
         contextHaloCompatibility: 'supported',
     }),
+    'gemini-2.5-flash-lite': Object.freeze({
+        lifecycle: 'legacy',
+        route: 'generate',
+        roles: Object.freeze(['text', 'screen']),
+        inputs: Object.freeze(['text', 'image', 'video', 'audio', 'pdf']),
+        outputs: Object.freeze(['text']),
+        search: true,
+        live: false,
+        // This generation uses thinkingBudget. Leave the model's default in effect.
+        thinkingLevels: Object.freeze([]),
+        defaultThinking: 'off',
+        inputTokenLimit: 1048576,
+        outputTokenLimit: 65536,
+        contextHaloCompatibility: 'supported',
+    }),
     'gemini-3.8-live': Object.freeze({
         lifecycle: 'stable',
         route: 'live',
@@ -119,7 +134,7 @@ const GEMINI_MODEL_POLICY = Object.freeze({
 
 const GEMINI_SCREEN_MODEL_IDS = Object.freeze(Object.entries(GEMINI_MODEL_POLICY)
     .filter(([, policy]) => policy.route === 'generate' && policy.roles.includes('screen')
-        && policy.lifecycle === 'stable' && policy.contextHaloCompatibility === 'supported')
+        && ['stable', 'legacy'].includes(policy.lifecycle) && policy.contextHaloCompatibility === 'supported')
     .map(([id]) => id));
 
 const GEMINI_LIVE_SELECTABLE_IDS = Object.freeze(Object.entries(GEMINI_MODEL_POLICY)
@@ -132,16 +147,29 @@ const GEMINI_LIVE_MAPPED_IDS = Object.freeze(Object.entries(GEMINI_MODEL_POLICY)
     .map(([id]) => id));
 
 function normalizeGeminiModelId(value) {
-    return String(value || '').replace(/^models\//, '').trim().toLowerCase();
+    return String(value || '').trim().toLowerCase().replace(/^models\//, '');
 }
 
 function geminiModelPolicy(model) {
     return GEMINI_MODEL_POLICY[normalizeGeminiModelId(model)] || null;
 }
 
+function geminiModelRouteError(model, route) {
+    const id = normalizeGeminiModelId(model);
+    const policy = geminiModelPolicy(id);
+    if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id)) return 'Enter a valid Gemini model ID in Home.';
+    if (policy?.contextHaloCompatibility === 'mapped-not-selectable') return policy.compatibilityReason;
+    if (route === 'live' && policy?.route === 'generate') return 'Choose a Gemini Live model for live audio. The selected model uses text and screen requests.';
+    if (route === 'generate' && (policy?.route === 'live' || /^gemini.*(?:-live(?:-|$)|-native-audio)/.test(id))) {
+        return 'Choose a Gemini model for text and screen analysis. The selected model uses the Live API.';
+    }
+    return '';
+}
+
 function geminiCapabilityLabel(model) {
     const policy = geminiModelPolicy(model);
     if (!policy) return '';
+    if (policy.lifecycle === 'legacy') return 'Legacy project access · Text/Image · Search';
     if (policy.lifecycle === 'deprecated') return `Deprecated · Google routes requests to ${policy.replacement}; select a current model explicitly`;
     if (policy.route === 'live') {
         if (policy.contextHaloCompatibility !== 'supported') {
@@ -166,6 +194,7 @@ module.exports = {
     GEMINI_LIVE_MAPPED_IDS,
     normalizeGeminiModelId,
     geminiModelPolicy,
+    geminiModelRouteError,
     geminiCapabilityLabel,
     screenThinkingConfigForModel,
 };
