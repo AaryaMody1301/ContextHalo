@@ -88,3 +88,57 @@ test('failed credential writes block Start until a newer value is securely saved
     await view._saveGeminiKey('fixture'); await view._handleStart(); assert.equal(starts,0); assert.equal(view._geminiKey,'fixture');
     fail=false; await view._saveGeminiKey('retry'); await view._handleStart(); assert.equal(starts,1); assert.deepEqual(writes,['fixture','retry']);
 });
+
+for (const phase of ['startup', 'restart']) test('source changes during capture ' + phase + ' dispose the obsolete stream and attach the latest', async t => {
+    const { rendererFixture, stream } = require('./helpers/renderer-fixture');
+    const permissions = Promise.withResolvers();
+    const original = stream('video', 'audio');
+    const obsolete = stream('video', 'audio');
+    const latest = stream('video', 'audio');
+    const streams = phase === 'startup' ? [permissions.promise, latest] : [original, permissions.promise, latest];
+    let attempts = 0;
+    const capture = rendererFixture({ display: async () => streams[attempts++] });
+    const f = appFixture({ api: {
+        startCapture: capture.api.startCapture, stopCapture: capture.api.stopCapture, getCaptureState: capture.api.getCaptureState,
+    } });
+    const subscriptions = new Map();
+    f.context.window.electronAPI.on = (channel, cb) => subscriptions.set(channel, cb);
+    f.app.connectedCallback();
+    capture.window.addEventListener('capture-state-changed', event => f.app._captureChanged(event.detail));
+    t.after(async () => { await f.app.endSession(); permissions.resolve(obsolete); });
+    const invalidated = subscriptions.get('capture-source-invalidated');
+    let pending = f.app.handleStart();
+    if (phase === 'restart') {
+        assert.equal((await pending).success, true);
+        invalidated(null, { reason: 'selection-changed' });
+        pending = f.app._captureRestartPromise;
+    }
+    await turn();
+    const previousAttempts = phase === 'startup' ? 1 : 2;
+    assert.equal(attempts, previousAttempts);
+
+    invalidated(null, { reason: 'selection-changed' });
+    await turn();
+    assert.equal(attempts, previousAttempts + 1);
+    const result = await pending;
+    if (phase === 'startup') assert.equal(result.success, true);
+    permissions.resolve(obsolete);
+    await turn();
+    assert.equal(capture.api.getCaptureState().state, 'ready');
+    assert.equal(f.app.lifecycleState, 'active');
+    if (phase === 'restart') assert.ok(original.getTracks().every(track => track.readyState === 'ended'));
+    assert.ok(obsolete.getTracks().every(track => track.readyState === 'ended'));
+    assert.ok(latest.getTracks().every(track => track.readyState === 'live'));
+});
+
+test('a failed Home capture choice restores the displayed saved selection', async () => {
+    const { Target } = componentClass('src/components/views/MainView.js', 'MainView', {
+        setCaptureSource: async () => ({ success: false }),
+        getContextState: () => ({ captureState: { key: 'active-display' } }),
+        selectionKey: state => state.key,
+    });
+    const home = Object.create(Target.prototype);
+    const select = { value: 'primary-display' };
+    await home._changeCaptureSource(select);
+    assert.equal(select.value, 'active-display');
+});

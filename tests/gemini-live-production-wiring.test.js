@@ -15,6 +15,16 @@ test('production Live connection enables compression and resumption updates', as
     assert.deepEqual(fixture.connections[0].config.sessionResumption, {});
     assert.equal(fixture.connections[0].model, 'gemini-3.8-live');
     assert.equal(fixture.connections[0].config.thinkingConfig, undefined);
+
+    const sessionId = fixture.api.getCurrentSessionData().sessionId;
+    assert.equal(fixture.api.getActiveSessionId(), sessionId);
+    const callbacks = fixture.callbacks;
+    callbacks.onmessage({ serverContent: { inputTranscription: { text: 'Current session fixture' } } });
+    await fixture.close();
+    assert.equal(fixture.api.getActiveSessionId(), null);
+    callbacks.onmessage({ serverContent: { inputTranscription: { text: 'Closed session fixture' } } });
+    assert.deepEqual(fixture.events.filter(([event]) => event === 'live-transcript').map(([, data]) => [data.sessionId, data.text]),
+        [[sessionId, 'Current session fixture']]);
 });
 
 test('409 ABORTED is retryable but ALREADY_EXISTS is not', () => {

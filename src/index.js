@@ -31,7 +31,7 @@ if (WINDOWS_SMOKE_MODE) {
 // before gemini.js/localai.js capture their dependencies.
 installWindowsProviderTransport();
 installWindowsLocalAiRuntime();
-installRealtimeContextMain();
+installRealtimeContextMain(() => require('./utils/gemini').getActiveSessionId());
 installSessionPackMain();
 installKnowledgeRagMain();
 

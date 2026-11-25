@@ -91,6 +91,7 @@ export class ContextHaloApp extends LitElement {
         this._startController = null;
         this._captureStateListener = event => this._captureChanged(event.detail);
         this._captureRestartPromise = null;
+        this._captureSourceRevision = 0;
         this.startError = '';
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
@@ -180,7 +181,10 @@ export class ContextHaloApp extends LitElement {
             this._isClickThrough = isEnabled;
         });
         listen('capture-source-invalidated', (_, detail) => {
-            if (this.sessionActive && ['active-display-changed', 'selection-changed'].includes(detail?.reason)) void this.restartCapture();
+            if (this.lifecycleState === 'stopping' || !['active-display-changed', 'selection-changed'].includes(detail?.reason)) return;
+            this._captureSourceRevision++;
+            if (this.lifecycleState === 'preparing-capture') contextHalo.stopCapture();
+            else if (this.sessionActive) void this.restartCapture();
         });
         listen('reconnect-failed', (_, data) => this.setProviderState({ state: 'failed', error: data?.error || { message: data?.message || 'Provider disconnected' } }));
         listen('whisper-downloading', (_, downloading) => {
@@ -532,8 +536,10 @@ export class ContextHaloApp extends LitElement {
                 : contextHalo.initializeGemini(this.selectedProfile, this.selectedLanguage, requestOptions), epoch);
             if (!success) throw new Error(this.providerError?.message || this.statusText || 'The provider could not connect.');
             this.providerState = 'ready';
+            await this._awaitStart(persistPackToCurrentSession(), epoch);
+            await this._awaitStart(resolveSessionId(), epoch);
             this._setLifecycle('preparing-capture', this.providerMode === 'mistral' ? 'Provider ready. Preparing the selected screen...' : 'Provider connected. Preparing the selected screen and audio inputs...');
-            const captured = await this._awaitStart(contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality), epoch);
+            const captured = await this._awaitStart(this._startSelectedCapture(epoch), epoch);
             if (!captured) throw new Error(contextHalo.getCaptureState?.().warning || this.statusText || 'Capture could not start.');
             this.captureState = contextHalo.getCaptureState?.() || { state: 'ready', audioReady: true, screen: true };
             this._setLifecycle('capture-ready', this.providerMode === 'mistral' ? 'Screen capture ready; audio off' : 'Screen and audio capture ready');
@@ -545,8 +551,6 @@ export class ContextHaloApp extends LitElement {
             this.currentResponseIndex = -1;
             this.startTime = Date.now();
             this._sessionStarted = true;
-            await this._awaitStart(persistPackToCurrentSession(), epoch);
-            await this._awaitStart(resolveSessionId(), epoch);
             this.currentView = 'assistant';
             this._setLifecycle('active', this._readyStatus());
             this._startTimer();
@@ -564,6 +568,19 @@ export class ContextHaloApp extends LitElement {
         }
     }
 
+    async _startSelectedCapture(epoch) {
+        while (epoch === this._uiSessionEpoch) {
+            const source = this._captureSourceRevision;
+            try {
+                const captured = await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+                if (source === this._captureSourceRevision) return captured;
+            } catch (error) {
+                if (source === this._captureSourceRevision) throw error;
+            }
+        }
+        return false;
+    }
+
     restartCapture() {
         if (!this.sessionActive || this.isInitializing) return Promise.resolve();
         if (this._captureRestartPromise) return this._captureRestartPromise;
@@ -571,7 +588,7 @@ export class ContextHaloApp extends LitElement {
         const operation = (async () => {
             this._setLifecycle('preparing-capture', 'Restarting the selected screen and audio inputs...');
             contextHalo.stopCapture();
-            try { await contextHalo.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality); }
+            try { await this._startSelectedCapture(epoch); }
             catch { /* The capture owner publishes its recoverable failure state. */ }
             if (epoch !== this._uiSessionEpoch) return;
             this.captureState = contextHalo.getCaptureState();

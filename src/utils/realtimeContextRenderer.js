@@ -55,6 +55,7 @@ function mergeByTimestamp(existing, incoming) {
 
 export function resolveSessionId() {
     if (resolvingSession) return resolvingSession;
+    if (currentSessionId) return Promise.resolve(currentSessionId);
     const pending = loadSessionContext().finally(() => {
         if (resolvingSession === pending) resolvingSession = null;
     });
@@ -65,13 +66,13 @@ export function resolveSessionId() {
 async function loadSessionContext() {
     const epoch = generation;
     const result = await ipcRenderer.invoke('get-current-session');
-    if (epoch !== generation) return currentSessionId;
+    if (epoch !== generation) return null;
     const id = result?.success ? result.data?.sessionId : null;
     if (!id || id === currentSessionId) return id;
     clearTimeout(persistTimer);
     currentSessionId = id;
     const session = await contextHalo.storage.getSession(id);
-    if (epoch !== generation || currentSessionId !== id) return currentSessionId;
+    if (epoch !== generation || currentSessionId !== id) return null;
     transcriptEntries = mergeByTimestamp(session?.liveTranscript || [], transcriptEntries);
     markers = Array.isArray(session?.markers) ? session.markers.slice(-500) : markers;
     changed();
@@ -80,23 +81,32 @@ async function loadSessionContext() {
 
 export async function flushSessionContext() {
     clearTimeout(persistTimer);
-    const id = resolvingSession ? await resolvingSession : currentSessionId || await resolveSessionId();
-    if (!id) return;
-    // Snapshot before the await: an ended session must never receive the next session's transcript.
+    const epoch = generation;
+    const id = await resolveSessionId();
+    if (!id || epoch !== generation || id !== currentSessionId) return;
+
     const snapshot = { liveTranscript: [...transcriptEntries], markers: [...markers] };
     const result = await contextHalo.storage.saveSession(id, snapshot);
     if (result?.success === false) throw new Error('Could not save transcript and markers.');
-    error = '';
+    if (epoch === generation && error) {
+        error = '';
+        changed();
+    }
 }
 function schedulePersist() {
     clearTimeout(persistTimer);
-    persistTimer = setTimeout(() => flushSessionContext().catch(() => {
-        error = 'Transcript could not be saved. End the session to retry saving.';
-        changed();
-    }), 450);
+    const epoch = generation;
+    persistTimer = setTimeout(() => {
+        if (epoch !== generation) return;
+        flushSessionContext().catch(() => {
+            if (epoch !== generation) return;
+            error = 'Transcript could not be saved. End the session to retry saving.';
+            changed();
+        });
+    }, 450);
 }
 function handleTranscript(_event, payload) {
-    if (!payload || typeof payload.text !== 'string' || !payload.text.trim()) return;
+    if (!currentSessionId || payload?.sessionId !== currentSessionId || typeof payload.text !== 'string' || !payload.text.trim()) return;
     const entry = {
         provider: ['gemini', 'groq', 'local'].includes(payload.provider) ? payload.provider : 'local',
         text: payload.text.trim().slice(0, 8000), final: payload.final !== false,
@@ -112,8 +122,8 @@ function handleTranscript(_event, payload) {
 export async function addMarker(type) {
     if (!MARKER_TYPES.some(marker => marker.id === type)) return;
     const epoch = generation;
-    const id = resolvingSession ? await resolvingSession : currentSessionId || await resolveSessionId();
-    if (!id || epoch !== generation) return;
+    const id = await resolveSessionId();
+    if (!id || epoch !== generation || id !== currentSessionId) return;
     const latest = transcriptEntries.at(-1) || interimTranscript;
     markers = [...markers, { type, timestamp: Date.now(), transcript: latest?.text || '' }].slice(-500);
     notice = `Marked ${MARKER_TYPES.find(marker => marker.id === type).label}`;
@@ -131,6 +141,7 @@ export function initRealtimeContext() {
     ipcRenderer.on('save-session-context', reset);
     return () => {
         generation++; clearTimeout(persistTimer);
+        resolvingSession = null;
         ipcRenderer.removeListener('live-transcript', handleTranscript);
         ipcRenderer.removeListener('save-session-context', reset);
     };
