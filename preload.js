@@ -30,6 +30,7 @@ const allowedChannels = {
         'knowledge:set-enabled',
         'knowledge:delete',
         'knowledge:search',
+        'knowledge:excerpt',
         'practice:generate',
         'practice:grade',
         'practice:history',

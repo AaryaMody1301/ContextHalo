@@ -347,6 +347,38 @@ async function rendererBehaviorSmoke() {
         await new Promise(resolve=>setTimeout(resolve,80));
         verify(app.shadowRoot.querySelector('.phase4-overlay')?.open,'Workspace opens: '+id);
         verify(app.shadowRoot.activeElement?.closest('.phase4-overlay'),'Workspace focus is inside the modal: '+id);
+        const panel = app.shadowRoot.querySelector('.phase4-body');
+        const button = label => [...panel.querySelectorAll('button')].find(item => item.textContent === label);
+        if (id === 'phase4-knowledge-nav') {
+            await call('knowledge:set-enabled', knowledgeDoc.id, true);
+            try {
+                await waitUntil(() => panel.querySelector('[aria-label="Test knowledge retrieval"]'));
+                panel.querySelector('[aria-label="Test knowledge retrieval"]').value = 'idempotent ingestion';
+                button('Search').click();
+                await waitUntil(() => panel.querySelector('.phase4-result summary'));
+                panel.querySelector('.phase4-result summary').click();
+                await waitUntil(() => panel.querySelector('.phase4-result details')?.textContent.includes('saved text · line 1'));
+                verify(panel.querySelector('.phase4-result details .phase4-result-text').textContent === text,
+                    'Knowledge search opens the matching span of saved text in the renderer');
+            } finally {
+                await call('knowledge:set-enabled', knowledgeDoc.id, false);
+            }
+        }
+        if (id === 'phase4-practice-nav') {
+            await waitUntil(() => panel.querySelector('[aria-label="Practice source"]'));
+            panel.querySelector('[aria-label="Practice source"]').value = 'track:sql';
+            button('Start practice').click();
+            const answerSelector = 'select[aria-label="Your practice answer"]';
+            await waitUntil(() => panel.querySelector(answerSelector));
+            panel.querySelector(answerSelector).value = '0';
+            button('Check answer').click();
+            await waitUntil(() => panel.querySelector('.phase4-feedback')?.textContent.includes('0% · Incorrect.'));
+            verify(panel.querySelector('.phase4-feedback').textContent.includes('COUNT(column) skips NULL'),
+                'Practice Lab explains a wrong SQL answer in the renderer');
+            panel.querySelector(answerSelector).value = '1';
+            button('Check answer').click();
+            await waitUntil(() => panel.querySelector('.phase4-feedback')?.textContent.includes('100% · Correct.'));
+        }
         app.shadowRoot.querySelector('.phase4-close')?.click();
     }
     // Real native controls and isolated provider attribution; no external account needed.

@@ -402,6 +402,31 @@ function searchKnowledge(query, options = {}) {
     return retrieveChunks(loadDocuments(options.documentIds), query, options);
 }
 
+function getKnowledgeExcerpt(documentId, chunkId) {
+    if (typeof documentId !== 'string' || !DOCUMENT_ID.test(documentId)
+        || typeof chunkId !== 'string' || !/^chunk-[1-9]\d{0,6}$/.test(chunkId)) {
+        throw new Error('Invalid knowledge excerpt.');
+    }
+    const document = readDocumentEntry(documentId, true)?.document;
+    if (!document || document.enabled === false) throw new Error('This source is unavailable. Search enabled sources again.');
+    const index = Number(chunkId.slice(6)) - 1;
+    const storedChunk = document.chunks[index];
+    const locatedChunk = chunkText(document.content, { includeSpans: true })[index];
+    if (storedChunk?.id !== chunkId || !locatedChunk || locatedChunk.text !== storedChunk.text) {
+        throw new Error('This excerpt could not be located in the imported copy. Reimport the source to refresh it.');
+    }
+    const { start, end } = locatedChunk;
+    let startLine = 1;
+    let endLine = 1;
+    for (let newline = document.content.indexOf('\n'); newline >= 0 && newline < end;
+        newline = document.content.indexOf('\n', newline + 1)) {
+        if (newline < start) startLine++;
+        endLine++;
+    }
+    const { title, sourceName } = metadataFromDocument(document);
+    return { title, sourceName, start, end, startLine, endLine, text: document.content.slice(start, end) };
+}
+
 function getEnabledDocuments() {
     return loadDocuments().filter(document => document.enabled !== false);
 }
@@ -443,6 +468,7 @@ module.exports = {
     setDocumentEnabled,
     deleteDocument,
     searchKnowledge,
+    getKnowledgeExcerpt,
     clearKnowledge,
     recordPracticeAttempt,
     getPracticeHistory,

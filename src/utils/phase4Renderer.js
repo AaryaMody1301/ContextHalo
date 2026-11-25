@@ -8,6 +8,7 @@ const state = {
     practiceIndex: 0,
     practiceSource: 'knowledge',
     practiceSessionId: '',
+    practiceTrackId: '',
     review: null,
     busy: false,
 };
@@ -246,6 +247,27 @@ async function renderKnowledge(app, body) {
                 const card = el('div', 'phase4-result');
                 card.append(el('div', 'phase4-result-title', `${item.title} · score ${item.score}`));
                 card.append(el('div', 'phase4-result-text', item.text));
+                const source = el('details');
+                const summary = el('summary', 'phase4-btn', 'View source excerpt');
+                summary.setAttribute('aria-label', `View source excerpt from ${item.title}`);
+                const excerpt = el('div');
+                source.append(summary, excerpt);
+                source.addEventListener('toggle', async () => {
+                    if (!source.open) return;
+                    excerpt.textContent = 'Loading source…';
+                    try {
+                        const { data } = await invoke('knowledge:excerpt', item.documentId, item.chunkId);
+                        const lines = data.startLine === data.endLine ? `line ${data.startLine}` : `lines ${data.startLine}–${data.endLine}`;
+                        excerpt.replaceChildren(
+                            el('p', 'phase4-muted', `${data.sourceName || data.title} · ${data.sourceName ? 'imported copy' : 'saved text'} · ${lines}`),
+                            el('div', 'phase4-result-text', data.text)
+                        );
+                    } catch (error) {
+                        excerpt.replaceChildren();
+                        statusLine(excerpt, error.message, true);
+                    }
+                });
+                card.append(source);
                 searchResults.append(card);
             }
         } catch (error) { statusLine(body, error.message, true); }
@@ -260,13 +282,18 @@ async function renderPractice(app, body) {
     const grid = el('div', 'phase4-grid');
     const setup = el('div', 'phase4-card');
     setup.append(el('div', 'phase4-card-title', 'Practice source'));
-    setup.append(el('div', 'phase4-muted', 'Use enabled knowledge or turn any saved session into a recall set. Questions and grading run locally.'));
+    setup.append(el('div', 'phase4-muted', 'Choose a built-in topic, enabled knowledge, or a saved session. Practice runs locally.'));
     const sourceSelect = el('select', 'phase4-select');
     sourceSelect.setAttribute('aria-label', 'Practice source');
     sourceSelect.style.marginTop = '10px';
     const knowledgeOption = el('option', '', 'Enabled knowledge library');
     knowledgeOption.value = 'knowledge';
     sourceSelect.append(knowledgeOption);
+    for (const [id, title] of [['sql', 'SQL'], ['python', 'Python'], ['data-engineering', 'Data engineering']]) {
+        const option = el('option', '', title);
+        option.value = `track:${id}`;
+        sourceSelect.append(option);
+    }
     try { await loadSessions(); } catch { setup.append(el('p', 'phase4-error', 'Saved sessions could not be loaded. Close and reopen Practice to retry. Your knowledge library remains available.')); }
     for (const session of state.sessions.slice(0, 60)) {
         const option = el('option', '', `Session · ${session.title || session.profile || 'Session'} · ${new Date(session.createdAt || Number(session.sessionId)).toLocaleDateString()}`);
@@ -274,21 +301,25 @@ async function renderPractice(app, body) {
         sourceSelect.append(option);
     }
     if (state.practiceSource === 'session' && state.practiceSessionId) sourceSelect.value = `session:${state.practiceSessionId}`;
-    const generate = el('button', 'phase4-btn primary', 'Generate 6 questions');
+    if (state.practiceSource === 'track') sourceSelect.value = `track:${state.practiceTrackId}`;
+    const generate = el('button', 'phase4-btn primary', 'Start practice');
     generate.style.marginTop = '9px';
     setup.append(sourceSelect, generate);
 
     const progress = el('div', 'phase4-card');
-    progress.append(el('div', 'phase4-card-title', 'Mastery'));
+    progress.append(el('div', 'phase4-card-title', 'Practice history'));
     const historyText = el('div', 'phase4-muted', 'Practice history is stored locally.');
     progress.append(historyText);
     try {
         const history = await invoke('practice:history');
         const attempts = history.data || [];
         if (attempts.length) {
-            const recent = attempts.slice(0, 25);
-            const average = Math.round(recent.reduce((sum, item) => sum + (Number(item.score) || 0), 0) / recent.length * 100);
-            historyText.textContent = `${attempts.length} saved attempts · ${average}% average across the latest ${recent.length}.`;
+            const recent = attempts.filter(item => item.type !== 'recall' && Number.isFinite(item.score)).slice(0, 25);
+            historyText.textContent = `${attempts.length} saved attempts.`;
+            if (recent.length) {
+                const average = Math.round(recent.reduce((sum, item) => sum + item.score, 0) / recent.length * 100);
+                historyText.textContent += ` ${average}% across the latest ${recent.length} scored answers.`;
+            }
         }
     } catch { historyText.textContent = 'Practice history could not be loaded. Reopen Practice to retry; existing attempts are unchanged.'; }
     grid.append(setup, progress);
@@ -308,10 +339,23 @@ async function renderPractice(app, body) {
         const question = questions[state.practiceIndex];
         practiceArea.append(el('div', 'phase4-progress', `Question ${state.practiceIndex + 1} of ${questions.length} · ${question.sourceTitle}`));
         practiceArea.append(el('div', 'phase4-practice-question', question.prompt));
-        const answer = el('textarea', 'phase4-textarea');
+        const answer = question.type === 'choice' ? el('select', 'phase4-select') : el('textarea', 'phase4-textarea');
         answer.setAttribute('aria-label', 'Your practice answer');
-        answer.maxLength = 32000;
-        answer.placeholder = 'Answer in your own words…';
+        if (question.type === 'choice') {
+            const placeholder = el('option', '', 'Choose an answer');
+            placeholder.value = '';
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            answer.append(placeholder);
+            question.choices.forEach((choice, index) => {
+                const option = el('option', '', choice);
+                option.value = String(index);
+                answer.append(option);
+            });
+        } else {
+            answer.maxLength = 5000;
+            answer.placeholder = question.type === 'cloze' ? 'Enter the missing word…' : 'Answer in your own words…';
+        }
         const controls = el('div', 'phase4-toolbar');
         controls.style.marginTop = '9px';
         const check = el('button', 'phase4-btn primary', 'Check answer');
@@ -322,14 +366,14 @@ async function renderPractice(app, body) {
         controls.append(check, next);
         practiceArea.append(answer, controls, feedback);
         check.addEventListener('click', async () => {
-            if (!answer.value.trim()) return;
+            if (!answer.value.trim()) { answer.focus(); return; }
             check.disabled = true;
             try {
                 const result = await invoke('practice:grade', state.practice.setId, question.id, answer.value);
                 feedback.className = `phase4-feedback ${result.data.level}`;
                 feedback.style.display = 'block';
-                const missing = result.data.missing?.length ? ` Missing concepts: ${result.data.missing.join(', ')}.` : '';
-                feedback.textContent = `${Math.round((result.data.score || 0) * 100)}% · ${result.data.feedback}${missing}\n\nReference: ${result.data.reference}`;
+                const score = typeof result.data.score === 'number' ? `${Math.round(result.data.score * 100)}% · ` : '';
+                feedback.textContent = `${score}${result.data.feedback}\n\nReference: ${result.data.reference}`;
             } catch (error) {
                 feedback.className = 'phase4-feedback retry';
                 feedback.style.display = 'block';
@@ -340,7 +384,7 @@ async function renderPractice(app, body) {
         next.addEventListener('click', () => {
             state.practiceIndex = state.practiceIndex >= questions.length - 1 ? 0 : state.practiceIndex + 1;
             drawQuestion();
-            practiceArea.querySelector('textarea')?.focus();
+            practiceArea.querySelector('textarea, select')?.focus();
         });
     };
 
@@ -351,13 +395,18 @@ async function renderPractice(app, body) {
             const value = sourceSelect.value;
             const options = value.startsWith('session:')
                 ? { sourceType: 'session', sessionId: value.slice(8), count: 6 }
-                : { sourceType: 'knowledge', count: 6 };
+                : value.startsWith('track:') ? { sourceType: 'track', trackId: value.slice(6) }
+                    : { sourceType: 'knowledge', count: 6 };
             const result = await invoke('practice:generate', options);
             state.practice = result.data;
             state.practiceIndex = 0;
             state.practiceSource = options.sourceType;
             state.practiceSessionId = options.sessionId || '';
+            state.practiceTrackId = options.trackId || '';
             drawQuestion();
+            if (app.shadowRoot.activeElement === generate || app.shadowRoot.activeElement === null) {
+                practiceArea.querySelector('textarea, select')?.focus();
+            }
         } catch (error) {
             practiceArea.replaceChildren(el('div', 'phase4-empty', error.message));
         }

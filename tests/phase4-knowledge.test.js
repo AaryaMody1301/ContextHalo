@@ -152,11 +152,14 @@ test('practice questions and grading work without a provider', () => {
     };
     const questions = generatePracticeQuestions([source], 3);
     assert.ok(questions.length >= 2);
-    const question = questions.find(item => item.type === 'recall') || questions[0];
-    const strong = gradeAnswer(question, question.reference);
-    assert.equal(strong.level, 'strong');
-    const weak = gradeAnswer(question, 'I do not remember');
-    assert.ok(weak.score < strong.score);
+    const question = questions.find(item => item.type === 'recall');
+    assert.ok(question);
+    for (const answer of [question.reference, `It is false that ${question.reference}`, 'I do not remember']) {
+        const result = gradeAnswer(question, answer);
+        assert.equal(result.score, null);
+        assert.equal(result.level, 'review');
+        assert.match(result.feedback, /self-review/i);
+    }
 });
 
 test('cloze grading checks the missing word on its own', () => {
@@ -587,4 +590,88 @@ test('knowledge deletion confirms the exact source over trusted IPC and preserve
     assert.equal((await confirm).success, true);
     assert.equal(knowledge.loadDocument(one.id), null);
     assert.ok(knowledge.loadDocument(other.id));
+});
+
+
+test('linked search excerpts resolve the exact imported span through trusted IPC', async t => {
+    const { knowledge, storage } = knowledgeFixture(t);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'halo-excerpt-'));
+    t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+    const file = path.join(tmp, 'warehouse.txt');
+    fs.writeFileSync(file, `Intro to the warehouse.\r\n\r\n\r\n  ${'Staging contains incoming rows. '.repeat(52)}\r\nUnique checkpoint anchor.\r\n`);
+    const { imported: [imported] } = knowledge.importFiles([file]);
+    fs.unlinkSync(file);
+    const handlers = new Map();
+    const frame = {};
+    const window = { isDestroyed: () => false, webContents: { id: 1, mainFrame: frame } };
+    const event = { sender: window.webContents, senderFrame: frame };
+    const main = loadMain('src/utils/phase4Main.js', { '../storage': storage, './knowledgeStore': knowledge });
+    main.setupPhase4Main(window, { handle: (name, cb) => handlers.set(name, cb) });
+    const query = handlers.get('knowledge:search');
+    const resolve = handlers.get('knowledge:excerpt');
+    const { data: [hit] } = await query(event, 'unique checkpoint anchor');
+    assert.equal(hit.documentId, imported.id);
+    assert.equal((await resolve({ ...event, senderFrame: {} }, hit.documentId, hit.chunkId)).success, false);
+    assert.equal((await resolve(event, '../warehouse.txt', hit.chunkId)).success, false);
+    assert.equal((await resolve(event, hit.documentId, 'chunk-9999')).success, false);
+    const document = knowledge.loadDocument(imported.id);
+    assert.ok(document.chunks.every(chunk => !Object.hasOwn(chunk, 'start')), 'Existing storage needs no span migration');
+    for (const chunk of document.chunks) {
+        const { success, data } = await resolve(event, hit.documentId, chunk.id);
+        assert.equal(success, true);
+        assert.equal(data.sourceName, 'warehouse.txt');
+        assert.equal(data.text, document.content.slice(data.start, data.end));
+        assert.equal(data.startLine, document.content.slice(0, data.start).split('\n').length);
+        assert.equal(data.endLine, document.content.slice(0, data.end).split('\n').length);
+        assert.equal(data.text.replace(/\n{2,}/g, '\n\n').replace(/\n\n +/g, '\n\n'), chunk.text);
+    }
+    const excerpt = (await resolve(event, hit.documentId, hit.chunkId)).data;
+    assert.match(excerpt.text, /Unique checkpoint anchor/);
+    knowledge.setDocumentEnabled(hit.documentId, false);
+    assert.equal((await resolve(event, hit.documentId, hit.chunkId)).success, false);
+    knowledge.deleteDocument(hit.documentId);
+    assert.equal((await resolve(event, hit.documentId, hit.chunkId)).success, false);
+});
+
+test('offline tracks score fixed choices and keep answer keys out of generated questions', t => {
+    const { knowledge, storage } = knowledgeFixture(t);
+    const main = loadMain('src/utils/phase4Main.js', { '../storage': storage, './knowledgeStore': knowledge });
+    assert.throws(() => main.createPracticeSet({ sourceType: 'track', trackId: '__proto__' }), /choose a practice topic/i);
+    for (const [trackId, correct] of [['sql', '1'], ['python', '2'], ['data-engineering', '2']]) {
+        const set = main.createPracticeSet({ sourceType: 'track', trackId });
+        assert.equal(set.questions.length, 3);
+        const [question] = set.questions;
+        assert.deepEqual(Object.keys(question).sort(), ['choices', 'id', 'prompt', 'sourceId', 'sourceTitle', 'type']);
+        assert.equal(question.choices.length, 3);
+        assert.throws(() => main.gradePractice(set.setId, question.id, '99'), /choose an answer/i);
+        const wrong = main.gradePractice(set.setId, question.id, '0');
+        assert.equal(wrong.score, 0);
+        assert.match(wrong.feedback, /^Incorrect/);
+        const right = main.gradePractice(set.setId, question.id, correct);
+        assert.equal(right.score, 1);
+        assert.equal(right.feedback, 'Correct.');
+        assert.ok(right.reference.length > 20);
+    }
+    assert.equal(knowledge.getPracticeHistory().length, 6);
+});
+
+test('local lexical retrieval puts each labeled excerpt ahead of overlapping distractors', () => {
+    const documents = [
+        ['sql', 'SQL query notes', 'COUNT(column) ignores NULL values. COUNT(*) counts all rows.'],
+        ['python', 'Python data structures', 'Dictionary get returns a default for a missing key without mutating the dictionary.'],
+        ['checkpoint', 'Pipeline checkpoint', 'Persist the watermark only after the destination transaction commits.'],
+        ['retry', 'Pipeline retries', 'Upsert using a stable event ID so a retry does not duplicate events.'],
+        ['quality', 'Pipeline data quality', 'Quarantine malformed timestamps and alert operators about parsing errors.'],
+        ['partition', 'Warehouse performance', 'Partition pruning avoids scanning unrelated date ranges in warehouse queries.'],
+    ].map(([id, title, text]) => ({ id, title, chunks: chunkText(text) }));
+    const queries = [
+        ['count column null values', 'sql'],
+        ['dictionary default missing key', 'python'],
+        ['pipeline checkpoint watermark commits', 'checkpoint'],
+        ['pipeline retry duplicate events stable ID', 'retry'],
+        ['pipeline parsing malformed timestamps', 'quality'],
+        ['partition pruning query scans date ranges', 'partition'],
+        ['astronomy telescopes galaxies', undefined],
+    ];
+    for (const [query, expected] of queries) assert.equal(retrieveChunks(documents, query)[0]?.documentId, expected, query);
 });

@@ -14,6 +14,7 @@ const {
     setDocumentEnabled,
     deleteDocument,
     searchKnowledge,
+    getKnowledgeExcerpt,
     recordPracticeAttempt,
     getPracticeHistory,
 } = require('./knowledgeStore');
@@ -24,6 +25,7 @@ const {
     sessionAsPracticeSource,
 } = require('./practiceCore');
 const { normalizeText } = require('./knowledgeCore');
+const { getTrackQuestions } = require('./practiceTracks');
 
 const practiceSets = new Map();
 const MAX_ACTIVE_PRACTICE_SETS = 20;
@@ -43,6 +45,7 @@ function publicQuestion(question) {
         prompt: question.prompt,
         sourceId: question.sourceId,
         sourceTitle: question.sourceTitle,
+        ...(question.type === 'choice' ? { choices: question.choices } : {}),
     };
 }
 
@@ -63,6 +66,11 @@ function putPracticeSet(questions, sourceType, sourceId = null) {
 }
 
 function createPracticeSet(options = {}) {
+    if (options?.sourceType === 'track') {
+        const questions = getTrackQuestions(options.trackId);
+        const setId = putPracticeSet(questions, 'track', options.trackId);
+        return { setId, sourceType: 'track', sourceId: options.trackId, questions: questions.map(publicQuestion) };
+    }
     const sourceType = options?.sourceType === 'session' ? 'session' : 'knowledge';
     const count = Math.max(1, Math.min(20, Number(options?.count) || 6));
     let sources = [];
@@ -103,6 +111,10 @@ function gradePractice(setId, questionId, answer) {
     const question = practiceSet.questions.find(item => item.id === sanitizeId(questionId, 64));
     if (!question) throw new Error('Practice question not found.');
     const cleanAnswer = normalizeText(answer, 5000);
+    if (!cleanAnswer) throw new Error('Add an answer before checking it.');
+    if (question.type === 'choice' && !question.choices.some((_, index) => String(index) === cleanAnswer)) {
+        throw new Error('Choose an answer before checking it.');
+    }
     const result = gradeAnswer(question, cleanAnswer);
     recordPracticeAttempt({
         setId: practiceSet.setId,
@@ -194,6 +206,8 @@ function setupPhase4Main(mainWindow, ipcMain, isErasing = () => false) {
             documentIds: Array.isArray(options?.documentIds) ? options.documentIds.map(id => sanitizeId(id, 64)).filter(Boolean) : null,
         }),
     }));
+
+    installHandler('knowledge:excerpt', (documentId, chunkId) => ({ success: true, data: getKnowledgeExcerpt(documentId, chunkId) }));
 
     installHandler('practice:generate', options => ({ success: true, data: createPracticeSet(options) }));
     installHandler('practice:grade', (setId, questionId, answer) => ({
