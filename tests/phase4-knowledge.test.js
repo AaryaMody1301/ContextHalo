@@ -196,3 +196,212 @@ test('failed knowledge writes preserve valid documents, indexes and practice his
     }
 });
 
+function knowledgeFixture(t, failures = {}) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-halo-library-'));
+    t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+    const boundaryFs = {
+        ...fs,
+        unlinkSync(file) {
+            if (failures.remove === file) throw Object.assign(new Error('File locked'), { code: 'EBUSY' });
+            return fs.unlinkSync(file);
+        },
+        copyFileSync(source, destination, mode) {
+            if (failures.backup === source) throw Object.assign(new Error('Backup blocked'), { code: 'EACCES' });
+            return fs.copyFileSync(source, destination, mode);
+        },
+    };
+    const mocks = { fs: boundaryFs, 'node:fs': boundaryFs, os: { ...os, homedir: () => home } };
+    const globals = { console: { warn() {}, error() {} } };
+    const storage = loadMain('src/storage.js', mocks, globals);
+    const writeJsonFile = storage.writeJsonFile;
+    storage.writeJsonFile = (file, data) => failures.write !== file && writeJsonFile(file, data);
+    const reload = () => loadMain('src/utils/knowledgeStore.js', { ...mocks, '../storage': storage }, globals);
+    const knowledge = reload();
+    knowledge.initializeKnowledgeStore();
+    const root = path.join(storage.getConfigDir(), 'knowledge');
+    const indexFile = path.join(root, 'index.json');
+    const documentFile = id => path.join(root, 'documents', id + '.json');
+    function seedSources(count) {
+        const documents = Array.from({ length: count }, (_, i) => {
+            const id = i.toString(16).padStart(24, '0');
+            const content = 'Synthetic transaction isolation example for source ' + i + '.';
+            const chunks = chunkText(content);
+            const metadata = { id, title: 'Source ' + i, sourceType: 'text', sourceName: null, extension: null,
+                enabled: true, createdAt: i + 1, updatedAt: i + 1, chars: content.length, chunks: chunks.length };
+            fs.writeFileSync(documentFile(id), JSON.stringify({ ...metadata, version: 1, content, chunks }));
+            return metadata;
+        });
+        fs.writeFileSync(indexFile, JSON.stringify({ version: 1, documents }));
+        return documents;
+    }
+    return { home, root, knowledge, reload, storage, indexFile, documentFile, seedSources };
+}
+
+test('the knowledge limit rejects new sources without changing existing files or the index', t => {
+    const { knowledge, indexFile, documentFile, seedSources } = knowledgeFixture(t);
+    const originals = seedSources(499);
+    const content = 'Keep this existing source, including its creation date and enabled flag.';
+    const added = knowledge.addText('Existing source', content);
+    const originalIndex = fs.readFileSync(indexFile);
+    const documentDir = path.dirname(documentFile(added.id));
+    const existingNames = fs.readdirSync(documentDir);
+    assert.equal(knowledge.listDocuments().length, 500);
+
+    assert.throws(() => knowledge.addText('One too many', 'A new named source that exceeds the storage limit.'), /500 sources/);
+    assert.deepEqual(fs.readFileSync(indexFile), originalIndex);
+    assert.deepEqual(fs.readdirSync(documentDir), existingNames);
+    assert.ok(knowledge.listDocuments().some(item => item.id === originals[0].id));
+
+    knowledge.setDocumentEnabled(added.id, false);
+    const reimported = knowledge.addText('Existing source', content);
+    assert.equal(reimported.id, added.id);
+    assert.equal(reimported.createdAt, added.createdAt);
+    assert.equal(reimported.enabled, false);
+});
+
+test('old sources missing from a full index are listed and searchable after restart', t => {
+    const { reload, indexFile, documentFile, seedSources } = knowledgeFixture(t);
+    const documents = seedSources(501);
+    const hidden = documents.at(-1);
+    fs.writeFileSync(indexFile, JSON.stringify({ version: 1, documents: documents.slice(0, 500) }));
+    const knowledge = reload();
+
+    assert.equal(knowledge.listDocuments().length, 501);
+    assert.ok(knowledge.searchKnowledge('transaction isolation', { documentIds: [hidden.id] }).length);
+    const state = knowledge.getKnowledgeLibrary();
+    assert.equal(state.status.maxDocuments, 500);
+    assert.deepEqual(state.status.unreadableFiles, []);
+    assert.throws(() => knowledge.addText('New source', 'This valid source still cannot fit in an overfull library.'), /500 sources/);
+    assert.ok(fs.existsSync(documentFile(hidden.id)));
+});
+
+test('missing and damaged indexes recover valid sources and preserve unreadable files', t => {
+    const { knowledge, reload, root, indexFile, documentFile } = knowledgeFixture(t);
+    const first = knowledge.addText('Kept source', 'This valid document should remain present after index recovery.');
+    const second = knowledge.addText('Unreadable source', 'This source simulates corruption in an otherwise indexed document.');
+    fs.writeFileSync(documentFile(second.id), '{"broken":true}');
+    const intactListing = knowledge.getKnowledgeLibrary();
+    assert.deepEqual(intactListing.documents.map(item => item.id), [first.id]);
+    assert.deepEqual(intactListing.status.unreadableFiles, [second.id + '.json']);
+    const invalid = '{ damaged index';
+    fs.writeFileSync(indexFile, invalid);
+    const recovered = reload();
+    assert.deepEqual(recovered.listDocuments().map(item => item.id), [first.id]);
+    assert.deepEqual(recovered.getKnowledgeLibrary().status.unreadableFiles, [second.id + '.json']);
+    const backups = fs.readdirSync(root).filter(name => /^index\.damaged-/.test(name));
+    assert.equal(backups.length, 1);
+    assert.equal(fs.readFileSync(path.join(root, backups[0]), 'utf8'), invalid);
+    assert.equal(fs.readFileSync(documentFile(second.id), 'utf8'), '{"broken":true}');
+    assert.equal(JSON.parse(fs.readFileSync(indexFile, 'utf8')).documents.length, 1);
+
+    fs.unlinkSync(indexFile);
+    assert.deepEqual(reload().listDocuments().map(item => item.id), [first.id]);
+    assert.ok(fs.existsSync(indexFile));
+});
+
+test('index repair waits for a backup and leaves intact sources available if the backup is blocked', t => {
+    const failures = {};
+    const { knowledge, reload, indexFile } = knowledgeFixture(t, failures);
+    const first = knowledge.addText('Kept source', 'When the index cannot be backed up this file remains recoverable.');
+    const damage = '{ broken index that must be preserved';
+    fs.writeFileSync(indexFile, damage);
+    failures.backup = indexFile;
+    const library = reload();
+
+    assert.deepEqual(library.listDocuments().map(item => item.id), [first.id]);
+    const inspected = library.getKnowledgeLibrary();
+    assert.equal(inspected.status.indexRepairPending, true);
+    assert.equal(fs.readFileSync(indexFile, 'utf8'), damage);
+    assert.throws(() => library.addText('Blocked', 'A new source should not overwrite an index that could not be preserved.'), /Could not save knowledge data/);
+    delete failures.backup;
+    assert.equal(library.getKnowledgeLibrary().status.indexRepairPending, false);
+});
+
+test('deletion leaves the source intact after either write or remove failure and can be retried', t => {
+    const failures = {};
+    const { knowledge, reload, indexFile, documentFile } = knowledgeFixture(t, failures);
+    const saved = knowledge.addText('Transactions', 'A document must remain recoverable until deletion is committed.');
+    const file = documentFile(saved.id);
+    const originalDocument = fs.readFileSync(file);
+    const originalIndex = fs.readFileSync(indexFile);
+    failures.write = indexFile;
+    assert.throws(() => knowledge.deleteDocument(saved.id), /Could not save knowledge data/);
+    assert.ok(fs.existsSync(file));
+    assert.deepEqual(fs.readFileSync(file), originalDocument);
+    assert.deepEqual(fs.readFileSync(indexFile), originalIndex);
+    delete failures.write;
+
+    failures.remove = file;
+    assert.throws(() => knowledge.deleteDocument(saved.id), /could not be removed/i);
+    assert.deepEqual(fs.readFileSync(file), originalDocument);
+    assert.deepEqual(fs.readFileSync(indexFile), originalIndex);
+    delete failures.remove;
+
+    // Simulate shutdown after the new index was written, before the file was removed.
+    fs.writeFileSync(indexFile, JSON.stringify({ version: 1, documents: [] }));
+    const restarted = reload();
+    assert.deepEqual(restarted.listDocuments().map(item => item.id), [saved.id]);
+    assert.equal(restarted.deleteDocument(saved.id), true);
+    assert.equal(restarted.deleteDocument(saved.id), true);
+    assert.deepEqual(reload().listDocuments(), []);
+    assert.equal(fs.existsSync(file), false);
+});
+
+test('failed document writes roll back the index and preserve the enabled flag', t => {
+    const failures = {};
+    const { knowledge, indexFile, documentFile } = knowledgeFixture(t, failures);
+    const saved = knowledge.addText('Existing source', 'This existing source keeps the same metadata after a write failure.');
+    const originalIndex = fs.readFileSync(indexFile);
+
+    failures.write = documentFile(saved.id);
+    assert.throws(() => knowledge.setDocumentEnabled(saved.id, false), /Could not save knowledge data/);
+    assert.deepEqual(fs.readFileSync(indexFile), originalIndex);
+    assert.equal(knowledge.loadDocument(saved.id).enabled, true);
+});
+
+test('mixed imports reject overlong text and report every skipped selection by name', async t => {
+    const { home, knowledge, storage } = knowledgeFixture(t);
+    function input(name, content = 'A well-formed synthetic text source for the Knowledge Library.') {
+        const file = path.join(home, name);
+        fs.writeFileSync(file, content);
+        return file;
+    }
+    const long = 'transaction details\n'.repeat(85_000) + 'do not drop this tail';
+    assert.ok(Buffer.byteLength(long) < 2 * 1024 * 1024);
+    const selected = [
+        input('too-long.txt', long),
+        input('unsupported.pdf'),
+        ...Array.from({ length: 18 }, (_, i) => input('valid-' + i + '.txt')),
+        input('beyond-cap-one.txt'),
+        input('beyond-cap-two.txt'),
+    ];
+    const handlers = new Map();
+    const senderFrame = {};
+    const window = { isDestroyed: () => false, webContents: { id: 1, mainFrame: senderFrame } };
+    const event = { sender: { id: 1 }, senderFrame };
+    const { setupPhase4Main } = loadMain('src/utils/phase4Main.js', {
+        '../storage': storage,
+        './knowledgeStore': knowledge,
+        electron: { dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: selected }) } },
+    });
+    setupPhase4Main(window, { handle: (name, handler) => handlers.set(name, handler) });
+    const result = await handlers.get('knowledge:import')(event);
+    assert.equal(result.success, true);
+    assert.equal(result.data.imported.length, 18);
+    assert.deepEqual(result.data.failed.map(item => item.name), [
+        'too-long.txt', 'unsupported.pdf', 'beyond-cap-one.txt', 'beyond-cap-two.txt',
+    ]);
+    assert.match(result.data.failed[0].error, /1,500,000 characters/);
+    assert.match(result.data.failed[1].error, /unsupported knowledge file type/i);
+    for (const skipped of result.data.failed.slice(2)) assert.match(skipped.error, /20 files/);
+    assert.equal(fs.readFileSync(selected[0], 'utf8'), long);
+    const listed = await handlers.get('knowledge:list')(event);
+    assert.equal(listed.data.length, 18);
+    assert.equal(listed.status.maxDocuments, 500);
+    assert.equal(listed.status.maxImportFiles, 20);
+    assert.equal(listed.status.maxTextChars, 1_500_000);
+    const pasted = await handlers.get('knowledge:add-text')(event, 'Overlong pasted text', long);
+    assert.equal(pasted.success, false);
+    assert.match(pasted.error, /1,500,000 characters/);
+    assert.equal(knowledge.listDocuments().length, 18);
+});

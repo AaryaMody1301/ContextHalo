@@ -5,6 +5,8 @@ const storage = require('../storage');
 const { chunkText, normalizeText, retrieveChunks } = require('./knowledgeCore');
 
 const KNOWLEDGE_VERSION = 1;
+const DOCUMENT_ID = /^[a-f0-9]{1,64}$/i;
+const MAX_DOCUMENTS = 500;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_IMPORT_FILES = 20;
 const MAX_TEXT_CHARS = 1_500_000;
@@ -13,6 +15,9 @@ const SUPPORTED_EXTENSIONS = new Set([
     '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.java', '.c', '.cc', '.cpp', '.h', '.hpp',
     '.sql', '.yaml', '.yml', '.toml', '.ini', '.properties', '.xml', '.css', '.scss', '.sh', '.ps1',
 ]);
+
+const documentSummaries = new Map();
+let summariesDirectory;
 
 function getKnowledgeDir() {
     return path.join(storage.getConfigDir(), 'knowledge');
@@ -50,9 +55,6 @@ function safeWriteJson(filePath, data) {
 function initializeKnowledgeStore() {
     fs.mkdirSync(getDocumentsDir(), { recursive: true });
     fs.mkdirSync(getPracticeDir(), { recursive: true });
-    if (!fs.existsSync(getIndexPath())) {
-        safeWriteJson(getIndexPath(), { version: KNOWLEDGE_VERSION, documents: [] });
-    }
     if (!fs.existsSync(getPracticeHistoryPath())) {
         safeWriteJson(getPracticeHistoryPath(), { version: 1, attempts: [] });
     }
@@ -63,28 +65,111 @@ function sanitizeTitle(value, fallback = 'Untitled source') {
     return title || fallback;
 }
 
-function getIndex() {
-    initializeKnowledgeStore();
-    const data = safeReadJson(getIndexPath(), { version: KNOWLEDGE_VERSION, documents: [] });
-    return {
-        version: KNOWLEDGE_VERSION,
-        documents: Array.isArray(data.documents) ? data.documents.filter(Boolean) : [],
-    };
+function readStoredIndex() {
+    let content;
+    try {
+        content = fs.readFileSync(getIndexPath(), 'utf8');
+    } catch (error) {
+        return { blocked: error.code !== 'ENOENT' };
+    }
+    try {
+        const data = JSON.parse(content);
+        if (data?.version === KNOWLEDGE_VERSION && Array.isArray(data.documents)) {
+            const ids = data.documents.map(item => item?.id);
+            if (ids.every(id => typeof id === 'string' && DOCUMENT_ID.test(id)) && new Set(ids).size === ids.length) {
+                return { data };
+            }
+        }
+    } catch {}
+    return { damaged: true };
 }
 
-function saveIndex(index) {
-    const normalized = {
-        version: KNOWLEDGE_VERSION,
-        documents: Array.isArray(index?.documents) ? index.documents.slice(0, 500) : [],
-    };
-    safeWriteJson(getIndexPath(), normalized);
-    return normalized;
+function documentIds(index) {
+    const present = new Set();
+    for (const entry of fs.readdirSync(getDocumentsDir(), { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+        const id = entry.name.slice(0, -5);
+        if (DOCUMENT_ID.test(id)) present.add(id);
+    }
+    const indexed = (index?.documents ?? []).map(item => item.id).filter(id => present.delete(id));
+    return [...indexed, ...[...present].sort()];
 }
 
 function documentPath(id) {
-    const safeId = String(id || '').replace(/[^a-f0-9]/gi, '').slice(0, 64);
-    if (!safeId) throw new Error('Invalid knowledge document ID');
-    return path.join(getDocumentsDir(), `${safeId}.json`);
+    if (typeof id !== 'string' || !DOCUMENT_ID.test(id)) throw new Error('Invalid knowledge document ID');
+    return path.join(getDocumentsDir(), `${id}.json`);
+}
+
+function documentSummary(id) {
+    try {
+        const stat = fs.statSync(documentPath(id));
+        const version = `${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
+        const cached = documentSummaries.get(id);
+        if (cached?.version === version) return cached.metadata;
+        const document = loadDocument(id);
+        if (!document) {
+            documentSummaries.delete(id);
+            return null;
+        }
+        const metadata = metadataFromDocument(document);
+        documentSummaries.set(id, { version, metadata });
+        return metadata;
+    } catch {
+        documentSummaries.delete(id);
+        return null;
+    }
+}
+
+function readInventory() {
+    initializeKnowledgeStore();
+    const directory = getDocumentsDir();
+    if (summariesDirectory !== directory) {
+        documentSummaries.clear();
+        summariesDirectory = directory;
+    }
+    const stored = readStoredIndex();
+    const ids = new Set(documentIds(stored.data));
+    for (const id of documentSummaries.keys()) {
+        if (!ids.has(id)) documentSummaries.delete(id);
+    }
+    const documents = [];
+    const unreadableFiles = [];
+    for (const id of ids) {
+        const metadata = documentSummary(id);
+        if (metadata) documents.push(metadata);
+        else unreadableFiles.push(`${id}.json`);
+    }
+    return { stored, ids, index: { version: KNOWLEDGE_VERSION, documents }, unreadableFiles };
+}
+
+function saveIndex(index, stored) {
+    if (stored.blocked) throw new Error('Could not save knowledge data. Check access to the existing index.');
+    let backup = null;
+    if (stored.damaged) {
+        backup = `index.damaged-${crypto.randomUUID()}.json`;
+        try {
+            fs.copyFileSync(getIndexPath(), path.join(getKnowledgeDir(), backup), fs.constants.COPYFILE_EXCL);
+        } catch {
+            throw new Error('Could not save knowledge data. The damaged index could not be backed up.');
+        }
+    }
+    safeWriteJson(getIndexPath(), index);
+    return backup;
+}
+
+function applyIndexChange(inventory, documents, mutateDocument) {
+    const next = { version: KNOWLEDGE_VERSION, documents };
+    // The document file remains authoritative until its write or removal succeeds.
+    // A failed index write leaves it untouched, and reopening repairs an interrupted update.
+    saveIndex(next, inventory.stored);
+    try {
+        mutateDocument();
+    } catch (error) {
+        if (storage.writeJsonFile(getIndexPath(), inventory.index)) inventory.stored = { data: inventory.index };
+        throw error;
+    }
+    inventory.stored = { data: next };
+    inventory.index = next;
 }
 
 function makeDocumentId(title, text) {
@@ -94,37 +179,48 @@ function makeDocumentId(title, text) {
 function metadataFromDocument(document) {
     return {
         id: document.id,
-        title: document.title,
-        sourceType: document.sourceType,
-        sourceName: document.sourceName || null,
-        extension: document.extension || null,
+        title: sanitizeTitle(document.title),
+        sourceType: document.sourceType === 'file' ? 'file' : 'text',
+        sourceName: sanitizeTitle(document.sourceName, null),
+        extension: typeof document.extension === 'string' ? document.extension.slice(0, 16) : null,
         enabled: document.enabled !== false,
-        createdAt: document.createdAt,
-        updatedAt: document.updatedAt,
+        createdAt: Number.isFinite(document.createdAt) ? document.createdAt : 0,
+        updatedAt: Number.isFinite(document.updatedAt) ? document.updatedAt : 0,
         chars: document.content.length,
         chunks: document.chunks.length,
     };
 }
 
-function saveDocument(document) {
-    initializeKnowledgeStore();
-    safeWriteJson(documentPath(document.id), document);
-    const index = getIndex();
+function saveDocument(document, inventory) {
     const metadata = metadataFromDocument(document);
-    const existingIndex = index.documents.findIndex(item => item.id === document.id);
-    if (existingIndex >= 0) index.documents[existingIndex] = metadata;
-    else index.documents.unshift(metadata);
-    saveIndex(index);
+    const documents = [...inventory.index.documents];
+    const existing = documents.findIndex(item => item.id === document.id);
+    if (existing >= 0) documents[existing] = metadata;
+    else {
+        if (documents.length >= MAX_DOCUMENTS) {
+            throw new Error(`The Knowledge Library limit is ${MAX_DOCUMENTS} sources. Remove a source before adding another.`);
+        }
+        documents.unshift(metadata);
+    }
+    applyIndexChange(inventory, documents, () => safeWriteJson(documentPath(document.id), document));
+    inventory.ids.add(document.id);
+    documentSummaries.delete(document.id);
     return metadata;
 }
 
-function createDocument({ title, content, sourceType = 'text', sourceName = null, extension = null }) {
-    const cleanContent = normalizeText(content, MAX_TEXT_CHARS);
+function createDocument({ title, content, sourceType = 'text', sourceName = null, extension = null }, inventory) {
+    const cleanContent = normalizeText(content, MAX_TEXT_CHARS + 1);
+    if (cleanContent.length > MAX_TEXT_CHARS) {
+        throw new Error(`Text exceeds ${MAX_TEXT_CHARS.toLocaleString('en-US')} characters. Split it into smaller sources.`);
+    }
     if (cleanContent.length < 20) throw new Error('Knowledge source does not contain enough text.');
     const cleanTitle = sanitizeTitle(title, sourceName || 'Untitled source');
     const now = Date.now();
     const id = makeDocumentId(cleanTitle, cleanContent);
     const existing = loadDocument(id);
+    if (inventory.ids.has(id) && !existing) {
+        throw new Error('A source with this ID could not be read. Its original file has been kept.');
+    }
     const document = {
         id,
         version: 1,
@@ -133,12 +229,12 @@ function createDocument({ title, content, sourceType = 'text', sourceName = null
         sourceName: sourceName ? sanitizeTitle(sourceName, null) : null,
         extension: extension || null,
         enabled: existing ? existing.enabled !== false : true,
-        createdAt: existing?.createdAt || now,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         content: cleanContent,
         chunks: chunkText(cleanContent),
     };
-    return saveDocument(document);
+    return saveDocument(document, inventory);
 }
 
 function stripHtml(value) {
@@ -163,87 +259,124 @@ function textFromFile(filePath) {
     }
     const stats = fs.statSync(filePath);
     if (!stats.isFile()) throw new Error('Knowledge source is not a file.');
-    if (stats.size > MAX_FILE_BYTES) throw new Error(`File exceeds the ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MB knowledge limit.`);
+    const sizeError = `File exceeds the ${MAX_FILE_BYTES / (1024 * 1024)} MiB knowledge limit.`;
+    if (stats.size > MAX_FILE_BYTES) throw new Error(sizeError);
 
     const buffer = fs.readFileSync(filePath);
+    if (buffer.length > MAX_FILE_BYTES) throw new Error(sizeError);
     if (buffer.includes(0)) throw new Error('Binary files are not supported by the local text index.');
     let text = buffer.toString('utf8');
     if (extension === '.json') {
         try { text = JSON.stringify(JSON.parse(text), null, 2); } catch {}
     }
     if (extension === '.html' || extension === '.htm') text = stripHtml(text);
-    return { extension, text: normalizeText(text, MAX_TEXT_CHARS) };
+    return { extension, text };
 }
 
 function importFiles(filePaths) {
-    initializeKnowledgeStore();
-    const paths = Array.isArray(filePaths) ? filePaths.slice(0, MAX_IMPORT_FILES) : [];
+    const inventory = readInventory();
+    const paths = Array.isArray(filePaths) ? filePaths : [];
     const imported = [];
     const failed = [];
-    for (const filePath of paths) {
+    for (const [index, filePath] of paths.entries()) {
+        const name = typeof filePath === 'string' && filePath ? path.basename(filePath) : 'Unknown file';
+        if (index >= MAX_IMPORT_FILES) {
+            failed.push({ name, error: `Only ${MAX_IMPORT_FILES} files can be imported at a time. Select this file in another batch.` });
+            continue;
+        }
         try {
             if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Invalid file path.');
             const { extension, text } = textFromFile(filePath);
-            const sourceName = path.basename(filePath);
-            const metadata = createDocument({
+            imported.push(createDocument({
                 title: path.basename(filePath, extension),
                 content: text,
                 sourceType: 'file',
-                sourceName,
+                sourceName: name,
                 extension,
-            });
-            imported.push(metadata);
+            }, inventory));
         } catch (error) {
-            failed.push({ name: path.basename(String(filePath || 'file')), error: error.message });
+            failed.push({ name, error: error.code ? 'Could not read this file. Check that it still exists and is readable.' : error.message });
         }
     }
     return { imported, failed };
 }
 
 function addText(title, content) {
-    return createDocument({ title, content, sourceType: 'text' });
+    return createDocument({ title, content, sourceType: 'text' }, readInventory());
 }
 
 function loadDocument(id) {
     try {
-        const data = safeReadJson(documentPath(id), null);
-        if (!data || data.id !== id || typeof data.content !== 'string' || !Array.isArray(data.chunks)) return null;
+        const data = JSON.parse(fs.readFileSync(documentPath(id), 'utf8'));
+        if (data?.id !== id || typeof data.content !== 'string' || !Array.isArray(data.chunks)) return null;
+        if (!data.chunks.every(chunk => typeof chunk?.text === 'string')) return null;
         return data;
     } catch {
         return null;
     }
 }
 
+function getKnowledgeLibrary() {
+    const { stored, index, unreadableFiles } = readInventory();
+    const status = {
+        maxDocuments: MAX_DOCUMENTS,
+        maxImportFiles: MAX_IMPORT_FILES,
+        maxFileBytes: MAX_FILE_BYTES,
+        maxTextChars: MAX_TEXT_CHARS,
+        unreadableFiles,
+        recoveredSources: 0,
+        indexBackup: null,
+        indexRepairPending: false,
+    };
+    if (JSON.stringify(stored.data) !== JSON.stringify(index)) {
+        const indexedIds = new Set(stored.data?.documents.map(item => item.id));
+        status.recoveredSources = index.documents.filter(item => !indexedIds.has(item.id)).length;
+        try {
+            status.indexBackup = saveIndex(index, stored);
+        } catch {
+            status.indexRepairPending = true;
+        }
+    }
+    return { documents: index.documents, status };
+}
+
 function listDocuments() {
-    return getIndex().documents;
+    return getKnowledgeLibrary().documents;
 }
 
 function loadDocuments(ids = null) {
+    initializeKnowledgeStore();
     const allowed = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null;
-    return listDocuments()
-        .filter(item => !allowed || allowed.has(String(item.id)))
-        .map(item => loadDocument(item.id))
+    return documentIds(readStoredIndex().data)
+        .filter(id => !allowed || allowed.has(id))
+        .map(loadDocument)
         .filter(Boolean);
 }
 
 function setDocumentEnabled(id, enabled) {
+    const inventory = readInventory();
     const document = loadDocument(String(id));
-    if (!document) throw new Error('Knowledge source not found.');
+    if (!document) throw new Error('Knowledge source could not be read. Refresh the library to check its status.');
     document.enabled = enabled === true;
     document.updatedAt = Date.now();
-    return saveDocument(document);
+    return saveDocument(document, inventory);
 }
 
 function deleteDocument(id) {
-    const safeId = String(id || '');
-    const index = getIndex();
-    const exists = index.documents.some(item => item.id === safeId);
-    if (!exists) return false;
-    try { fs.unlinkSync(documentPath(safeId)); } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-    }
-    index.documents = index.documents.filter(item => item.id !== safeId);
-    saveIndex(index);
+    const file = documentPath(id);
+    const inventory = readInventory();
+    if (!inventory.ids.has(id)) return true;
+    const documents = inventory.index.documents.filter(item => item.id !== id);
+    applyIndexChange(inventory, documents, () => {
+        try {
+            fs.unlinkSync(file);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                throw new Error('Knowledge source could not be removed. Close any application using the file and retry.');
+            }
+        }
+    });
+    documentSummaries.delete(id);
     return true;
 }
 
@@ -257,6 +390,7 @@ function getEnabledDocuments() {
 
 function clearKnowledge() {
     fs.rmSync(getKnowledgeDir(), { recursive: true, force: true });
+    documentSummaries.clear();
     initializeKnowledgeStore();
     return true;
 }
@@ -281,6 +415,7 @@ module.exports = {
     MAX_IMPORT_FILES,
     SUPPORTED_EXTENSIONS,
     initializeKnowledgeStore,
+    getKnowledgeLibrary,
     listDocuments,
     loadDocument,
     loadDocuments,

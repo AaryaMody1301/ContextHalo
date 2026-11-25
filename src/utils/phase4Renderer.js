@@ -48,7 +48,7 @@ function panelShell(app) {
 async function loadDocuments() {
     const result = await invoke('knowledge:list');
     state.documents = Array.isArray(result.data) ? result.data : [];
-    return state.documents;
+    return result.status;
 }
 
 async function loadSessions() {
@@ -65,6 +65,7 @@ function statusLine(parent, text, isError = false) {
     // Keep recovery feedback until the next action; errors must not disappear on a timer.
     parent.querySelectorAll('[data-workspace-status]').forEach(node => node.remove());
     line.dataset.workspaceStatus = 'true';
+    return line;
 }
 
 async function renderKnowledge(app, body) {
@@ -75,7 +76,11 @@ async function renderKnowledge(app, body) {
     const refreshButton = el('button', 'phase4-btn', 'Refresh');
     toolbar.append(importButton, addButton, refreshButton);
     body.append(toolbar);
-    body.append(el('div', 'phase4-note', 'Enabled sources are retrieved locally and injected only when relevant. Supported imports are text, Markdown, JSON/CSV, logs, code, SQL, YAML/XML, and other plain-text files up to 2 MB each. PDF and DOCX ingestion is intentionally not cloud-forwarded.'));
+    const importLimits = el('div', 'phase4-note', 'Import text, Markdown, CSV, JSON, or source code files.');
+    const libraryStatus = el('div', 'phase4-note');
+    libraryStatus.setAttribute('role', 'status');
+    libraryStatus.hidden = true;
+    body.append(importLimits, libraryStatus);
 
     const form = el('div', 'phase4-form');
     form.id = 'knowledge-add-form';
@@ -110,7 +115,28 @@ async function renderKnowledge(app, body) {
     const redraw = async () => {
         list.setAttribute('aria-busy', 'true');
         try {
-            await loadDocuments();
+            const status = await loadDocuments();
+            if (status) {
+                const fileSize = status.maxFileBytes / (1024 * 1024);
+                const textLimit = status.maxTextChars.toLocaleString('en-US');
+                importLimits.textContent = `Import up to ${status.maxImportFiles} files at a time. Each file can be up to ${fileSize} MiB with up to ${textLimit} characters of text.`;
+            }
+            const notices = [];
+            if (status?.indexRepairPending) notices.push('Readable sources are available. Check folder permissions and refresh to save the repaired index.');
+            else if (status?.indexBackup) notices.push('The knowledge index was rebuilt. A backup of the damaged index was kept.');
+            if (status?.recoveredSources) {
+                const count = status.recoveredSources;
+                notices.push(`Recovered ${count} source${count === 1 ? '' : 's'} from disk.`);
+            }
+            if (status?.unreadableFiles?.length) {
+                const count = status.unreadableFiles.length;
+                notices.push(`${count} unreadable source ${count === 1 ? 'file was' : 'files were'} kept on disk.`);
+            }
+            if (state.documents.length >= status?.maxDocuments) {
+                notices.push(`The library has ${state.documents.length} sources. Remove sources before adding new ones above the ${status.maxDocuments}-source limit.`);
+            }
+            libraryStatus.textContent = notices.join(' ');
+            libraryStatus.hidden = !notices.length;
             list.replaceChildren();
             if (!state.documents.length) {
                 list.append(el('div', 'phase4-empty', 'No knowledge sources yet. Import a text-based file or add pasted text.'));
@@ -143,7 +169,8 @@ async function renderKnowledge(app, body) {
                 list.append(row);
             }
         } catch (error) {
-            statusLine(body, 'Knowledge could not be refreshed. Existing sources are unchanged. Use Refresh to retry.', true);
+            libraryStatus.textContent = 'The Knowledge Library could not be refreshed. Check folder access and use Refresh to retry.';
+            libraryStatus.hidden = false;
         }
         finally { list.setAttribute('aria-busy', 'false'); }
     };
@@ -152,12 +179,27 @@ async function renderKnowledge(app, body) {
         importButton.disabled = true;
         try {
             const result = await invoke('knowledge:import');
+            if (result.cancelled) return;
             const imported = result.data?.imported?.length || 0;
-            const failed = result.data?.failed?.length || 0;
-            if (!result.cancelled) statusLine(body, `Imported ${imported} source${imported === 1 ? '' : 's'}${failed ? `; ${failed} skipped` : ''}.`, failed > 0 && imported === 0);
+            const failures = Array.isArray(result.data?.failed) ? result.data.failed : [];
             await redraw();
-        } catch (error) { statusLine(body, error.message, true); }
-        importButton.disabled = false;
+            const summary = `Imported ${imported} source${imported === 1 ? '' : 's'}.`;
+            const skipped = failures.length ? ` Skipped ${failures.length} file${failures.length === 1 ? '' : 's'}.` : '';
+            const line = statusLine(body, summary + skipped, failures.length > 0 && imported === 0);
+            if (failures.length) {
+                const details = el('details', 'phase4-note');
+                details.dataset.workspaceStatus = 'true';
+                details.append(el('summary', '', 'Skipped files'));
+                const reasons = el('ul');
+                for (const failure of failures) reasons.append(el('li', '', `${failure.name} — ${failure.error}`));
+                details.append(reasons);
+                line.after(details);
+            }
+        } catch (error) {
+            statusLine(body, error.message, true);
+        } finally {
+            importButton.disabled = false;
+        }
     });
     addButton.addEventListener('click', () => {
         const expanded = form.classList.toggle('visible');
