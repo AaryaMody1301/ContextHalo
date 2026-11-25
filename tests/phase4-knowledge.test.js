@@ -14,6 +14,7 @@ const {
     generatePracticeQuestions,
     gradeAnswer,
     buildSessionReview,
+    sessionAsPracticeSource,
 } = require('../src/utils/practiceCore');
 
 function read(relativePath) {
@@ -97,6 +98,43 @@ test('practice questions and grading work without a provider', () => {
     assert.equal(strong.level, 'strong');
     const weak = gradeAnswer(question, 'I do not remember');
     assert.ok(weak.score < strong.score);
+});
+
+test('cloze grading checks the missing word on its own', () => {
+    const [question] = generatePracticeQuestions([{
+        id: 'transactions', title: 'Database notes',
+        content: 'Database transactions preserve consistency when concurrent clients modify shared records.',
+    }], 1);
+    assert.equal(question.type, 'cloze');
+    assert.doesNotMatch(question.prompt, /\btransactions\b/i);
+
+    const correct = gradeAnswer(question, ' Transactions. ');
+    assert.deepEqual({ score: correct.score, level: correct.level }, { score: 1, level: 'strong' });
+    for (const wrong of ['database', 'not transactions', '']) {
+        const grade = gradeAnswer(question, wrong);
+        assert.deepEqual({ score: grade.score, level: grade.level }, { score: 0, level: 'retry' });
+    }
+});
+
+test('session review and practice include each persisted reply once', () => {
+    const current = 'PostgreSQL uses multiversion concurrency control to coordinate independent transactions.';
+    const legacy = 'A database index reduces the number of rows scanned for matching predicates.';
+    const content = 'Regular checkpoints help a database recover after an unexpected shutdown.';
+    const session = {
+        sessionId: '123',
+        conversationHistory: [
+            { transcription: 'How do transactions work?', ai_response: current },
+            { transcription: 'How do transactions commit?', ai_response: current, response: current, content: current },
+            { transcription: 'What do indexes do?', ai_response: ' ', response: legacy, content: legacy },
+            { role: 'assistant', content },
+        ],
+    };
+    const expectedText = [
+        'How do transactions work?', current, 'How do transactions commit?', current,
+        'What do indexes do?', legacy, content,
+    ].join('\n');
+    assert.equal(buildSessionReview(session).text, expectedText);
+    assert.equal(sessionAsPracticeSource(session).content, expectedText);
 });
 
 test('session review extracts markers and reusable topics locally', () => {

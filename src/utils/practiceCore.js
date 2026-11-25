@@ -37,7 +37,7 @@ function buildQuestion(source, sentence, index) {
             prompt: `Fill in the blank:\n\n${cloze.prompt}`,
             sourceId: source.id,
             sourceTitle: source.title,
-            expectedTokens: [...new Set([cloze.blank, ...expectedTokens])],
+            expectedTokens: [cloze.blank],
             reference: sentence,
         };
     }
@@ -78,7 +78,6 @@ function generatePracticeQuestions(sources, count = 6) {
 
 function gradeAnswer(question, answer) {
     const cleanAnswer = normalizeText(answer, 5000);
-    const answerTokens = new Set(tokenize(cleanAnswer));
     const expected = [...new Set(Array.isArray(question?.expectedTokens) ? question.expectedTokens : [])].filter(Boolean);
     if (!cleanAnswer) {
         return { score: 0, level: 'retry', feedback: 'Add an answer before checking it.', matched: [], missing: expected.slice(0, 8) };
@@ -87,6 +86,19 @@ function gradeAnswer(question, answer) {
         return { score: 0.5, level: 'partial', feedback: 'Compare your answer with the reference.', matched: [], missing: [] };
     }
 
+    if (question?.type === 'cloze') {
+        const blank = expected[0];
+        const correct = cleanAnswer.replace(/[.!?]+$/, '').trim().toLowerCase() === blank;
+        return {
+            score: correct ? 1 : 0,
+            level: correct ? 'strong' : 'retry',
+            feedback: correct ? 'Correct. You filled in the missing word.' : 'Try the word that completes the sentence.',
+            matched: correct ? [blank] : [],
+            missing: correct ? [] : [blank],
+        };
+    }
+
+    const answerTokens = new Set(tokenize(cleanAnswer));
     const matched = expected.filter(token => answerTokens.has(token));
     const score = Math.max(0, Math.min(1, matched.length / Math.max(3, Math.min(expected.length, 12))));
     const level = score >= 0.72 ? 'strong' : score >= 0.38 ? 'partial' : 'retry';
@@ -114,8 +126,9 @@ function flattenSessionText(session) {
     const history = Array.isArray(session?.conversationHistory) ? session.conversationHistory : [];
     for (const turn of history) {
         if (typeof turn?.transcription === 'string') sections.push(turn.transcription);
-        if (typeof turn?.response === 'string') sections.push(turn.response);
-        if (typeof turn?.content === 'string') sections.push(turn.content);
+        const reply = [turn?.ai_response, turn?.response, turn?.content]
+            .find(value => typeof value === 'string' && value.trim());
+        if (reply) sections.push(reply);
     }
     return normalizeText(sections.join('\n'), 160_000);
 }
