@@ -216,6 +216,10 @@ function saveScreenAnalysis(prompt, response, model, grounding) {
     });
 }
 
+function getActiveSessionId() {
+    return mainSessionActive ? currentSessionId : null;
+}
+
 function getCurrentSessionData() {
     return {
         sessionId: currentSessionId,
@@ -831,9 +835,9 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 if (!current()) return;
                 const interim = extractGeminiTranscript(message, 'interimInputTranscription');
                 const finalText = extractGeminiTranscript(message, 'inputTranscription');
-                if (interim) emitLiveTranscript({ provider: 'gemini', text: interim, final: false, timestamp: Date.now() });
+                if (interim) emitLiveTranscript({ provider: 'gemini', text: interim, final: false, timestamp: Date.now(), sessionId: currentSessionId });
                 if (finalText) {
-                    emitLiveTranscript({ provider: 'gemini', text: finalText, final: true, timestamp: Date.now() });
+                    emitLiveTranscript({ provider: 'gemini', text: finalText, final: true, timestamp: Date.now(), sessionId: currentSessionId });
                     currentTranscription += message.serverContent?.inputTranscription?.text || finalText;
                 }
                 const groundingFragment = groundingFragmentFromResponse(message);
@@ -1578,6 +1582,7 @@ module.exports = {
     initializeNewSession,
     saveConversationTurn,
     getCurrentSessionData,
+    getActiveSessionId,
     sendAudioToGemini,
     parsePcmSampleRate,
     resamplePcm16Mono,

@@ -6,6 +6,8 @@ let packSaveTimer = null;
 let loaded = false;
 let loadPromise = null;
 let sourcePromise = null;
+let sourceRevision = 0;
+let sourceRefreshRevision = 0;
 let error = '';
 const QUICK_COMMANDS = new Map([
     ['/say', 'Draft exactly what I should say next. Use concise, natural spoken language and give me only the words I can say unless a tiny note is essential.'],
@@ -48,12 +50,21 @@ export function loadContextState() {
     return loadPromise;
 }
 export async function refreshCaptureSources() {
+    const refresh = ++sourceRefreshRevision;
+    const selection = sourceRevision;
+    const updateSelection = !sourcePromise;
     const result = await ipcRenderer.invoke('context-capture:list-sources');
-    if (result?.success) {
-        captureSources = Array.isArray(result.data?.sources) ? result.data.sources : [];
-        captureState = result.data?.selected || captureState;
-        error = '';
-    } else { error = 'Screen sources are unavailable. Check screen-sharing permissions and refresh.'; }
+    if (refresh !== sourceRefreshRevision) return;
+
+    if (result?.success) captureSources = Array.isArray(result.data?.sources) ? result.data.sources : [];
+    if (updateSelection && selection === sourceRevision) {
+        if (result?.success) {
+            captureState = result.data?.selected || captureState;
+            error = '';
+        } else {
+            error = 'Screen sources are unavailable. Check screen-sharing permissions and refresh.';
+        }
+    }
     changed();
 }
 export async function saveSessionPack() {
@@ -79,17 +90,33 @@ export async function persistPackToCurrentSession() {
     }
 }
 export function setCaptureSource(key) {
-    if (sourcePromise) return sourcePromise;
     const source = captureSources.find(item => item.key === key);
     if (!source) return Promise.resolve({ success: false });
-    sourcePromise = (async () => {
-        const result = await ipcRenderer.invoke('context-capture:set-source', source);
-        if (!result?.success) { error = 'Could not select this screen source. Refresh and try again.'; changed(); return result; }
-        captureState = result.data; error = ''; changed();
-        window.dispatchEvent(new CustomEvent('capture-source-changed'));
+
+    const revision = ++sourceRevision;
+    const select = async () => {
+        if (revision !== sourceRevision) return { success: false, cancelled: true };
+        let result;
+        try {
+            result = await ipcRenderer.invoke('context-capture:set-source', source);
+        } catch {
+            result = { success: false };
+        }
+        // Main may have saved this source before a newer selection was queued.
+        if (result?.success) captureState = result.data;
+        if (revision !== sourceRevision) return { success: false, cancelled: true };
+
+        error = result?.success ? '' : 'Could not select this screen source. Refresh and try again.';
+        changed();
+        if (result?.success) window.dispatchEvent(new CustomEvent('capture-source-changed'));
         return result;
-    })().finally(() => { sourcePromise = null; });
-    return sourcePromise;
+    };
+
+    const operation = (sourcePromise ? sourcePromise.then(select, select) : select()).finally(() => {
+        if (sourcePromise === operation) sourcePromise = null;
+    });
+    sourcePromise = operation;
+    return operation;
 }
 export async function captureClipboardText() {
     const result = await ipcRenderer.invoke('context-capture:read-clipboard');

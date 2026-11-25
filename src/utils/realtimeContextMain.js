@@ -13,13 +13,13 @@ let installed = false;
 let fetchPatched = false;
 
 function emitLiveTranscript(payload) {
-    if (!requestIsCurrent()) return;
+    if (!payload?.sessionId || !requestIsCurrent()) return;
     const event = normalizeTranscriptEvent(payload);
     if (!event) return;
 
     for (const window of BrowserWindow.getAllWindows()) {
         if (!window || window.isDestroyed()) continue;
-        window.webContents.send('live-transcript', event);
+        window.webContents.send('live-transcript', { ...event, sessionId: payload.sessionId });
     }
 }
 
@@ -65,27 +65,30 @@ function tuneRequestInit(url, init = {}) {
     }
 }
 
-function observeTranscriptResponse(response, provider) {
-    if (!provider || !response?.ok || typeof response.clone !== 'function') return;
+function observeTranscriptResponse(response, provider, sessionId, getActiveSessionId) {
+    if (!sessionId || sessionId !== getActiveSessionId() || !response?.ok || typeof response.clone !== 'function') return;
 
     try {
         const copy = response.clone();
         void copy.json().then(result => {
+            if (sessionId !== getActiveSessionId()) return;
             const text = typeof result?.text === 'string' ? result.text : '';
-            emitLiveTranscript({ provider, text, final: true, timestamp: Date.now() });
+            emitLiveTranscript({ provider, text, final: true, timestamp: Date.now(), sessionId });
         }).catch(() => {});
     } catch {}
 }
 
-function patchProviderFetch() {
+function patchProviderFetch(getActiveSessionId) {
     if (fetchPatched || typeof global.fetch !== 'function') return;
 
     const previousFetch = global.fetch.bind(global);
     global.fetch = async (input, init = {}) => {
         const url = requestUrl(input);
         const nextInit = tuneRequestInit(url, init);
+        const provider = getTranscriptProvider(url);
+        const sessionId = provider ? getActiveSessionId() : null;
         const response = await previousFetch(input, nextInit);
-        observeTranscriptResponse(response, getTranscriptProvider(url));
+        observeTranscriptResponse(response, provider, sessionId, getActiveSessionId);
         return response;
     };
 
@@ -125,9 +128,9 @@ function tuneLiveSystemInstruction(systemInstruction, mode) {
 
 const { sanitizeTranscriptHistory, sanitizeMarkers } = require('./sessionData');
 
-function installRealtimeContextMain() {
+function installRealtimeContextMain(getActiveSessionId = () => null) {
     if (installed) return;
-    patchProviderFetch();
+    patchProviderFetch(getActiveSessionId);
     installed = true;
 }
 

@@ -127,6 +127,24 @@ async function rendererBehaviorSmoke() {
         let home = app.shadowRoot.querySelector('main-view');
         await waitUntil(() => home && !home._configurationLoading);
         await settle(home);
+        const captureContext = await import(new URL('./utils/contextCaptureRenderer.js', document.baseURI).href);
+        await captureContext.refreshCaptureSources();
+        await settle(home);
+        const originalSource = captureContext.selectionKey(captureContext.getContextState().captureState);
+        const newSource = originalSource === 'primary-display' ? 'active-display' : 'primary-display';
+        const chooseCapture = async key => {
+            const picker = home.shadowRoot.querySelector('#captureSource');
+            if (![...picker.options].some(option => option.value === key)) throw new Error('Capture dropdown is missing ' + key);
+            picker.value = key;
+            picker.dispatchEvent(new Event('change', { bubbles: true }));
+            await waitUntil(() => captureContext.selectionKey(captureContext.getContextState().captureState) === key);
+            await settle(home);
+        };
+        await chooseCapture(newSource);
+        const savedSource = (await api.storage.getPreferences()).captureSource;
+        verify(captureContext.selectionKey(savedSource) === newSource && home.shadowRoot.querySelector('#captureSource').value === newSource,
+            'Home capture dropdown saves the selected display through sandboxed IPC');
+        await chooseCapture(originalSource);
         const select = home.shadowRoot.querySelector('#provider-choice');
         select.value = 'local'; select.dispatchEvent(new Event('change', { bubbles: true }));
         await home._configurationWrites; await settle(home);

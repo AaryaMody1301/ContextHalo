@@ -17,7 +17,7 @@ test('transcripts and markers are retained after save failure and listeners have
     const storage={saveSession:async(id,value)=>{writes.push([id,value]);return {success:!fail};},getSession:async()=>({})};
     const f=rendererModule('src/utils/realtimeContextRenderer.js',['getRealtimeState','initRealtimeContext','flushSessionContext','addMarker'],storage);
     const dispose=f.api.initRealtimeContext(); f.ipc.emit('save-session-context',null,{sessionId:'one'});
-    f.ipc.emit('live-transcript',null,{text:'A deterministic fixture, not a recording',provider:'gemini',final:true,timestamp:10});
+    f.ipc.emit('live-transcript',null,{sessionId:'one',text:'A deterministic fixture, not a recording',provider:'gemini',final:true,timestamp:10});
     await f.api.addMarker('decision'); await assert.rejects(f.api.flushSessionContext(),/save/);
     assert.equal(f.api.getRealtimeState().transcriptEntries.length,1); assert.equal(f.api.getRealtimeState().markers.length,1);
     fail=false; await f.api.flushSessionContext(); assert.equal(writes.at(-1)[0],'one');
@@ -98,4 +98,113 @@ test('missing explicitly selected monitor or window denies capture rather than s
         assert.deepEqual(result, {});
         assert.deepEqual(preferences.captureSource, selection);
     }
+});
+
+function contextSources(invoke) {
+    const sources = ['1', '2', '3'].map(id => ({
+        kind: 'screen', key: 'screen:' + id, sourceId: 'screen:' + id + ':0', displayId: id, label: 'Display ' + id,
+    }));
+    const initial = { kind: 'active-display', sourceId: null, displayId: null };
+    const f = rendererModule('src/utils/contextCaptureRenderer.js',
+        ['loadContextState', 'getContextState', 'refreshCaptureSources', 'setCaptureSource'],
+        { getPreferences: async () => ({}) }, (channel, source) => invoke(channel, source, sources, initial));
+    return { ...f, sources, initial };
+}
+
+test('rapid source picks reach the latest screen and ignore an old refresh', async () => {
+    const first = Promise.withResolvers();
+    const stale = Promise.withResolvers();
+    const selected = [];
+    let refreshes = 0;
+    const f = contextSources(async (channel, source, sources, initial) => {
+        if (channel === 'context-capture:list-sources') {
+            return ++refreshes === 1 ? { success: true, data: { sources, selected: initial } } : stale.promise;
+        }
+        selected.push(source.displayId);
+        return source.displayId === '1' ? first.promise : { success: true, data: source };
+    });
+    await f.api.loadContextState();
+    const oldRefresh = f.api.refreshCaptureSources();
+    const a = f.api.setCaptureSource(f.sources[0].key);
+    const b = f.api.setCaptureSource(f.sources[1].key);
+    const c = f.api.setCaptureSource(f.sources[2].key);
+    first.resolve({ success: true, data: f.sources[0] });
+    assert.equal((await c).success, true);
+    assert.equal((await a).cancelled, true);
+    assert.equal((await b).cancelled, true);
+    stale.resolve({ success: true, data: { sources: f.sources, selected: f.initial } });
+    await oldRefresh;
+    assert.deepEqual(selected, ['1', '3']);
+    assert.equal(f.api.getContextState().captureState.displayId, '3');
+});
+
+test('a rejected last capture selection leaves the last saved source selected', async () => {
+    const first = Promise.withResolvers();
+    const f = contextSources(async (channel, source, sources, initial) => {
+        if (channel === 'context-capture:list-sources') return { success: true, data: { sources, selected: initial } };
+        if (source.displayId === '1') return first.promise;
+        throw new Error('Source is unavailable');
+    });
+    await f.api.loadContextState();
+    const a = f.api.setCaptureSource(f.sources[0].key);
+    const c = f.api.setCaptureSource(f.sources[2].key);
+    first.resolve({ success: true, data: f.sources[0] });
+    await a;
+    assert.equal((await c).success, false);
+    assert.equal(f.api.getContextState().captureState.displayId, '1');
+    assert.match(f.api.getContextState().error, /Could not select/);
+});
+
+test('a superseded transcript flush cannot write into a replacement session', async t => {
+    const oldHistory = Promise.withResolvers();
+    const writes = [];
+    const f = rendererModule('src/utils/realtimeContextRenderer.js',
+        ['getRealtimeState', 'initRealtimeContext', 'flushSessionContext'], {
+            getSession: () => oldHistory.promise,
+            saveSession: async (id, snapshot) => { writes.push([id, snapshot]); return { success: true }; },
+        }, async () => ({ success: true, data: { sessionId: '100' } }));
+    t.after(f.api.initRealtimeContext());
+    const superseded = f.api.flushSessionContext();
+    await new Promise(resolve => setImmediate(resolve));
+    f.ipc.emit('save-session-context', null, { sessionId: '200' });
+    f.ipc.emit('live-transcript', null, { sessionId: '100', text: 'Obsolete text', final: true });
+    f.ipc.emit('live-transcript', null, { sessionId: '200', text: 'Replacement text', final: true });
+    oldHistory.resolve({ liveTranscript: [{ text: 'Old saved history' }] });
+    await superseded;
+    assert.deepEqual(writes, []);
+    await f.api.flushSessionContext();
+    assert.deepEqual(writes.map(([id, snapshot]) => [id, snapshot.liveTranscript.map(entry => entry.text)]),
+        [['200', ['Replacement text']]]);
+});
+
+test('late transcription from a closed provider session is discarded', async () => {
+    const late = Promise.withResolvers();
+    const body = Promise.withResolvers();
+    const sent = [];
+    let owner = '100';
+    let requests = 0;
+    const responses = [late.promise, { ok: true, clone: () => ({ json: () => body.promise }) }, transcription('Current text')];
+    const host = { fetch: async () => responses[requests++] };
+    function transcription(text) {
+        return { ok: true, clone: () => ({ json: async () => ({ text }) }) };
+    }
+    const main = loadMain('src/utils/realtimeContextMain.js', {
+        electron: { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false,
+            webContents: { send: (event, data) => sent.push([event, data.sessionId, data.text]) } }] } },
+        '../storage': { getPreferences: () => ({}) },
+        './sessionRequests': { requestIsCurrent: () => true },
+    }, { global: host });
+    main.installRealtimeContextMain(() => owner);
+
+    const inFlight = host.fetch('http://127.0.0.1/inference');
+    owner = null;
+    owner = '200';
+    late.resolve(transcription('Old text'));
+    await inFlight;
+    await host.fetch('http://127.0.0.1/inference');
+    owner = '300';
+    body.resolve({ text: 'Stale response body' });
+    await host.fetch('http://127.0.0.1/inference');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(sent, [['live-transcript', '300', 'Current text']]);
 });

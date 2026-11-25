@@ -1118,6 +1118,11 @@ export class MainView extends LitElement {
         try { await action(); } catch { this.startError = 'The setting could not be saved. Your current draft is retained.'; }
     }
 
+    async _changeCaptureSource(select) {
+        const result = await setCaptureSource(select.value);
+        if (!result?.success && !result?.cancelled) select.value = selectionKey(getContextState().captureState);
+    }
+
     renderPreparation() {
         const { sessionPack: pack, captureState, captureSources, error } = getContextState();
         const { responseMode } = getRealtimeState();
@@ -1127,7 +1132,7 @@ export class MainView extends LitElement {
                 ${RESPONSE_MODES.map(mode => html`<option value=${mode.id} .selected=${mode.id === responseMode}>${mode.label} - ${mode.description}</option>`)}
             </select>
             <label for="captureSource">Screen or window to analyze</label>
-            <select id="captureSource" .value=${selectionKey(captureState)} @change=${event => this._contextAction(() => setCaptureSource(event.target.value))}>
+            <select id="captureSource" .value=${selectionKey(captureState)} @change=${event => this._contextAction(() => this._changeCaptureSource(event.currentTarget))}>
                 ${captureSources.map(source => html`<option value=${source.key} .selected=${source.key === selectionKey(captureState)}>${source.label}</option>`)}
             </select>
             <div class="preparation-actions"><button type="button" @click=${() => this._contextAction(refreshCaptureSources)}>Refresh screens</button></div>
