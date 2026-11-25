@@ -4,7 +4,7 @@ const storage = require('../storage');
 const {
     SUPPORTED_EXTENSIONS,
     initializeKnowledgeStore,
-    listDocuments,
+    getKnowledgeLibrary,
     loadDocuments,
     getEnabledDocuments,
     importFiles,
@@ -134,7 +134,10 @@ function setupPhase4Main(mainWindow, ipcMain) {
         });
     };
 
-    installHandler('knowledge:list', () => ({ success: true, data: listDocuments() }));
+    installHandler('knowledge:list', () => {
+        const { documents, status } = getKnowledgeLibrary();
+        return { success: true, data: documents, status };
+    });
     installHandler('knowledge:import', async () => {
         const extensions = [...SUPPORTED_EXTENSIONS].map(extension => extension.slice(1));
         const selection = await dialog.showOpenDialog(mainWindow, {
@@ -150,8 +153,7 @@ function setupPhase4Main(mainWindow, ipcMain) {
     });
     installHandler('knowledge:add-text', (title, content) => {
         const cleanTitle = sanitizeString(title, 180) || 'Pasted knowledge';
-        const cleanContent = normalizeText(content, 1_500_000);
-        return { success: true, data: addText(cleanTitle, cleanContent) };
+        return { success: true, data: addText(cleanTitle, content) };
     });
     installHandler('knowledge:set-enabled', (id, enabled) => ({
         success: true,
