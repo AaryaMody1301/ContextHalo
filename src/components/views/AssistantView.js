@@ -434,10 +434,14 @@ export class AssistantView extends LitElement {
 
     renderMarkdown(content) {
         const text = String(content || '');
+        const marked = window.marked;
+        if (!marked) return this.escapeText(text);
         try {
-            return sanitizeAssistantHtml(window.marked
-                ? window.marked.parse(text, { breaks: true, gfm: true })
-                : this.escapeText(text));
+            const renderer = new marked.Renderer();
+            // Provider HTML is plain text. Escape it before a browser parser
+            // can interpret inline handlers, even in a detached document.
+            renderer.html = token => this.escapeText(token.text);
+            return sanitizeAssistantHtml(marked.parse(text, { breaks: true, gfm: true, renderer }));
         } catch {
             return this.escapeText(text);
         }

@@ -115,10 +115,11 @@ async function rendererBehaviorSmoke() {
         app.updateCurrentResponse('Typed final',{requestId:'text-smoke'});
         app.updateCurrentResponse('Screen final',{requestId:'screen-smoke'});
         verify(app.responses.includes('Typed final') && app.responses.includes('Screen final'),'Concurrent response cards stay isolated');
-        app.addNewResponse('<script>window.__unsafe=true</script><img src=x onerror="window.__unsafe=true"><svg onload="window.__unsafe=true"></svg><a href="javascript:alert(1)" onclick="alert(1)">unsafe</a><p><strong>Safe</strong></p>',{requestId:'sanitize-smoke'});
+        app.addNewResponse('<script>window.__unsafe=true</script><img src=x onerror="window.__unsafe=true"><svg onload="window.__unsafe=true"></svg><a href="javascript:alert(1)" onclick="alert(1)">unsafe</a>\n\n**Safe**',{requestId:'sanitize-smoke'});
         app.currentResponseIndex=app.responses.length-1;await settle(app);await settle(assistant);
         const response=root.querySelector('#responseContainer');
-        verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe && response.querySelector('strong')?.textContent==='Safe','Rendered Markdown removes active HTML but preserves formatting');
+        verify(!response.querySelector('script,img,svg,[onclick],[onerror],a[href^="javascript"]') && !window.__unsafe
+            && response.textContent.includes('<script>') && response.querySelector('strong')?.textContent==='Safe', 'Rendered Markdown displays raw HTML as text and preserves Markdown formatting');
     } finally { api.sendTextMessage=original;app._sessionStarted=false;app._setLifecycle('idle','Fixture complete'); }
     // Exercise the real Home controls and persistence. Only the final provider
     // launch callback is controlled: smoke must not download models or use keys.

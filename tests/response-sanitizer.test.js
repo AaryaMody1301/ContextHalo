@@ -13,3 +13,9 @@ test('sanitizer uses an allowlist and permits only credential-free HTTP(S) exter
     assert.match(source, /!parsed\.username && !parsed\.password/);
     assert.match(source, /element.removeAttribute\('href'\)/);
 });
+
+test('assistant Markdown escapes raw provider HTML before the DOM sanitizer', () => {
+    const view = read('src/components/views/AssistantView.js');
+    assert.match(view, /renderer\.html = token => this\.escapeText\(token\.text\)/);
+    assert.match(view, /sanitizeAssistantHtml\(marked\.parse\(text, \{ breaks: true, gfm: true, renderer \}\)\)/);
+});
