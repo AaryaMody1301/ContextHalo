@@ -1,6 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const { evaluatePhase9Evidence } = require('./phase9-evidence');
+
+const DEFAULT_PHASE9_EVIDENCE = 'docs/PHASE_9_ACCEPTANCE_RESULTS_2026-11-26.json';
 
 const ROOT_ALLOWED = new Set([
     '.editorconfig',
@@ -36,8 +40,8 @@ const REQUIRED_PHASE_EVIDENCE = [
     'docs/PHASE_9_REAL_WORLD_ACCEPTANCE_2026-09-22.md',
 ];
 
-function trackedFiles() {
-    return execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
+function trackedFiles(root) {
+    return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
         .split('\0')
         .filter(Boolean)
         .sort();
@@ -56,18 +60,18 @@ function classifyTrackedFile(file) {
     return null;
 }
 
-function gitBlob(file) {
-    return execFileSync('git', ['hash-object', '--', file], { encoding: 'utf8' }).trim();
+function gitBlob(file, root) {
+    return execFileSync('git', ['hash-object', '--', file], { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function isSha256(value) {
     return /^[a-f0-9]{64}$/i.test(String(value || ''));
 }
 
-function auditRepository(root = process.cwd()) {
+function auditRepository(root = process.cwd(), { evidenceFile = DEFAULT_PHASE9_EVIDENCE, candidateExe } = {}) {
     const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
     const read = file => fs.readFileSync(path.join(root, file), 'utf8');
-    const files = trackedFiles();
+    const files = trackedFiles(root);
     const unclassified = files.filter(file => !classifyTrackedFile(file));
     const missingPhaseEvidence = REQUIRED_PHASE_EVIDENCE.filter(file => !fs.existsSync(path.join(root, file)));
 
@@ -76,6 +80,16 @@ function auditRepository(root = process.cwd()) {
     const provenance = readJson('docs/THIRD_PARTY_PROVENANCE.json');
     const phase9 = readJson('docs/PHASE_9_ACCEPTANCE_MATRIX_TEMPLATE.json');
     const phase10 = readJson('docs/PHASE_10_RELEASE_READINESS.json');
+    const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    let results;
+    let portableExeSha256;
+    try { results = JSON.parse(fs.readFileSync(path.resolve(root, evidenceFile), 'utf8')); } catch {}
+    if (candidateExe) {
+        try {
+            portableExeSha256 = createHash('sha256').update(fs.readFileSync(path.resolve(root, candidateExe))).digest('hex');
+        } catch {}
+    }
+    const physical = evaluatePhase9Evidence(phase9, results, { sourceCommit, portableExeSha256 });
 
     const provenancePackages = new Map((provenance.productionNpm || []).map(item => [item.package, item]));
     const directDependencyMismatches = [];
@@ -99,7 +113,7 @@ function auditRepository(root = process.cwd()) {
             vendoredMismatches.push({ path: file, reason: 'missing provenance' });
             continue;
         }
-        const blob = gitBlob(file);
+        const blob = gitBlob(file, root);
         if (record.trackedBlobSha !== blob) vendoredMismatches.push({ path: file, reason: 'blob mismatch', expected: record.trackedBlobSha, actual: blob });
         if (!record.version || !record.license || !record.upstream) vendoredMismatches.push({ path: file, reason: 'incomplete provenance' });
     }
@@ -126,15 +140,8 @@ function auditRepository(root = process.cwd()) {
         trustedIpcDocumented: /sender/i.test(security) && /IPC/i.test(security),
     };
 
-    const physicalStatusCounts = {};
-    for (const scenario of phase9.requiredScenarios || []) {
-        const status = String(scenario.status || 'missing');
-        physicalStatusCounts[status] = (physicalStatusCounts[status] || 0) + 1;
-    }
-    const physicalComplete = (phase9.requiredScenarios || []).length > 0
-        && (phase9.requiredScenarios || []).every(item => ['pass', 'not-applicable'].includes(item.status));
-
-    const openBlockers = (phase10.externalBlockers || []).filter(item => item.status !== 'resolved');
+    const openBlockers = (phase10.externalBlockers || []).filter(item =>
+        item.id === 'physical-phase9-acceptance' ? !physical.complete : item.status !== 'resolved');
 
     const staticChecks = {
         allTrackedFilesClassified: unclassified.length === 0,
@@ -148,7 +155,7 @@ function auditRepository(root = process.cwd()) {
     };
 
     const staticReady = Object.values(staticChecks).every(Boolean);
-    const finalReady = staticReady && physicalComplete && openBlockers.length === 0;
+    const finalReady = staticReady && physical.complete && openBlockers.length === 0;
 
     return {
         staticReady,
@@ -162,14 +169,19 @@ function auditRepository(root = process.cwd()) {
             vendoredMismatches,
             nativeProblems,
             workflowChecks,
-            physicalStatusCounts,
+            physicalStatusCounts: physical.statusCounts,
+            physicalEvidenceIssues: physical.issues,
             openBlockers: openBlockers.map(item => ({ id: item.id, type: item.type, status: item.status })),
         },
     };
 }
 
 function main(argv = process.argv.slice(2)) {
-    const report = auditRepository();
+    const option = key => argv.find(value => value.startsWith(`--${key}=`))?.slice(key.length + 3);
+    const report = auditRepository(process.cwd(), {
+        evidenceFile: option('phase9-evidence'),
+        candidateExe: option('candidate-exe'),
+    });
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     if (!report.staticReady) process.exitCode = 1;
     if (argv.includes('--require-final') && !report.finalReady) process.exitCode = 2;

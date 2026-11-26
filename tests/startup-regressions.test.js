@@ -4,6 +4,32 @@ const { componentClass } = require('./helpers/component-fixture');
 const { geminiFixture } = require('./helpers/gemini-fixture');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('Start refreshes an unavailable capture source and uses it after it returns', async () => {
+    let unavailable = true;
+    let restored = false;
+    let starts = 0;
+    let refreshes = 0;
+    const { Target } = componentClass('src/components/views/MainView.js', 'MainView', {
+        getContextState: () => ({ captureSourceUnavailable: unavailable }),
+        refreshCaptureSources: async () => { refreshes++; unavailable = !restored; },
+        contextHalo: { storage: {
+            getConfig: async () => ({}), getPreferences: async () => ({ providerMode: 'local' }),
+            getCredentialStatus: async () => ({}),
+        } },
+    });
+    const view = Object.assign(new Target(), {
+        focusSessionSetting: value => assert.equal(value, 'capture'),
+        onStart: () => { starts++; },
+    });
+    await tick();
+    await view._handleStart();
+    assert.equal(starts, 0);
+    restored = true;
+    await view._handleStart();
+    assert.equal(starts, 1);
+    assert.equal(refreshes, 2);
+});
+
 function home(mode = 'byok') {
     const preferences = { providerMode: mode };
     const writes = [];

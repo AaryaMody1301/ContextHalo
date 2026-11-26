@@ -23,6 +23,17 @@ function safeNumber(value) {
     return Number.isFinite(number) ? number : 0;
 }
 
+function safeScreenDiagnostic(value) {
+    if (!['capture', 'frame', 'encode', 'request'].includes(value?.stage)
+        || !['pending', 'cancelled', 'failed', 'success'].includes(value?.outcome)) return null;
+    const { stage, outcome, httpStatus, attempts } = value;
+    return {
+        stage, outcome,
+        ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}),
+        ...(Number.isInteger(attempts) && attempts >= 1 && attempts <= 20 ? { attempts } : {}),
+    };
+}
+
 function normalizeProcessMetric(metric = {}) {
     return {
         pid: safeNumber(metric.pid),
@@ -254,7 +265,11 @@ function createReliabilityAcceptance({
             catch { recordEvent('sample-error', { source: 'main-memory' }); }
 
             let renderer = { available: false };
-            try { renderer = await rendererState(); }
+            try {
+                const { screenDiagnostic, ...state } = await rendererState();
+                const diagnostic = safeScreenDiagnostic(screenDiagnostic);
+                renderer = diagnostic ? { ...state, screenDiagnostic: diagnostic } : state;
+            }
             catch { recordEvent('sample-error', { source: 'renderer-state' }); }
 
             let storage = null;

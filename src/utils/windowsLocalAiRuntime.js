@@ -6,13 +6,13 @@ const { execFile } = require('node:child_process');
 const runFile = require('node:util').promisify(execFile);
 
 const VULKAN_LLAMA_RELEASE = Object.freeze({
-    tag: 'b10964',
-    commit: 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4',
-    archive: 'llama-b10964-bin-win-vulkan-x64.zip',
-    sha256: '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642',
+    tag: 'b12774',
+    commit: '171527522610996f5f0acf12334e185156ca8f44',
+    archive: 'llama-b12774-bin-win-vulkan-x64.zip',
+    sha256: 'd29a16265d26ef7598209caaf1a544cbfa6abe2858c24b0ce4ae6bff87a76f22',
     executable: 'llama-server.exe',
     backend: 'ggml-vulkan.dll',
-    url: 'https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-vulkan-x64.zip',
+    url: 'https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-win-vulkan-x64.zip',
 });
 
 function encodePathParts(value) {

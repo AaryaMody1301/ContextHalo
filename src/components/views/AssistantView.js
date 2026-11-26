@@ -434,10 +434,14 @@ export class AssistantView extends LitElement {
 
     renderMarkdown(content) {
         const text = String(content || '');
+        const marked = window.marked;
+        if (!marked) return this.escapeText(text);
         try {
-            return sanitizeAssistantHtml(window.marked
-                ? window.marked.parse(text, { breaks: true, gfm: true })
-                : this.escapeText(text));
+            const renderer = new marked.Renderer();
+            // Provider HTML is plain text. Escape it before a browser parser
+            // can interpret inline handlers, even in a detached document.
+            renderer.html = token => this.escapeText(token.text);
+            return sanitizeAssistantHtml(marked.parse(text, { breaks: true, gfm: true, renderer }));
         } catch {
             return this.escapeText(text);
         }
@@ -595,12 +599,16 @@ export class AssistantView extends LitElement {
             if (!this.onAnalyzeScreen && typeof contextHalo.captureManualScreenshot !== 'function') throw new Error('Screen capture is not ready.');
             const captureOptions = { signal: controller.signal, region: options.region };
             const result = this.onAnalyzeScreen ? await this.onAnalyzeScreen(captureOptions) : await contextHalo.captureManualScreenshot(null, captureOptions);
+            if (result?.cancelled) {
+                this.analysisError = 'Screen analysis cancelled. Your draft is unchanged.';
+                return { ...result, error: this.analysisError };
+            }
             if (result?.success !== true) throw new Error(result?.error || 'Screen analysis failed.');
             if ('text' in result && !String(result.text || '').trim()) throw new Error('The provider returned no answer. Review model settings and retry.');
             return result;
         } catch (error) {
             this.analysisError = controller.signal.aborted ? 'Screen analysis cancelled. Your draft is unchanged.' : error?.message || 'Screen analysis failed.';
-            return { success: false, error: this.analysisError };
+            return { success: false, ...(controller.signal.aborted ? { cancelled: true } : {}), error: this.analysisError };
         } finally {
             if (this._analysisController === controller) this._analysisController = null;
             this.isAnalyzing = false;

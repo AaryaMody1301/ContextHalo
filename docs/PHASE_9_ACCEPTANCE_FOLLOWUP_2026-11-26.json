@@ -1,0 +1,355 @@
+{
+    "schemaVersion": 1,
+    "phase": 9,
+    "matrix": "docs/PHASE_9_ACCEPTANCE_MATRIX_TEMPLATE.json",
+    "reviewedAtUtc": "2026-11-26T15:03:08.579Z",
+    "phaseStatus": "Physical acceptance incomplete",
+    "candidate": {
+        "repository": "AaryaMody1301/ContextHalo",
+        "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+        "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+        "appVersion": "0.8.0-portable.0",
+        "hashCommand": "Get-FileHash -Algorithm SHA256",
+        "authenticodeStatus": "NotSigned",
+        "verifiedBeforeLaunch": true,
+        "verifiedAtUtc": "2026-11-26T15:02:02.321Z"
+    },
+    "workstation": {
+        "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+        "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+        "cpu": "Intel Core i7-12700H",
+        "memoryGiB": 15.63,
+        "gpus": [
+            "Intel Iris Xe",
+            "NVIDIA RTX 3050 Ti Laptop GPU"
+        ],
+        "physicalDisplays": 1
+    },
+    "supportingVerification": {
+        "localTests": {
+            "passed": 515,
+            "failed": 0,
+            "skipped": 0
+        },
+        "sourceCheckJavaScriptFiles": 160,
+        "productionDependencyAudit": "Zero advisories",
+        "lockedDependencyAudit": "Passed the high-severity gate. Six moderate build-tool findings in the electron-builder dependency tree remain.",
+        "dependencies": {
+            "electron": "45.5.0",
+            "genai": "3.6.1",
+            "marked": "18.3.0",
+            "electronBuilder": "26.18.0",
+            "lit": "3.3.3"
+        },
+        "rendererUpgrade": "The first Electron 45 package reported Chromium CSP violations while parsing synthetic raw response HTML. Escaping raw HTML in Marked before DOM parsing resolved the warnings in the source smoke. Existing CSP, sandboxing, and Markdown formatting remain in force.",
+        "portableSmoke": {
+            "chromiumScale": 1.25,
+            "embeddedSourceCommitVerified": true,
+            "keyboardBehaviorAndHistory": "Passed sandboxed built-in Windows behavior checks with synthetic content.",
+            "report": "portable-125-final/reliability/report.json"
+        },
+        "upstreamModelReview": {
+            "gemini": "Gemini 4 Hydrogen is selectable when advertised by the account. Existing choices are retained. The current Live contract remains gemini-3.8-live. The installed SDK matched the text/image contract for the selectable screen models. Hydrogen live-key generation was not measured.",
+            "geminiSources": [
+                "https://aistudio.google.com/docs/models/gemini-4-hydrogen",
+                "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live",
+                "https://aistudio.google.com/docs/pricing"
+            ],
+            "groq": "GPT-OSS and Whisper production routes plus Qwen 3.8 27B vision preview were checked against the official role catalog. Qwen 3.6 access is account-dependent.",
+            "groqSources": [
+                "https://console.groq.com/docs/models",
+                "https://console.groq.com/docs/vision",
+                "https://console.groq.com/docs/deprecations"
+            ],
+            "mistral": "The three Ministral 3 sizes and Mistral Small 4 passed local text and image contract checks. HTTP 402 on the earlier saved credential blocked live results. Mistral Large 4 is a distinct model family.",
+            "mistralSources": [
+                "https://docs.mistral.ai/inference/conversations/vision",
+                "https://docs.mistral.ai/models",
+                "https://docs.mistral.ai/admin/billing-usage/usage-limits/",
+                "https://docs.mistral.ai/resources/error-glossary"
+            ],
+            "local": "The same Qwen3.5 2B Q4_K_M GGUF and BF16 projector passed local CPU and Vulkan screenshot inference. This is the tested compact preset. Other local model/quantization combinations were not run.",
+            "localSources": [
+                "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/tree/f6d5376be1edb4d416d56da11e5397a961aca8ae",
+                "https://github.com/ggml-org/llama.cpp/releases/tag/v1.1.0",
+                "https://github.com/ggml-org/whisper.cpp/releases/tag/b5907"
+            ]
+        },
+        "nativeCommandLine": {
+            "llama": "b12774",
+            "whisper": "b5907",
+            "modelRevision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+            "expectedModelSha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+            "expectedProjectorSha256": "f17196c0d8fc756bc65be60075bd4a359917eee8a438505639511727c585d3c2",
+            "cpu": "App CLI image HTTP 200, target marker present, 8.819 seconds. Typed reply and Whisper transcription succeeded. Both processes exited.",
+            "vulkan": "App CLI image HTTP 200, target marker present, 0.733 seconds. Typed reply and Whisper transcription succeeded. ggml-vulkan.dll and vulkan-1.dll loaded with 2,386,739,200 bytes dedicated GPU usage. Both processes exited. UI layer count unavailable in this short run.",
+            "download": "Offline rejected a 4,096-byte archive. Real download interrupted at 80,099 bytes. No temporary archive or extracted stage remained. Retry installed only after the pinned checksum matched.",
+            "scope": "Windows source-level CLI harness with production Local AI code and a temporary profile. The harness permits only loopback for inference. Download uses the official GitHub URL in a separate profile."
+        },
+        "crashInvestigation": {
+            "original": "Two GPU subprocess crashes with exit -2147483645 (0x80000003) were recorded in PR #112. Windows Application event 1001 at 07:12:40.532Z referenced a separate native llama-server RADAR_PRE_LEAK_64 event. No matching graphics-driver reset event was available.",
+            "followup": "Short original and intermediate portable runs did not reproduce the GPU crash. The intermediate CPU runner working set fell from 2,971,811,840 to 2,932,842,496 bytes across nine samples. Whisper fell from 132,870,144 to 122,712,064 bytes. This interval cannot establish the long-term trend or a GPU crash cause.",
+            "similarPublicReport": "https://github.com/electron/electron/issues/53610",
+            "sameModel503Report": "https://discuss.ai.google.dev/t/gemini-3-8-flash-http-503/202168"
+        }
+    },
+    "priorPortableRuns": {
+        "original": {
+            "appVersion": "0.8.0-portable.491",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "authenticodeStatus": "NotSigned",
+            "observation": "CPU, Vulkan and Gemini reproduced the static Windows capture failure before the request stage. The decoded frame contained pixels while the next video-frame callback did not arrive in the test interval."
+        },
+        "intermediate": {
+            "appVersion": "0.8.0-phase9.1",
+            "sourceCommit": "fecf13284c3e6446b1ca6f25832c04f7cb3a610d",
+            "portableExeSha256": "cdcdd894ba19e6afd56fbe4c2a7f6ee59d6a998a139af47c67dae25f196fc82a",
+            "authenticodeStatus": "NotSigned",
+            "provenance": "Recorded build source and pre-launch EXE hash. The intermediate EXE recorder lacked an embedded release commit.",
+            "checks": [
+                {
+                    "directory": "fixed-cpu",
+                    "utc": "2026-11-26T09:33:27.838Z",
+                    "elapsedMs": 248010,
+                    "activeSamples": 22,
+                    "fatalElectronEvents": 0,
+                    "observed": "Screen result recognized fixture markers. Synthetic transcription persisted. Both native processes stopped."
+                },
+                {
+                    "directory": "fixed-gemini",
+                    "utc": "2026-11-26T09:32:15.532Z",
+                    "elapsedMs": 99755,
+                    "activeSamples": 5,
+                    "fatalElectronEvents": 0,
+                    "observed": "Gemini Live stayed connected. Screen capture reached HTTP and the selected 3.8 Flash returned 503 on all three attempts."
+                },
+                {
+                    "directory": "fixed-mistral-retest",
+                    "utc": "2026-11-26T09:38:46.192Z",
+                    "elapsedMs": 193539,
+                    "activeSamples": 15,
+                    "fatalElectronEvents": 0,
+                    "observed": "Screen request reached Mistral and returned HTTP 402."
+                },
+                {
+                    "directory": "fixed-vulkan-retest",
+                    "utc": "2026-11-26T09:38:56.607Z",
+                    "elapsedMs": 238025,
+                    "activeSamples": 19,
+                    "fatalElectronEvents": 0,
+                    "observed": "Vulkan loaded and screen capture reached native inference. The 54-second request timeout was observed."
+                }
+            ]
+        }
+    },
+    "runs": [
+        {
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "directory": "portable-125-final/reliability",
+            "startedAtUtc": "2026-11-26T15:02:40.107Z",
+            "endedAtUtc": "2026-11-26T15:03:07.466Z",
+            "elapsedMs": 27359,
+            "samples": 3,
+            "activeSessionSamples": 1,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "verifiedCheckpointsHours": [],
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "portable-125-final/reliability/report.json",
+            "scope": "Packaged synthetic smoke"
+        }
+    ],
+    "scenarios": [
+        {
+            "id": "win10-launch",
+            "result": "Blocked",
+            "reason": "No physical Windows 10 22H2 x64 machine was available.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": []
+        },
+        {
+            "id": "win11-launch",
+            "result": "Blocked",
+            "reason": "The candidate launched and the sandboxed smoke reopened synthetic History. The 15-minute physical session and operator History check were unavailable.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "portable-125-final/reliability/report.json"
+            ]
+        },
+        {
+            "id": "gemini-live-8h",
+            "result": "Blocked",
+            "reason": "Operator availability limited testing to short runs. The intermediate portable reached Gemini HTTP, which returned 503 after three attempts. The required 1h, 4h and 8h active checkpoints are absent.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "fixed-gemini/report.json",
+                "tests/gemini-screen-wire-repair.test.js"
+            ]
+        },
+        {
+            "id": "groq-1h",
+            "result": "Blocked",
+            "reason": "The laptop was available for short retests only. Text, transcription and vision passed the local request checks. The one-hour hosted rerun on this EXE is pending.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "tests/provider-api-contracts.test.js",
+                "tests/windows-runtime-final.test.js"
+            ]
+        },
+        {
+            "id": "local-cpu-1h",
+            "result": "Blocked",
+            "reason": "Cached startup, typed inference, transcription, image inference and runner shutdown completed in the Windows CLI harness. A physical disconnect would cut remote access. No one-hour run or active one-hour checkpoint was collected.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "app-cpu.jsonl",
+                "fixed-cpu/report.json"
+            ]
+        },
+        {
+            "id": "local-vulkan-1h",
+            "result": "Blocked",
+            "reason": "The intermediate portable reached the native image route and timed out at 54 seconds. The upgraded runner returned image results in the app CLI code and exited. No one-hour run or active one-hour checkpoint was collected.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "app-vulkan-device.jsonl",
+                "fixed-vulkan-retest/report.json"
+            ]
+        },
+        {
+            "id": "audio-modes",
+            "result": "Blocked",
+            "reason": "A removable audio device was unavailable for the active-device removal and restoration sequence. The new-runner CLI check used synthetic PCM.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "app-cpu.jsonl",
+                "app-vulkan-device.jsonl"
+            ]
+        },
+        {
+            "id": "network-interruption",
+            "result": "Blocked",
+            "reason": "Wi-Fi and tethered Ethernet were both active during the physical attempt. Disconnecting both would have cut remote access. Local retry and cancellation tests provide supporting evidence.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "tests/gemini-screen-wire-repair.test.js",
+                "tests/mistral-provider.test.js"
+            ]
+        },
+        {
+            "id": "sleep-wake",
+            "result": "Blocked",
+            "reason": "The operator reported sleep, wake, lock and unlock. The earlier recorder and Windows event check did not confirm the transition. A verified rerun was unavailable.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "docs/PHASE_9_ACCEPTANCE_RESULTS_2026-11-26.json"
+            ]
+        },
+        {
+            "id": "multi-monitor",
+            "result": "Blocked",
+            "reason": "The Windows laptop had one integrated display. A second physical display was unavailable for Active Display and pinned-display removal.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": []
+        },
+        {
+            "id": "region-dpi",
+            "result": "Blocked",
+            "reason": "Portable smoke supports layout and capture checks under Chromium scale overrides. An operator run at 100%, 125%, 150% and 200% Windows display settings with pixel comparison was unavailable.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "portable-125-final/reliability/report.json",
+                "tests/windows-compositor-acceptance.test.js"
+            ]
+        },
+        {
+            "id": "content-protection",
+            "result": "Blocked",
+            "reason": "A signed-in screen-sharing application and second participant for a private test were unavailable.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "docs/PHASE_9_ACCEPTANCE_RESULTS_2026-11-26.json"
+            ]
+        },
+        {
+            "id": "quota-throttle",
+            "result": "Blocked",
+            "reason": "Gemini returned 503 and Mistral returned 402 for the intermediate portable. Those statuses establish provider availability and payment failures respectively. No safely observable live 429 or usable Mistral evaluation entitlement was available.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "fixed-gemini/report.json",
+                "fixed-mistral-retest/report.json",
+                "tests/mistral-provider.test.js"
+            ]
+        },
+        {
+            "id": "download-interruption",
+            "result": "Blocked",
+            "reason": "The original portable passed this scenario. The current production downloader passed a command-line interruption and retry against the official Whisper archive in an isolated profile. The rebuilt EXE’s physical cancellation and retry are pending.",
+            "sourceCommit": "858a713a078b46de0cbf5f9e628636a449579e27",
+            "portableExeSha256": "49f5edd0215d984b63f0af691b191b033e2968fb8fac08a4ba75bda595494c8e",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "utcTimestamp": "2026-11-26T15:03:08.579Z",
+            "evidence": [
+                "download-cli.jsonl",
+                "docs/PHASE_9_ACCEPTANCE_RESULTS_2026-11-26.json"
+            ]
+        }
+    ]
+}

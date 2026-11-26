@@ -81,7 +81,7 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     const native = {
         ensureNativeBinary: async (type, _progress, _signal, options) => {
             binaries.push([type, options]);
-            return type === 'llama' ? options?.cpuOnly ? '/binaries/llama-b10964-cpu/llama-server.exe' : '/binaries/llama-b10964-vulkan/llama-server.exe' : '/whisper.exe';
+            return type === 'llama' ? options?.cpuOnly ? '/binaries/llama-b12774-cpu/llama-server.exe' : '/binaries/llama-b12774-vulkan/llama-server.exe' : '/whisper.exe';
         },
         ensureWhisperModel: async () => '/whisper', ensureLlamaModel: async () => ({ modelPath: '/model', projectorPath: '/projector' }),
         getAvailablePort: async () => 1234, getModelsDirectory: () => '/models',
@@ -106,7 +106,7 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     assert.equal(await start({ offline: true }), true);
     assert.deepEqual(api.getLocalRuntime(), { runner: 'cpu', offline: true, fallback: 'vulkan-start-failed', gpuLayers: null });
     assert.ok(binaries.every(([, options]) => options.offline));
-    assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/binaries/llama-b10964-vulkan/llama-server.exe', '/binaries/llama-b10964-cpu/llama-server.exe']);
+    assert.deepEqual(started.map(item => item.executablePath), ['/whisper.exe', '/binaries/llama-b12774-vulkan/llama-server.exe', '/binaries/llama-b12774-cpu/llama-server.exe']);
     assert.deepEqual(started[0].arguments.slice(0, 6), ['-m', '/whisper', '--host', '127.0.0.1', '--port', '1234']);
     assert.equal(started[0].arguments[6], '--request-path');
     assert.match(started[0].arguments[7], /^\/[a-f0-9]{48}$/);
@@ -117,7 +117,7 @@ test('a Vulkan startup failure falls back once to the verified CPU runner withou
     assert.match(started[1].environment.LLAMA_API_KEY, /^[a-f0-9]{64}$/);
     assert.notEqual(started[1].environment.LLAMA_API_KEY, started[2].environment.LLAMA_API_KEY);
     assert.ok(started[1].arguments.includes('--cache-reuse') && started[1].arguments.includes('256'));
-    assert.ok(started[2].arguments.includes('--cache-reuse') && started[2].arguments.includes('256'), 'official b10964 CPU fallback shares the audited CLI contract');
+    assert.ok(started[2].arguments.includes('--cache-reuse') && started[2].arguments.includes('256'), 'official b12774 CPU fallback shares the audited CLI contract');
     assert.equal(stopped[0], started[1]);
     assert.equal(binaries[2][1].cpuOnly, true);
     const question = 'Preserve my leading instructions. ' + 'x'.repeat(10000);
@@ -144,5 +144,5 @@ test('fast local presets use a smaller native context and current Vulkan cache r
     const source = fs.readFileSync('src/utils/localai.js', 'utf8');
     assert.match(source, /LOCAL_FAST_CONTEXT_TOKENS = 4096/);
     assert.ok(source.includes('Qwen3\\.5-(?:0\\.8B|2B)-'));
-    assert.match(source, /argumentsList\.push\('--cache-reuse', '256'\)/);
+    assert.match(source, /'--cache-reuse',\s*'256'/);
 });

@@ -182,10 +182,10 @@ test('Hugging Face Xet helpers require SHA-256 ETags and safe model references',
 });
 
 test('Windows Local AI pins and validates the official Vulkan llama.cpp runtime', async () => {
-    assert.equal(VULKAN_LLAMA_RELEASE.tag, 'b10964');
-    assert.equal(VULKAN_LLAMA_RELEASE.commit, 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4');
-    assert.equal(VULKAN_LLAMA_RELEASE.sha256, '1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642');
-    assert.match(VULKAN_LLAMA_RELEASE.url, /^https:\/\/github\.com\/ggml-org\/llama\.cpp\/releases\/download\/b10964\//);
+    assert.equal(VULKAN_LLAMA_RELEASE.tag, 'b12774');
+    assert.equal(VULKAN_LLAMA_RELEASE.commit, '171527522610996f5f0acf12334e185156ca8f44');
+    assert.equal(VULKAN_LLAMA_RELEASE.sha256, 'd29a16265d26ef7598209caaf1a544cbfa6abe2858c24b0ce4ae6bff87a76f22');
+    assert.match(VULKAN_LLAMA_RELEASE.url, /^https:\/\/github\.com\/ggml-org\/llama\.cpp\/releases\/download\/b12774\//);
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'contexthalo-vulkan-'));
     const runtimeDirectory = path.join(tempRoot, 'runtime');

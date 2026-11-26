@@ -146,6 +146,7 @@ test('acceptance recorder captures resources, checkpoints and platform lifecycle
             providerState: 'ready',
             captureState: 'ready',
             audioReady: true,
+            screenDiagnostic: { stage: 'request', outcome: 'failed', httpStatus: 503, attempts: 3, privateBody: 'forbidden-test-body' },
             screen: true,
             microphone: true,
             system: false,
@@ -160,6 +161,7 @@ test('acceptance recorder captures resources, checkpoints and platform lifecycle
     assert.equal(first.app.totalWorkingSetKb, 5000);
     assert.equal(first.mainMemoryKb.residentSet, 900);
     assert.equal(first.renderer.providerState, 'ready');
+    assert.deepEqual(first.renderer.screenDiagnostic, { stage: 'request', outcome: 'failed', httpStatus: 503, attempts: 3 });
     assert.ok(first.storage.knownBytes > 0);
 
     powerMonitor.emit('suspend');
@@ -193,6 +195,7 @@ test('acceptance recorder captures resources, checkpoints and platform lifecycle
     for (const text of [metadataText, summaryText, samplesText, eventsText]) {
         assert.doesNotMatch(text, /saved-history-size-only/);
         assert.doesNotMatch(text, /secret-provider-response-fixture/);
+        assert.doesNotMatch(text, /forbidden-test-body/);
     }
 
     const metadata = JSON.parse(metadataText);

@@ -118,6 +118,7 @@ app.whenReady().then(async () => {
                     screen: capture?.screen === true,
                     microphone: capture?.microphone === true,
                     system: capture?.system === true,
+                    screenDiagnostic: window.contextHalo?.getScreenDiagnostic?.(),
                 };
             })()`, true);
         };

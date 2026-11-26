@@ -100,8 +100,8 @@ test('vendored and native provenance records point to owned artifacts', () => {
         assert.ok(notices.includes(`${component} | ${version} locked`), `Update THIRD_PARTY_NOTICES.md for ${component} ${version}.`);
     }
     assert.match(notices, /highlight\.js 11\.9\.0[^\n]*removed/i);
-    assert.match(notices, /b10964/);
-    assert.match(notices, /b5130/);
+    assert.match(notices, /b12774/);
+    assert.match(notices, /b5907/);
     assert.doesNotMatch(nativeRuntime, /resolve\/main|sohzm|llama-server-windows-x86_64|whisper-server-windows-x86_64/);
     assert.equal(provenance.ggufPolicy.downloadRevision, 'resolved immutable repository commit SHA');
 });

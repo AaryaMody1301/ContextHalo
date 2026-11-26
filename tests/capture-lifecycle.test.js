@@ -83,12 +83,42 @@ test('Analyze waits for a complete response, rejects invalid regions, and propag
     t.after(() => f.api.stopCapture()); await f.api.startCapture();
     await assert.rejects(f.api.captureManualScreenshot(null, { region: { x: -1, y: 0, width: 1, height: 1 } }), /Invalid screen region/);
     const controller = new AbortController();
-    const pending = f.api.captureManualScreenshot(null, { signal: controller.signal, region: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 } });
+    const request = { requestId: 'screen-owner', uiEpoch: 2 };
+    const pending = f.api.captureManualScreenshot(null, { request, signal: controller.signal, region: { x: 0.2, y: 0.2, width: 0.5, height: 0.5 } });
     for (let attempt = 0; attempt < 20 && typeof resolve !== 'function'; attempt++) await sleep(5);
     assert.equal(typeof resolve, 'function');
     controller.abort(); await assert.rejects(pending, /cancelled/);
-    assert.ok(f.calls.some(([name]) => name === 'cancel-screen-analysis'));
+    assert.deepEqual(f.calls.filter(([name]) => name === 'cancel-screen-analysis'), [['cancel-screen-analysis', request]]);
     resolve({ success: true, text: 'late answer' }); await tick();
+});
+
+test('Analyze accepts a decoded frame from an unchanged live window without a new video callback', async t => {
+    const f = rendererFixture({ staticVideo: true });
+    t.after(() => f.api.stopCapture());
+    await f.api.startCapture();
+    assert.equal((await f.api.captureManualScreenshot()).success, true);
+    assert.equal((await f.api.captureManualScreenshot()).success, true);
+    assert.equal(f.api.getScreenDiagnostic().stage, 'request');
+    assert.equal(f.api.getScreenDiagnostic().outcome, 'success');
+    f.media.getVideoTracks()[0].muted = true;
+    await assert.rejects(f.api.captureManualScreenshot(), /selected screen or window is unavailable/);
+    assert.equal(f.api.getScreenDiagnostic().stage, 'frame');
+    assert.equal(f.calls.filter(([name]) => name === 'send-image-content').length, 2);
+});
+
+test('replacing capture cancels only the in-flight screenshot from the previous source', async t => {
+    let resolve;
+    const f = rendererFixture({ image: () => new Promise(done => { resolve = done; }) });
+    t.after(() => f.api.stopCapture());
+    await f.api.startCapture();
+    const request = { requestId: 'previous-source', uiEpoch: 5 };
+    const pending = f.api.captureManualScreenshot(null, { request, signal: new AbortController().signal });
+    for (let attempt = 0; attempt < 20 && typeof resolve !== 'function'; attempt++) await sleep(5);
+    assert.equal(typeof resolve, 'function');
+    f.api.stopCapture();
+    await assert.rejects(pending, /cancelled/);
+    assert.deepEqual(f.calls.filter(([name]) => name === 'cancel-screen-analysis'), [['cancel-screen-analysis', request]]);
+    resolve({ success: true, text: 'late answer' });
 });
 
 

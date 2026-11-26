@@ -32,6 +32,8 @@ test('Gemini catalog separates Live and generateContent models from API metadata
             displayName: 'Gemini 3.8 Flash',
             supportedGenerationMethods: ['generateContent', 'countTokens'],
         },
+        { name: 'models/gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', supportedActions: ['generateContent'] },
+        { name: 'models/gemini-4-neon', displayName: 'Gemini 4 Neon', supportedActions: ['generateContent'] },
         {
             name: 'models/gemini-3.5-flash-lite',
             displayName: 'Gemini 3.5 Flash-Lite',
@@ -62,12 +64,14 @@ test('Gemini catalog separates Live and generateContent models from API metadata
         'gemini-3.1-flash-lite',
         'gemini-3.5-flash-lite',
         'gemini-3.8-flash',
+        'gemini-4-hydrogen',
     ]);
     assert.equal(catalog.screen.some(model => model.id === 'gemini-2.5-flash'), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
     assert.equal(catalog.all.find(model => model.id === 'gemini-3.7-flash').lifecycle, 'deprecated');
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');
-    assert.equal(catalog.recommended.screen, 'gemini-3.8-flash');
+    assert.equal(catalog.recommended.screen, 'gemini-4-hydrogen');
+    assert.equal(catalog.generate.some(model => model.id === 'gemini-4-neon'), true);
     assert.match(catalog.screen.find(model => model.id === 'gemini-3.8-flash').capabilityLabel, /Thinking low\/medium\/high/);
 });
 

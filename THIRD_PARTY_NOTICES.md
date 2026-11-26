@@ -6,9 +6,9 @@ ContextHalo is GPL-3.0 licensed. This file records third-party components that a
 
 | Component | Version | Role | License | Upstream |
 | --- | --- | --- | --- | --- |
-| Electron | 44.11.6 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
-| @google/genai | 2.28.0 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
-| Marked | 18.1.0 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
+| Electron | 45.5.0 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
+| @google/genai | 3.6.1 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
+| Marked | 18.3.0 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
 
 Transitive production npm packages are recorded with exact version, registry URL, integrity and declared license in `docs/THIRD_PARTY_PROVENANCE.json`.
 
@@ -26,9 +26,9 @@ ContextHalo sanitizes Marked output with its own allowlist before rendering; Mar
 
 ContextHalo downloads native runtimes on demand; they are not committed to this repository.
 
-- Preferred Windows x64 Vulkan llama.cpp runtime: official `ggml-org/llama.cpp` release `b10964`, source commit `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, archive `llama-b10964-bin-win-vulkan-x64.zip`, SHA-256 `1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642`. llama.cpp is MIT licensed.
-- CPU llama fallback: the same official `ggml-org/llama.cpp` `b10964` source commit, archive `llama-b10964-bin-win-cpu-x64.zip`, SHA-256 `917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7`.
-- Whisper runtime: official `ggml-org/whisper.cpp` developer release `b5130`, source commit `927cfce34f31707e17f2bff35c349632fb9e2c3a`, archive `whisper-bin-x64.zip`, SHA-256 `f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c`. This is the same source commit referenced by stable `v1.9.4`; whisper.cpp is MIT licensed.
+- Windows x64 Vulkan llama.cpp runtime uses the `b12774` Windows build referenced by stable `v1.1.0`. Source commit `171527522610996f5f0acf12334e185156ca8f44`, archive `llama-b12774-bin-win-vulkan-x64.zip`, SHA-256 `d29a16265d26ef7598209caaf1a544cbfa6abe2858c24b0ce4ae6bff87a76f22`. llama.cpp is MIT licensed.
+- The CPU llama runner uses the same `b12774` source commit. Archive `llama-b12774-bin-win-cpu-x64.zip`, SHA-256 `44b70b20f3374eec3d16a002beceefef33cc3565678caeb3eea5f6cacba61836`.
+- The Whisper runtime uses Windows build `b5907` immediately preceding `v1.9.6`. Source commit `5eaee0cc9024eb9e9a99469199920c8b7f5cb9ec`, archive `whisper-bin-x64.zip`, SHA-256 `ecca07b277d943e9b9f4712856a144b857271a6b333104e511e1988e80db582b`. whisper.cpp is MIT licensed.
 
 The former legacy v0.7.0 llama/Whisper executables are no longer runtime dependencies. Historical audit documents retain their old hashes only as evidence of the pre-Phase-4 baseline. Installed official runtime directories carry a `.source.json` file recording the upstream tag, full commit, archive, URL and SHA-256 used for that installation.
 
@@ -42,7 +42,7 @@ Model licenses are defined by their individual upstream repositories; ContextHal
 
 ## Build and release tooling
 
-The Windows workflow pins GitHub Actions by full commit SHA. electron-builder 26.17.0 is a build-time dependency and is MIT licensed. Exact npm package resolution is recorded in `package-lock.json`.
+The Windows workflow pins GitHub Actions by full commit SHA. electron-builder 26.18.0 is a build-time dependency and is MIT licensed. Exact npm package resolution is recorded in `package-lock.json`.
 
 ## ContextHalo source availability
 

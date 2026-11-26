@@ -229,6 +229,20 @@ A physical scenario may be marked not-applicable only with a concrete hardware/a
 
 Phase 9 is not complete merely because CI is green.
 
+Run the final readiness audit from the candidate source checkout and supply the
+portable EXE and the corresponding sanitized physical results.
+
+```powershell
+npm run audit:readiness -- --require-final --candidate-exe=C:\acceptance\ContextHalo-Windows-x64.exe --phase9-evidence=C:\acceptance\results.json
+```
+
+The audit hashes the supplied EXE and compares the results with that hash and
+the checkout's commit. The original build 491 results remain the default
+historical report. Passes for hour-based scenarios require a referenced,
+finalized recorder run with the same commit and EXE hash, sufficient elapsed
+time and the required checkpoints. Store the candidate's results outside the
+tested checkout so its commit stays fixed while collecting evidence.
+
 Repository-side tooling is ready when:
 
 1. recorder/unit/report tests pass;

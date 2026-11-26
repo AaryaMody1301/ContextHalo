@@ -21,13 +21,41 @@ test('explicit Ministral models use compatible payloads and the selected session
             f.config.mistralModel = model;
             assert.equal((await f.start('mistral')).success, true);
             assert.equal((await f.call('send-text-message', 'Question')).model, model);
+            assert.equal((await f.call('send-image-content', { data: jpeg, prompt: 'Screen' })).model, model);
             await f.close();
         }
-        assert.deepEqual(bodies.map(body => body.model), ['ministral-8b-2512', 'ministral-8b-2512', 'ministral-14b-2512', 'ministral-3b-2512']);
+        assert.deepEqual(bodies.map(body => body.model), ['ministral-8b-2512', 'ministral-8b-2512', 'ministral-14b-2512',
+            'ministral-14b-2512', 'ministral-3b-2512', 'ministral-3b-2512']);
+        for (const request of [bodies[1], bodies[3], bodies[5]]) {
+            assert.equal(request.messages.at(-1).content[0].image_url.url, `data:image/jpeg;base64,${jpeg}`);
+        }
         assert.ok(bodies.every(body => !Object.hasOwn(body, 'reasoning_effort') && body.stream === true));
         f.config.mistralModel = 'untrusted-model';
         assert.equal((await f.start('mistral')).success, false);
-        assert.equal(bodies.length, 4);
+        assert.equal(bodies.length, 6);
+    } finally { await f.close(); }
+});
+
+test('Mistral billing denial reaches the selected text and screen model without retries or history', async () => {
+    const requests = [];
+    const f = geminiFixture({ config: { mistralModel: 'ministral-8b-2512' }, fetch: async (_url, init) => {
+        requests.push(JSON.parse(init.body).model);
+        return new Response(JSON.stringify({ message: 'fixture-private-billing-message' }), { status: 402 });
+    } });
+    try {
+        assert.equal((await f.start('mistral')).success, true);
+        const text = await f.call('send-text-message', 'Test question');
+        const screen = await f.call('send-image-content', { data: jpeg, prompt: 'Test screen' });
+        for (const result of [text, screen]) {
+            assert.equal(result.success, false);
+            assert.equal(result.failure.category, 'billing');
+            assert.equal(result.failure.httpStatus, 402);
+            assert.equal(result.failure.retryable, false);
+            assert.match(result.error, /organization’s API access/);
+            assert.doesNotMatch(JSON.stringify(result), /fixture-private-billing-message/);
+        }
+        assert.deepEqual(requests, ['ministral-8b-2512', 'ministral-8b-2512']);
+        assert.equal(f.events.some(([event]) => ['save-screen-analysis', 'save-conversation-turn'].includes(event)), false);
     } finally { await f.close(); }
 });
 
