@@ -71,7 +71,8 @@ test('Marked output remains explicitly untrusted and flows through the renderer 
 
     const assistant = read('src/components/views/AssistantView.js');
     const sanitizer = read('src/utils/responseSanitizerRenderer.js');
-    assert.match(assistant, /sanitizeAssistantHtml\(window\.marked\s*\?\s*window\.marked\.parse/);
+    assert.match(assistant, /const marked = window\.marked/);
+    assert.match(assistant, /sanitizeAssistantHtml\(marked\.parse/);
     assert.match(sanitizer, /DROP_WITH_CONTENT[\s\S]*'SCRIPT'/);
     assert.match(sanitizer, /\['https:', 'http:'\]\.includes\(parsed\.protocol\)/);
     assert.match(sanitizer, /element\.setAttribute\('rel', 'noopener noreferrer'\)/);
