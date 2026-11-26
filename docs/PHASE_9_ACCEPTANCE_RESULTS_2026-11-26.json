@@ -1,0 +1,523 @@
+{
+    "schemaVersion": 1,
+    "phase": 9,
+    "matrix": "docs/PHASE_9_ACCEPTANCE_MATRIX_TEMPLATE.json",
+    "reviewedAtUtc": "2026-11-26T08:52:38.165Z",
+    "phaseStatus": "Physical acceptance incomplete",
+    "candidate": {
+        "repository": "AaryaMody1301/ContextHalo",
+        "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+        "appVersion": "0.8.0-portable.491",
+        "githubArtifact": "https://github.com/AaryaMody1301/ContextHalo/actions/runs/45750669594/artifacts/15085427618",
+        "githubArtifactZipSha256": "c0f7062f9f49b238416a89ad6a8713e8106e45795e8c89d6220058258266b7dc",
+        "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+        "hashCommand": "Get-FileHash -Algorithm SHA256",
+        "authenticodeCommand": "Get-AuthenticodeSignature",
+        "authenticodeStatus": "NotSigned",
+        "verifiedBeforeLaunch": true,
+        "verifiedAtUtc": "2026-11-26T06:34:05.727Z",
+        "selection": "GitHub main matched the requested source commit at candidate selection and at evidence review."
+    },
+    "workstation": {
+        "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+        "windows": "Windows 11 Pro 26H2 x64, 26300.10075",
+        "cpu": "Intel Core i7-12700H, 14 cores and 20 logical processors",
+        "memoryGiB": 15.63,
+        "gpus": [
+            {
+                "name": "Intel Iris Xe Graphics",
+                "driver": "32.0.101.6790",
+                "vulkanAvailable": true
+            },
+            {
+                "name": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+                "driver": "32.0.16.2140",
+                "vulkanAvailable": true
+            }
+        ],
+        "displays": 1,
+        "displayScalePercentAtStartup": 125,
+        "audio": "C-Media built-in microphone and speakers, with ASUS noise-cancelling virtual endpoints.",
+        "sleepSupport": "S0 Low Power Idle (network connected) and Hibernate."
+    },
+    "supportingValidation": {
+        "localSourceCheck": "Passed for 159 JavaScript files.",
+        "localTests": {
+            "passed": 505,
+            "failed": 0,
+            "skipped": 0
+        },
+        "windowsCi": "https://github.com/AaryaMody1301/ContextHalo/actions/runs/45750669594/job/139677478388",
+        "windowsCiEvidence": "The checked commit passed sandboxed renderer behavior, portable checksum verification, and packaged launch with recorder at four Chromium scales.",
+        "evidenceStorage": "Run directory names refer to private recorder folders on the Windows workstation. Only summary metadata is included here.",
+        "profileCleanup": "Original preference bytes were verified after restoration. Both native servers, all test ContextHalo processes, and the standalone fixture had exited.",
+        "sourceChanges": "No code change. The observations identify two GPU subprocess crashes without a verified trigger or root cause. The user ended physical testing and requested the recorded evidence."
+    },
+    "publicProviderModelIds": {
+        "geminiLive": "gemini-3.8-live",
+        "geminiScreen": "gemini-3.8-flash",
+        "groqText": "qwen/qwen3.8-27b",
+        "groqTranscription": "whisper-large-v3-turbo",
+        "groqScreen": "qwen/qwen3.8-27b",
+        "mistralTextAndScreen": "mistral-small-2603"
+    },
+    "localArtifacts": {
+        "llamaCpuArchive": {
+            "file": "llama-b10964-bin-win-cpu-x64.zip",
+            "sha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7"
+        },
+        "whisperCpuArchive": {
+            "file": "whisper-bin-x64.zip",
+            "sha256": "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c"
+        },
+        "whisperModel": {
+            "file": "ggml-tiny.en.bin",
+            "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+            "sizeBytes": 77704715,
+            "pinnedSha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+            "stagedTruncatedFileBytes": 4096,
+            "stagedTruncatedFileSha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+        },
+        "languageAndVision": {
+            "repository": "unsloth/Qwen3.5-2B-GGUF",
+            "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+            "languageSha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+            "projectorSha256": "f17196c0d8fc756bc65be60075bd4a359917eee8a438505639511727c585d3c2"
+        },
+        "vulkanObserved": {
+            "runner": "llama-b10964-vulkan/llama-server.exe",
+            "loadedModules": [
+                "ggml-vulkan.dll",
+                "vulkan-1.dll"
+            ],
+            "dedicatedGpuMemoryBytes": 2375512064,
+            "whisperRunner": "CPU"
+        }
+    },
+    "runs": [
+        {
+            "directory": "audio-mic-only-20261126-071444",
+            "startedAtUtc": "2026-11-26T07:15:15.951Z",
+            "endedAtUtc": "2026-11-26T07:16:46.61Z",
+            "elapsedMs": 90659,
+            "samples": 2,
+            "activeSessionSamples": 1,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "audio-mic-only-20261126-071444/report.json"
+        },
+        {
+            "directory": "gemini-diagnostic-20261126-064628",
+            "startedAtUtc": "2026-11-26T06:46:36.073Z",
+            "endedAtUtc": "2026-11-26T06:55:10.691Z",
+            "elapsedMs": 514618,
+            "samples": 9,
+            "activeSessionSamples": 8,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 8,
+            "missingCheckpointsHours": [
+                1,
+                4,
+                8
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "gemini-diagnostic-20261126-064628/report.json"
+        },
+        {
+            "directory": "gemini-live-20261126-064458",
+            "startedAtUtc": "2026-11-26T06:45:06.103Z",
+            "endedAtUtc": "2026-11-26T06:46:12.616Z",
+            "elapsedMs": 66513,
+            "samples": 2,
+            "activeSessionSamples": 1,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 8,
+            "missingCheckpointsHours": [
+                1,
+                4,
+                8
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "gemini-live-20261126-064458/report.json"
+        },
+        {
+            "directory": "groq-win11-20261126-063908",
+            "startedAtUtc": "2026-11-26T06:39:16.121Z",
+            "endedAtUtc": "2026-11-26T06:44:34.786Z",
+            "elapsedMs": 318665,
+            "samples": 6,
+            "activeSessionSamples": 5,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 1,
+            "missingCheckpointsHours": [
+                1
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "groq-win11-20261126-063908/report.json"
+        },
+        {
+            "directory": "local-cpu-disconnected-20261126-070757",
+            "startedAtUtc": "2026-11-26T07:08:04.98Z",
+            "endedAtUtc": "2026-11-26T07:11:18.331Z",
+            "elapsedMs": 193351,
+            "samples": 4,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 1,
+            "missingCheckpointsHours": [
+                1
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "local-cpu-disconnected-20261126-070757/report.json"
+        },
+        {
+            "directory": "local-cpu-offline-20261126-070304",
+            "startedAtUtc": "2026-11-26T07:03:27.44Z",
+            "endedAtUtc": "2026-11-26T07:07:34.643Z",
+            "elapsedMs": 247203,
+            "samples": 5,
+            "activeSessionSamples": 2,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 1,
+            "missingCheckpointsHours": [
+                1
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "local-cpu-offline-20261126-070304/report.json"
+        },
+        {
+            "directory": "local-download-interruption-20261126-064936",
+            "startedAtUtc": "2026-11-26T06:49:58.239Z",
+            "endedAtUtc": "2026-11-26T06:51:35.461Z",
+            "elapsedMs": 97222,
+            "samples": 2,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "local-download-interruption-20261126-064936/report.json"
+        },
+        {
+            "directory": "local-download-retry-20261126-065358",
+            "startedAtUtc": "2026-11-26T06:54:19.672Z",
+            "endedAtUtc": "2026-11-26T06:57:40.798Z",
+            "elapsedMs": 201126,
+            "samples": 4,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 1,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": false,
+            "report": "local-download-retry-20261126-065358/report.json"
+        },
+        {
+            "directory": "local-vulkan-20261126-071133",
+            "startedAtUtc": "2026-11-26T07:11:40.571Z",
+            "endedAtUtc": "2026-11-26T07:17:12.453Z",
+            "elapsedMs": 331882,
+            "samples": 6,
+            "activeSessionSamples": 5,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 1,
+            "missingCheckpointsHours": [
+                1
+            ],
+            "automatedRecorderChecksPassed": false,
+            "report": "local-vulkan-20261126-071133/report.json"
+        },
+        {
+            "directory": "mistral-fixture-refresh-20261126-070243",
+            "startedAtUtc": "2026-11-26T07:02:50.914Z",
+            "endedAtUtc": "2026-11-26T07:07:07.791Z",
+            "elapsedMs": 256877,
+            "samples": 5,
+            "activeSessionSamples": 4,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "mistral-fixture-refresh-20261126-070243/report.json"
+        },
+        {
+            "directory": "mistral-hosted-20261126-065712",
+            "startedAtUtc": "2026-11-26T06:57:35.819Z",
+            "endedAtUtc": "2026-11-26T07:02:25.789Z",
+            "elapsedMs": 289970,
+            "samples": 5,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 1,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": false,
+            "report": "mistral-hosted-20261126-065712/report.json"
+        },
+        {
+            "directory": "mistral-win11-20261126-063744",
+            "startedAtUtc": "2026-11-26T06:37:55.192Z",
+            "endedAtUtc": "2026-11-26T06:38:45.061Z",
+            "elapsedMs": 49869,
+            "samples": 1,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "mistral-win11-20261126-063744/report.json"
+        },
+        {
+            "directory": "win11-launch-20261126-063448",
+            "startedAtUtc": "2026-11-26T06:35:00.588Z",
+            "endedAtUtc": "2026-11-26T06:36:20.999Z",
+            "elapsedMs": 80411,
+            "samples": 2,
+            "activeSessionSamples": 0,
+            "fatalElectronEvents": 0,
+            "reportMinimumHours": 0,
+            "missingCheckpointsHours": [],
+            "automatedRecorderChecksPassed": true,
+            "report": "win11-launch-20261126-063448/report.json"
+        }
+    ],
+    "unresolvedObservations": [
+        {
+            "runs": [
+                "local-download-retry-20261126-065358",
+                "mistral-hosted-20261126-065712"
+            ],
+            "kind": "Electron GPU child-process crash",
+            "utcTimestamps": [
+                "2026-11-26T06:56:19.627Z",
+                "2026-11-26T06:59:35.862Z"
+            ],
+            "elapsedMs": [
+                119955,
+                120043
+            ],
+            "exitCode": -2147483645,
+            "result": "Both attempts finalized. Available recorder and Windows events do not establish the crash trigger."
+        },
+        {
+            "run": "local-vulkan-20261126-071133",
+            "kind": "Windows Error Reporting RADAR_PRE_LEAK_64 for llama-server.exe",
+            "utcTimestamp": "2026-11-26T07:12:40.532Z",
+            "result": "The native process continued through the test and exited after session shutdown. The one-hour resource trend is unavailable."
+        }
+    ],
+    "scenarios": [
+        {
+            "id": "win10-launch",
+            "result": "Blocked",
+            "reason": "No Windows 10 22H2 x64 physical PC was available.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": null,
+            "windowsBuild": null,
+            "utcTimestamp": "2026-11-26T08:52:38.165Z",
+            "evidence": [
+                "Workstation inventory",
+                "Operator confirmed the required PC was unavailable."
+            ]
+        },
+        {
+            "id": "win11-launch",
+            "result": "Blocked",
+            "reason": "Portable launch, live session, shutdown, and a synthetic History file were verified. No matching History entry was reopened in the app, and no dedicated Windows 11 acceptance run met the matrix's 15-minute window.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:07:07.791Z",
+            "evidence": [
+                "win11-launch-20261126-063448",
+                "groq-win11-20261126-063908",
+                "mistral-fixture-refresh-20261126-070243"
+            ]
+        },
+        {
+            "id": "gemini-live-8h",
+            "result": "Fail",
+            "reason": "The saved key established a Live connection. Analyze Screen returned a visible error in more than one attempt. The operator reported HTTP 503 from Details. The longest recorder run lasted 514.618 seconds. Typed-answer continuity and the 1h, 4h, and 8h checkpoints were unverified when testing ended.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T06:55:10.691Z",
+            "evidence": [
+                "gemini-live-20261126-064458",
+                "gemini-diagnostic-20261126-064628"
+            ]
+        },
+        {
+            "id": "groq-1h",
+            "result": "Blocked",
+            "reason": "The saved key accepted synthetic speech and the run saved matching transcription and an answer. A typed draft remained unsent and screen analysis success was unverified. The 318.665-second run ended before its one-hour checkpoint, and the workstation was unavailable for a new one-hour run.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T06:44:34.786Z",
+            "evidence": [
+                "groq-win11-20261126-063908"
+            ]
+        },
+        {
+            "id": "local-cpu-1h",
+            "result": "Blocked",
+            "reason": "Cached CPU startup in app Offline mode and synthetic transcription were observed while the laptop still had network access. Screen analysis showed an error and typed inference remained unverified. The disconnect was called off to preserve remote access. The active preflight lasted 247.203 seconds and native processes terminated. The laptop was unavailable for a one-hour run.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:11:18.331Z",
+            "evidence": [
+                "local-cpu-offline-20261126-070304",
+                "local-cpu-disconnected-20261126-070757",
+                "local-cpu-disconnected-20261126-070757/network-state.jsonl"
+            ]
+        },
+        {
+            "id": "local-vulkan-1h",
+            "result": "Fail",
+            "reason": "The Vulkan binary and modules loaded, with dedicated GPU memory allocation and matching synthetic transcription. Analyze Screen returned an error and no screen answer was saved. The error detail and typed inference were unverified. The run ended after 331.882 seconds at the close of testing without the one-hour checkpoint. Both native processes terminated.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:17:12.453Z",
+            "evidence": [
+                "local-vulkan-20261126-071133",
+                "Native process modules and Windows GPU Process Memory counters"
+            ]
+        },
+        {
+            "id": "audio-modes",
+            "result": "Blocked",
+            "reason": "Speaker-only loopback produced matching synthetic transcription. Microphone-only acquired the physical microphone with system capture off, but playback through the speaker produced no matching microphone transcript. Mixed mode had not run when the operator ended testing. No detachable active audio device was available for removal and reacquisition.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:16:46.61Z",
+            "evidence": [
+                "groq-win11-20261126-063908",
+                "local-cpu-offline-20261126-070304",
+                "audio-mic-only-20261126-071444",
+                "Operator confirmed detachable audio hardware was unavailable."
+            ]
+        },
+        {
+            "id": "network-interruption",
+            "result": "Blocked",
+            "reason": "At least one physical route stayed up throughout the coordinated preflight. Full disconnection was called off to preserve remote access. Recovery and duplicate checks for Gemini Live and the HTTP provider could not be evaluated.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:11:18.331Z",
+            "evidence": [
+                "gemini-diagnostic-20261126-064628",
+                "gemini-diagnostic-20261126-064628/network-link-observations.jsonl",
+                "local-cpu-disconnected-20261126-070757/network-state.jsonl"
+            ]
+        },
+        {
+            "id": "sleep-wake",
+            "result": "Blocked",
+            "reason": "The operator reported sleep, wake, lock, and unlock. Neither the app recorder nor the Windows Kernel-Power query returned corresponding events for the test interval. The presence of a ready sample afterward was insufficient to verify the required transitions.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T06:55:10.691Z",
+            "evidence": [
+                "gemini-diagnostic-20261126-064628/events.jsonl",
+                "gemini-diagnostic-20261126-064628/samples.jsonl",
+                "Windows Kernel-Power IDs 42, 107, 506, and 507 queried"
+            ]
+        },
+        {
+            "id": "multi-monitor",
+            "result": "Blocked",
+            "reason": "Windows enumerated one integrated display, and a second physical monitor was unavailable. Retargeting between two displays and unplugging a pinned secondary were untested.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T08:52:38.165Z",
+            "evidence": [
+                "Windows monitor inventory",
+                "Operator confirmed a second display was unavailable."
+            ]
+        },
+        {
+            "id": "region-dpi",
+            "result": "Blocked",
+            "reason": "The recorder confirmed the physical display was at 125%. The protected selector required manual selection and no pixel-matching capture was completed at 100%, 125%, 150%, or 200% before testing ended.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:17:12.453Z",
+            "evidence": [
+                "win11-launch-20261126-063448/metadata.json",
+                "local-vulkan-20261126-071133"
+            ]
+        },
+        {
+            "id": "content-protection",
+            "result": "Blocked",
+            "reason": "The protected HUD was excluded by the Windows automation capture. No signed-in meeting or screen-sharing application was available for the required private sharing test.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T06:44:34.786Z",
+            "evidence": [
+                "Windows capture observation",
+                "Operator confirmed a sharing app was unavailable."
+            ]
+        },
+        {
+            "id": "quota-throttle",
+            "result": "Blocked",
+            "reason": "Mistral loaded a user-entered saved key and started screen-only capture. Its screenshot request ended with an error without a verified HTTP category, and the typed draft remained unsent. No eligible real or provider-controlled quota condition was observed for Gemini, Groq, or Mistral. The separately reported Gemini HTTP 503 does not establish a quota limit.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T07:07:07.791Z",
+            "evidence": [
+                "gemini-diagnostic-20261126-064628",
+                "groq-win11-20261126-063908",
+                "mistral-win11-20261126-063744",
+                "mistral-hosted-20261126-065712",
+                "mistral-fixture-refresh-20261126-070243"
+            ]
+        },
+        {
+            "id": "download-interruption",
+            "result": "Pass",
+            "reason": "In an isolated profile, interruption at 23% installed no Whisper model. On retry the app rejected a 4 KiB file placed at the final path, downloaded the model again and installed a file matching the pinned SHA-256. No Whisper partial files remained. The later GPU crash is an unresolved runtime finding.",
+            "sourceCommit": "7a57ca48e2b92b84b24b0aa111f64adc20d87123",
+            "portableExeSha256": "e192fe986e224c01d3801ba371931571d1572a65995957f75a1d6732fd0175aa",
+            "device": "ASUS TUF Gaming F15 FX507ZE_FX577ZE",
+            "windowsBuild": "Windows 11 Pro 26H2 x64, 26300.10075",
+            "utcTimestamp": "2026-11-26T06:57:40.798Z",
+            "evidence": [
+                "local-download-interruption-20261126-064936",
+                "local-download-retry-20261126-065358",
+                "Get-FileHash verification at 2026-11-26T06:55:11.327Z",
+                "Pinned checksum and checksum-before-rename install order in src/utils/native-ai-runtime.js"
+            ]
+        }
+    ],
+    "totals": {
+        "Pass": 1,
+        "Fail": 2,
+        "Blocked": 11,
+        "Not applicable": 0
+    }
+}
