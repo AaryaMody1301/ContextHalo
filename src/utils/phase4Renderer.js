@@ -1,4 +1,5 @@
 const ipcRenderer = window.electronAPI;
+const SESSION_PICKER_LIMIT = 80;
 
 const state = {
     tab: null,
@@ -295,7 +296,7 @@ async function renderPractice(app, body) {
         sourceSelect.append(option);
     }
     try { await loadSessions(); } catch { setup.append(el('p', 'phase4-error', 'Saved sessions could not be loaded. Close and reopen Practice to retry. Your knowledge library remains available.')); }
-    for (const session of state.sessions.slice(0, 60)) {
+    for (const session of state.sessions.slice(0, SESSION_PICKER_LIMIT)) {
         const option = el('option', '', `Session · ${session.title || session.profile || 'Session'} · ${new Date(session.createdAt || Number(session.sessionId)).toLocaleDateString()}`);
         option.value = `session:${session.sessionId}`;
         sourceSelect.append(option);
@@ -308,20 +309,24 @@ async function renderPractice(app, body) {
 
     const progress = el('div', 'phase4-card');
     progress.append(el('div', 'phase4-card-title', 'Practice history'));
-    const historyText = el('div', 'phase4-muted', 'Practice history is stored locally.');
+    const historyText = el('div', 'phase4-muted', 'Loading practice history…');
     progress.append(historyText);
-    try {
-        const history = await invoke('practice:history');
-        const attempts = history.data || [];
-        if (attempts.length) {
+    const refreshHistory = async () => {
+        try {
+            const { data: attempts = [] } = await invoke('practice:history');
             const recent = attempts.filter(item => item.type !== 'recall' && Number.isFinite(item.score)).slice(0, 25);
-            historyText.textContent = `${attempts.length} saved attempts.`;
+            historyText.textContent = attempts.length
+                ? `${attempts.length} saved ${attempts.length === 1 ? 'attempt' : 'attempts'}.`
+                : 'No practice attempts saved yet.';
             if (recent.length) {
                 const average = Math.round(recent.reduce((sum, item) => sum + item.score, 0) / recent.length * 100);
                 historyText.textContent += ` ${average}% across the latest ${recent.length} scored answers.`;
             }
+        } catch {
+            historyText.textContent = 'Practice history could not be loaded. Reopen Practice to retry.';
         }
-    } catch { historyText.textContent = 'Practice history could not be loaded. Reopen Practice to retry; existing attempts are unchanged.'; }
+    };
+    void refreshHistory();
     grid.append(setup, progress);
     body.append(grid);
 
@@ -374,6 +379,7 @@ async function renderPractice(app, body) {
                 feedback.style.display = 'block';
                 const score = typeof result.data.score === 'number' ? `${Math.round(result.data.score * 100)}% · ` : '';
                 feedback.textContent = `${score}${result.data.feedback}\n\nReference: ${result.data.reference}`;
+                await refreshHistory();
             } catch (error) {
                 feedback.className = 'phase4-feedback retry';
                 feedback.style.display = 'block';
@@ -393,11 +399,13 @@ async function renderPractice(app, body) {
         practiceArea.replaceChildren(el('div', 'phase4-empty', 'Building practice set…'));
         try {
             const value = sourceSelect.value;
+            if (!value) throw new Error('The saved session is unavailable. Choose a practice source.');
             const options = value.startsWith('session:')
                 ? { sourceType: 'session', sessionId: value.slice(8), count: 6 }
                 : value.startsWith('track:') ? { sourceType: 'track', trackId: value.slice(6) }
                     : { sourceType: 'knowledge', count: 6 };
             const result = await invoke('practice:generate', options);
+            if (state.tab !== 'practice' || !body.isConnected) return;
             state.practice = result.data;
             state.practiceIndex = 0;
             state.practiceSource = options.sourceType;
@@ -409,8 +417,9 @@ async function renderPractice(app, body) {
             }
         } catch (error) {
             practiceArea.replaceChildren(el('div', 'phase4-empty', error.message));
+        } finally {
+            generate.disabled = false;
         }
-        generate.disabled = false;
     });
 
     drawQuestion();
@@ -464,6 +473,10 @@ async function renderReview(app, body) {
         practice.disabled = !review.practiceReady;
         practice.style.marginTop = '14px';
         practice.addEventListener('click', () => {
+            if (state.practice?.sourceType !== 'session' || state.practice.sourceId !== review.sessionId) {
+                state.practice = null;
+                state.practiceIndex = 0;
+            }
             state.practiceSource = 'session';
             state.practiceSessionId = review.sessionId;
             openPanel(app, 'practice');
@@ -475,7 +488,7 @@ async function renderReview(app, body) {
         await loadSessions();
         sessionList.replaceChildren();
         if (!state.sessions.length) sessionList.append(el('div', 'phase4-empty', 'No saved sessions yet.'));
-        for (const session of state.sessions.slice(0, 80)) {
+        for (const session of state.sessions.slice(0, SESSION_PICKER_LIMIT)) {
             const button = el('button', 'phase4-source-button');
             button.style.width = '100%';
             button.style.textAlign = 'left';

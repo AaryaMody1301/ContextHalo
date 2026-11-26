@@ -23,6 +23,7 @@
     ],
     "privacy": "metadata only; no prompts, transcripts, audio, screenshots, API keys, file paths, or provider response bodies"
   },
+  "recordForEachScenario": ["source commit", "portable EXE SHA-256", "Windows build", "device", "UTC timestamp", "result", "evidence or blocked reason"],
   "requiredScenarios": [
     {
       "id": "win10-launch",
@@ -105,13 +106,13 @@
     {
       "id": "local-cpu-1h",
       "category": "local-ai",
-      "target": "Local AI CPU fallback",
+      "target": "Local AI CPU runner with verified cached models",
       "durationHours": 1,
       "checkpointsHours": [
         1
       ],
       "actions": [
-        "load model",
+        "select CPU only and Offline, disconnect networking, and start with verified cached runners and models",
         "transcribe",
         "typed inference",
         "screen inference",
@@ -203,7 +204,8 @@
         "use Active display capture",
         "move ContextHalo between displays",
         "analyze each display",
-        "confirm source invalidation/retargeting"
+        "confirm source invalidation/retargeting",
+        "pin a secondary display, unplug it, and verify capture pauses until the same display returns"
       ],
       "evidence": [
         "manual source/answer result"
@@ -242,11 +244,12 @@
     {
       "id": "quota-throttle",
       "category": "provider-recovery",
-      "target": "Gemini and Groq account limits when safely reproducible",
+      "target": "Gemini, Groq, and Mistral account limits when safely reproducible",
       "actions": [
         "observe real 429/quota condition or use provider-controlled low quota",
         "verify bounded retry/cooldown",
-        "verify no infinite retry loop"
+        "verify no infinite retry loop",
+        "exercise Mistral text and screenshot requests on an eligible account and record observed quota behavior without forcing paid usage"
       ],
       "evidence": [
         "status code/category only",
