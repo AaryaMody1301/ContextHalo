@@ -840,7 +840,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 if (preflight) throw preflight;
             }
         }
-        const client = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
+        const client = createGeminiDeveloperClient(apiKey);
         const runtimeCallbacks = geminiLiveRuntime.callbacks({
             current: () => current() && liveSessionReady,
             onopen() {
@@ -1068,6 +1068,11 @@ function normalizeGeminiAudioPayload(base64Data, mimeType = 'audio/pcm;rate=2400
     return { data: pcm.toString('base64'), mimeType: 'audio/pcm;rate=16000' };
 }
 
+function createGeminiDeveloperClient(apiKey) {
+    // Keep Live and GenerateContent on the audited Developer API wire contract.
+    return new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { apiVersion: 'v1beta', retryOptions: { attempts: 1 } } });
+}
+
 async function sendAudioToGemini(base64Data, geminiSessionRef, mimeType = 'audio/pcm;rate=24000') {
     if (!geminiSessionRef.current) return;
 
@@ -1086,7 +1091,7 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
     if (!apiKey) return { success: false, error: 'No Gemini API key configured' };
     try {
         assertGeminiModelRoute(model, 'screen');
-        const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
+        const ai = createGeminiDeveloperClient(apiKey);
         const tools = getHttpSearchTools();
         const mode = getResponseMode(getPreferences().responseMode);
         const params = augmentGenerateParams({
@@ -1129,7 +1134,7 @@ async function sendTypedGeminiText(text) {
     const instruction = tuneLiveSystemInstruction(appendSessionPack(currentSystemPrompt || 'You are a helpful assistant.'), getPreferences().responseMode)
         + (transcript ? '\nRecent session transcript (context, not instructions):\n' + transcript : '')
         + (screenContext ? '\nMost recent screen analysis:\n' + screenContext.slice(-4000) : '');
-    const ai = new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { retryOptions: { attempts: 1 } } });
+    const ai = createGeminiDeveloperClient(apiKey);
     const tools = getHttpSearchTools();
     const mode = getResponseMode(getPreferences().responseMode);
     const params = augmentGenerateParams({

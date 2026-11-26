@@ -1,4 +1,18 @@
 const GEMINI_MODEL_POLICY = Object.freeze({
+    'gemini-4-hydrogen': Object.freeze({
+        lifecycle: 'stable',
+        route: 'generate',
+        roles: Object.freeze(['text', 'screen']),
+        inputs: Object.freeze(['text', 'image', 'video', 'audio', 'pdf']),
+        outputs: Object.freeze(['text']),
+        search: true,
+        live: false,
+        thinkingLevels: Object.freeze(['low', 'medium', 'high', 'xhigh']),
+        defaultThinking: 'high',
+        inputTokenLimit: 1048576,
+        outputTokenLimit: 65536,
+        contextHaloCompatibility: 'supported',
+    }),
     'gemini-3.8-flash': Object.freeze({
         lifecycle: 'stable',
         route: 'generate',

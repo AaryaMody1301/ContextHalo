@@ -27,7 +27,7 @@ test('Phase 9 readiness requires complete evidence for the exact EXE and source 
     const sourceCommit = 'a'.repeat(40);
     const portableExeSha256 = 'b'.repeat(64);
     const expected = { sourceCommit, portableExeSha256 };
-    const matrix = { requiredScenarios: [{ id: 'launch' }, { id: 'soak', durationHours: 1 }] };
+    const matrix = { requiredScenarios: [{ id: 'launch' }, { id: 'soak', durationHours: 1, checkpointsHours: [1] }] };
     const evidence = (id, reference) => ({
         id, ...expected, result: 'Pass', reason: 'Reviewed physical result', evidence: [reference],
         utcTimestamp: '2026-11-26T09:02:00Z', device: 'Physical PC', windowsBuild: 'Windows 11 build 26300',
@@ -38,7 +38,7 @@ test('Phase 9 readiness requires complete evidence for the exact EXE and source 
         scenarios: [evidence('launch', 'launch report'), evidence('soak', 'recorded soak')],
         runs: [{
             ...expected, directory: 'recorded soak', startedAtUtc: '2026-11-26T08:01:00Z', endedAtUtc: '2026-11-26T09:01:00Z',
-            elapsedMs: 3600000, reportMinimumHours: 1, missingCheckpointsHours: [],
+            elapsedMs: 3600000, reportMinimumHours: 1, verifiedCheckpointsHours: [1], missingCheckpointsHours: [],
             activeSessionSamples: 59, fatalElectronEvents: 0, automatedRecorderChecksPassed: true,
         }],
     };
@@ -55,7 +55,8 @@ test('Phase 9 readiness requires complete evidence for the exact EXE and source 
     }
     const duplicate = { ...report, scenarios: [...report.scenarios, report.scenarios[0]] };
     assert.equal(evaluate(duplicate).complete, false);
-    for (const change of [{ elapsedMs: 1 }, { missingCheckpointsHours: [1] }, { fatalElectronEvents: 1 }, { activeSessionSamples: 0 }, { sourceCommit: 'c'.repeat(40) }]) {
+    for (const change of [{ elapsedMs: 1 }, { verifiedCheckpointsHours: [] }, { missingCheckpointsHours: [1] },
+        { fatalElectronEvents: 1 }, { activeSessionSamples: 0 }, { sourceCommit: 'c'.repeat(40) }]) {
         const invalid = { ...report, runs: [{ ...report.runs[0], ...change }] };
         assert.equal(evaluate(invalid).complete, false);
     }

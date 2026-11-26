@@ -3,6 +3,11 @@ const assert = require('node:assert/strict');
 
 const { parseJsonLines, buildReliabilityReport, markdown } = require('../scripts/reliability-acceptance-report');
 
+function sample(minute) {
+    const elapsedMs = minute * 60_000;
+    return { at: new Date(Date.UTC(2026, 8, 22) + elapsedMs).toISOString(), elapsedMs, renderer: { available: true, sessionActive: true } };
+}
+
 function fixture(overrides = {}) {
     const metadata = {
         appVersion: '0.8.0-portable.999',
@@ -17,7 +22,7 @@ function fixture(overrides = {}) {
         sampleCount: 61,
         endedAt: '2026-09-22T01:00:00.000Z',
         checkpoints: {
-            [60 * 60_000]: { elapsedMs: 60 * 60_000 },
+            [60 * 60_000]: sample(60),
         },
         eventCounts: { 'acceptance-start': 1, checkpoint: 1, 'acceptance-stop': 1 },
         fatalEvents: [],
@@ -38,10 +43,7 @@ function fixture(overrides = {}) {
         },
         ...overrides.summary,
     };
-    const samples = [
-        { renderer: { available: true, sessionActive: true, providerState: 'ready', captureState: 'ready' } },
-        ...Array.from({ length: 60 }, () => ({ renderer: { available: true, sessionActive: true } })),
-    ];
+    const samples = Array.from({ length: 61 }, (_, minute) => sample(minute));
     return { metadata, summary, samples: overrides.samples || samples };
 }
 
@@ -54,6 +56,7 @@ test('one-hour evidence passes only the automated resource/lifecycle checks', ()
     assert.equal(report.automatedEvidencePass, true);
     assert.equal(report.checks.durationMet, true);
     assert.equal(report.checks.activeSessionObserved, true);
+    assert.deepEqual(report.verifiedCheckpointsHours, [1]);
     assert.equal(report.checks.noFatalElectronEvents, true);
     assert.equal(report.resources.workingSetGrowthMb, 0.2);
     assert.ok(report.manualReviewStillRequired.includes('sleep/wake recovery'));
@@ -87,12 +90,26 @@ test('four/eight hour gates require their corresponding recorder checkpoints', (
             durationMs: 4 * 60 * 60_000 + 1,
             sampleCount: 241,
             checkpoints: {
-                [60 * 60_000]: {},
-                [4 * 60 * 60_000]: {},
+                [60 * 60_000]: sample(60),
+                [4 * 60 * 60_000]: sample(240),
             },
         },
-        samples: Array.from({ length: 241 }, () => ({ renderer: { available: true, sessionActive: true } })),
+        samples: Array.from({ length: 241 }, (_, minute) => sample(minute)),
     });
     assert.equal(buildReliabilityReport({ ...four, minimumHours: 4 }).checks.checkpointsMet, true);
     assert.equal(buildReliabilityReport({ ...four, minimumHours: 8 }).checks.durationMet, false);
+});
+
+test('an elapsed timer without an active checkpoint or sustained activity cannot pass a soak', () => {
+    const base = fixture();
+    base.samples.at(-1).renderer.sessionActive = false;
+    const inactiveCheckpoint = buildReliabilityReport(base);
+    assert.deepEqual(inactiveCheckpoint.missingCheckpoints, [1]);
+    assert.equal(inactiveCheckpoint.automatedEvidencePass, false);
+
+    base.samples = [sample(60)];
+    const singleSample = buildReliabilityReport(base);
+    assert.deepEqual(singleSample.verifiedCheckpointsHours, [1]);
+    assert.equal(singleSample.checks.activeSessionObserved, false);
+    assert.equal(singleSample.automatedEvidencePass, false);
 });

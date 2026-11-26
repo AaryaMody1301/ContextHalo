@@ -14,21 +14,20 @@ const runFile = promisify(execFile);
 
 const WINDOWS_X64_RELEASES = Object.freeze({
     llama: Object.freeze({
-        tag: 'b10964',
-        commit: 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4',
-        archive: 'llama-b10964-bin-win-cpu-x64.zip',
+        tag: 'b12774',
+        commit: '171527522610996f5f0acf12334e185156ca8f44',
+        archive: 'llama-b12774-bin-win-cpu-x64.zip',
         executable: 'llama-server.exe',
-        sha256: '917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7',
-        url: 'https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-cpu-x64.zip',
+        sha256: '44b70b20f3374eec3d16a002beceefef33cc3565678caeb3eea5f6cacba61836',
+        url: 'https://github.com/ggml-org/llama.cpp/releases/download/b12774/llama-b12774-bin-win-cpu-x64.zip',
     }),
     whisper: Object.freeze({
-        tag: 'b5130',
-        stableVersion: 'v1.9.4',
-        commit: '927cfce34f31707e17f2bff35c349632fb9e2c3a',
+        tag: 'b5907',
+        commit: '5eaee0cc9024eb9e9a99469199920c8b7f5cb9ec',
         archive: 'whisper-bin-x64.zip',
         executable: 'whisper-server.exe',
-        sha256: 'f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c',
-        url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip',
+        sha256: 'ecca07b277d943e9b9f4712856a144b857271a6b333104e511e1988e80db582b',
+        url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5907/whisper-bin-x64.zip',
     }),
 });
 
@@ -230,7 +229,9 @@ async function ensureNativeBinary(type, onProgress, signal, { offline = false } 
     const release = WINDOWS_X64_RELEASES[type];
     if (!release) throw new Error(`Unsupported Local AI runtime: ${type}`);
     const binariesDirectory = getBinariesDirectory();
-    const archivePath = path.join(binariesDirectory, release.archive);
+    // The upstream Whisper ZIP name is reused across release tags.
+    const archiveName = type === 'whisper' ? `whisper-${release.tag}-bin-x64.zip` : release.archive;
+    const archivePath = path.join(binariesDirectory, archiveName);
     const runtimeDirectory = path.join(binariesDirectory, `${type}-${release.tag}-cpu`);
     const existing = installedRuntimeMatches(runtimeDirectory, release);
     if (existing && await fileMatchesChecksum(archivePath, release.sha256, signal)) return existing;

@@ -433,9 +433,9 @@ async function startLlamaServer(executablePath, modelPath, projectorPath, signal
         modelPath,
         '--mmproj',
         projectorPath,
+        '--cache-reuse',
+        '256',
     ];
-    // Both audited b10964 Windows runners share the same llama.cpp CLI contract.
-    if (/llama-b10964/i.test(executablePath)) argumentsList.push('--cache-reuse', '256');
 
     if (cpuOnly) argumentsList.push('--n-gpu-layers', '0');
     llamaBaseUrl = `http://127.0.0.1:${port}`;

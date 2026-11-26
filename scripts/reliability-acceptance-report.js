@@ -27,14 +27,20 @@ function buildReliabilityReport({ metadata, summary, samples, minimumHours = 1 }
     const fatalEvents = Array.isArray(summary?.fatalEvents) ? summary.fatalEvents : [];
 
     const requiredCheckpointHours = [1, 4, 8].filter(hours => hours <= minimumHours);
-    const checkpointHours = new Set(Object.keys(summary?.checkpoints || {}).map(value => Number(value) / 3_600_000));
-    const missingCheckpoints = requiredCheckpointHours.filter(hours => !checkpointHours.has(hours));
+    const verifiedCheckpointsHours = requiredCheckpointHours.filter(hours => {
+        const threshold = hours * 3_600_000;
+        const checkpoint = summary?.checkpoints?.[threshold];
+        return Number.isSafeInteger(checkpoint?.elapsedMs) && checkpoint.elapsedMs >= threshold
+            && checkpoint.elapsedMs <= durationMs && typeof checkpoint.at === 'string'
+            && activeSessionSamples.some(sample => sample.at === checkpoint.at && sample.elapsedMs === checkpoint.elapsedMs);
+    });
+    const missingCheckpoints = requiredCheckpointHours.filter(hours => !verifiedCheckpointsHours.includes(hours));
 
     const checks = {
         durationMet: durationMs >= minimumMs,
         sampleCoverageMet: sampleCoverage >= 0.75,
         rendererObserved: rendererSamples.length > 0,
-        activeSessionObserved: minimumHours <= 0 || activeSessionSamples.length > 0,
+        activeSessionObserved: minimumHours <= 0 || activeSessionSamples.length >= Math.ceil(expectedSamples * 0.75),
         noFatalElectronEvents: fatalEvents.length === 0,
         checkpointsMet: missingCheckpoints.length === 0,
         finalized: Boolean(summary?.endedAt),
@@ -56,6 +62,7 @@ function buildReliabilityReport({ metadata, summary, samples, minimumHours = 1 }
         activeSessionSamples: activeSessionSamples.length,
         eventCounts: summary?.eventCounts || {},
         fatalEvents,
+        verifiedCheckpointsHours,
         missingCheckpoints,
         resources: {
             firstWorkingSetMb: mbFromKb(summary?.first?.totalWorkingSetKb),

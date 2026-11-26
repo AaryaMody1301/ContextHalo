@@ -22,6 +22,7 @@ function hasText(value) {
 function hasTimedEvidence(scenario, evidence, runs, candidate) {
     const minimumHours = scenario.durationHours || 0;
     const minimumMs = minimumHours ? minimumHours * 3600000 : scenario.durationMinutes * 60000;
+    const requiredCheckpoints = scenario.checkpointsHours || [];
     return evidence.evidence.some(reference => {
         const run = runs.get(reference);
         if (!run) return false;
@@ -36,7 +37,9 @@ function hasTimedEvidence(scenario, evidence, runs, candidate) {
             && Number.isSafeInteger(run.reportMinimumHours) && run.reportMinimumHours >= minimumHours
             && Number.isSafeInteger(run.activeSessionSamples) && run.activeSessionSamples > 0
             && run.fatalElectronEvents === 0
-            && Array.isArray(run.missingCheckpointsHours) && run.missingCheckpointsHours.length === 0;
+            && Array.isArray(run.missingCheckpointsHours) && run.missingCheckpointsHours.length === 0
+            && (!requiredCheckpoints.length || (Array.isArray(run.verifiedCheckpointsHours)
+                && requiredCheckpoints.every(hours => run.verifiedCheckpointsHours.includes(hours))));
     });
 }
 

@@ -5,6 +5,7 @@ const { once } = require('node:events');
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { geminiFixture } = require('./helpers/gemini-fixture');
 const transport = require('../src/utils/windowsProviderTransport');
+const { GEMINI_SCREEN_MODEL_IDS } = require('../src/utils/geminiModelPolicy');
 
 for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS', 'SAFETY', 'missing-terminal', 'stop-before-usage']) {
     test(`real SDK screen stream handles ${scenario}`, { timeout: 7000 }, async t => {
@@ -79,3 +80,45 @@ for (const scenario of ['503-before-text', '503-after-text', '401', 'MAX_TOKENS'
         }
     });
 }
+
+test('the installed SDK handles Analyze Screen for every selectable Gemini vision model', async t => {
+    const originalFetch = global.fetch;
+    const requests = [];
+    transport.setFetchImplementationForTests(async (input, init) => {
+        requests.push({ url: new URL(input), body: JSON.parse(init.body) });
+        const chunk = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Synthetic visual answer' }] } }] };
+        return new Response('data: ' + JSON.stringify(chunk) + '\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    });
+    global.fetch = transport.boundedFetch;
+    t.after(() => {
+        global.fetch = originalFetch;
+        transport.setFetchImplementationForTests(originalFetch);
+    });
+    class WireAI extends GoogleGenAI {
+        constructor(options) {
+            super(options);
+            this.live = { connect: async () => ({ close() {}, sendRealtimeInput() {} }) };
+        }
+    }
+    const jpeg = Buffer.alloc(1100).toString('base64');
+    for (const model of GEMINI_SCREEN_MODEL_IDS) {
+        const fixture = geminiFixture({ model, search: false, sdk: { GoogleGenAI: WireAI, Modality } });
+        try {
+            assert.equal((await fixture.start()).success, true, model);
+            const result = await fixture.call('send-image-content', { data: jpeg, mimeType: 'image/jpeg', prompt: 'Describe this test fixture.' });
+            assert.equal(result.success, true, result.error);
+            assert.equal(result.model, model);
+            const { url, body } = requests.at(-1);
+            assert.equal(url.pathname, '/v1beta/models/' + model + ':streamGenerateContent');
+            assert.deepEqual(body.contents[0].parts.find(part => part.inlineData)?.inlineData, { mimeType: 'image/jpeg', data: jpeg });
+            if (model === 'gemini-4-hydrogen') {
+                assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'low');
+                for (const field of ['temperature', 'topP', 'topK']) assert.equal(body.generationConfig[field], undefined);
+            }
+            assert.equal(fixture.events.filter(([channel]) => channel === 'save-screen-analysis').length, 1);
+        } finally {
+            fixture.close();
+        }
+    }
+    assert.equal(requests.length, GEMINI_SCREEN_MODEL_IDS.length);
+});

@@ -143,11 +143,11 @@ test('Local AI HTTP and CLI fields match the audited server contracts where prov
     assert.match(local, /\/inference/);
     assert.match(local, /chat_template_kwargs:\s*\{\s*enable_thinking:\s*false,?\s*\}/);
     assert.match(local, /cache_prompt:\s*true/);
-    assert.match(local, /argumentsList\.push\('--cache-reuse', '256'\)/);
+    assert.match(local, /'--cache-reuse',\s*'256'/);
     assert.match(local, /'--host', '127\.0\.0\.1'/);
     assert.match(local, /['"]--alias['"][\s\S]{0,80}['"]local['"]/);
     assert.match(local, /'--mmproj'/);
-    assert.match(windowsRuntime, /tag:\s*'b10964'/);
+    assert.match(windowsRuntime, /tag:\s*'b12774'/);
 });
 
 test('typed cancellation validates epoch and suppresses late provider answers', async t => {

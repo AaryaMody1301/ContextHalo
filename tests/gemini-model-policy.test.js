@@ -12,13 +12,15 @@ const {
     screenThinkingConfigForModel,
 } = require('../src/utils/geminiModelPolicy');
 
-test('Gemini model policy matches the audited October 2026 stable model families', () => {
+test('Gemini policy covers current stable text, screen and Live model families', () => {
     assert.deepEqual(GEMINI_SCREEN_MODEL_IDS.filter(id => geminiModelPolicy(id).lifecycle === 'stable'), [
+        'gemini-4-hydrogen',
         'gemini-3.8-flash',
         'gemini-3.6-flash',
         'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
     ]);
+    assert.deepEqual(geminiModelPolicy('gemini-4-hydrogen').thinkingLevels, ['low', 'medium', 'high', 'xhigh']);
     assert.deepEqual(GEMINI_LIVE_SELECTABLE_IDS, ['gemini-3.8-live']);
     assert.deepEqual(GEMINI_LIVE_MAPPED_IDS, ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
 

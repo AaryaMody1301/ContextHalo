@@ -17,11 +17,12 @@ function classifyMistralFailure(error, operation, model = MISTRAL_MODEL) {
     const httpStatus = Number(error?.status) || null;
     const cancelled = error?.name === 'AbortError' && !/timeout|timed out/i.test(error.message || '');
     const category = cancelled ? 'cancelled' : httpStatus === 401 || httpStatus === 403 ? 'authentication'
-        : httpStatus === 429 ? 'rate-or-quota' : httpStatus === 400 ? 'invalid-configuration'
+        : httpStatus === 402 ? 'billing' : httpStatus === 429 ? 'rate-or-quota' : httpStatus === 400 ? 'invalid-configuration'
         : httpStatus === 404 ? 'model-unavailable' : error?.completionFailure ? 'generation-failed' : 'request-failed';
     const messages = {
         cancelled: 'Request cancelled.',
         authentication: 'Mistral rejected the credential or project permissions. Check your Mistral API key in provider settings.',
+        billing: 'Mistral requires payment for this request. Check your organization’s API access and included usage in Mistral Admin.',
         'rate-or-quota': 'Mistral rejected this request under an organization rate or usage limit. Check this model\'s limits and included monthly usage in Mistral Admin. A 429 alone does not identify the limit. If a small request still fails with unused allowance and positive limits, contact Mistral support.',
         'invalid-configuration': 'Mistral rejected the request configuration. Review the question and image input.',
         'model-unavailable': 'The selected Mistral model is unavailable to this account. Check model access in Mistral Studio.',
