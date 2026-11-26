@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function loadClass(file, name) {
     const source = fs.readFileSync(file, 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class ', 'class ');
-    const context = { contextHaloAppStyles: '', LitElement: class { dispatchEvent() {} }, html: () => '', css: () => '', customElements: { define() {} }, window: {}, console, CustomEvent: class { constructor(type, init) { this.type=type; Object.assign(this, init); } }, expandQuickCommand: text => text === '/shorter' ? 'Make the previous answer shorter.' : null };
+    const context = { contextHalo: {}, contextHaloAppStyles: '', LitElement: class { dispatchEvent() {} }, html: () => '', css: () => '', customElements: { define() {} }, window: {}, console, AbortController, CustomEvent: class { constructor(type, init) { this.type=type; Object.assign(this, init); } }, expandQuickCommand: text => text === '/shorter' ? 'Make the previous answer shorter.' : null };
     if (file.endsWith('ContextHaloApp.js')) {
         const responseState = fs.readFileSync('src/components/app/responseStateRenderer.js', 'utf8').replace(/^export /gm, '');
         vm.runInNewContext(responseState, context);
@@ -59,6 +59,19 @@ test('Cancel message keeps the draft and does not cancel a concurrent screen req
     assert.equal((await pending).cancelled, true);
     assert.equal(cancelled, 1); assert.equal(screenCancelled, 0);
     assert.equal(input.value, '  question  '); assert.equal(view.sending, false);
+});
+test('cancelling a /screen request keeps the command draft and its cancellation outcome', async () => {
+    const { view, input } = composer(() => assert.fail('A screen command must not send typed text'));
+    input.value = '/screen';
+    view.onAnalyzeScreen = ({ signal }) => new Promise(resolve => {
+        signal.addEventListener('abort', () => resolve({ success: false, cancelled: true }), { once: true });
+    });
+    const pending = view.handleSendText();
+    await view.cancelMessage();
+    assert.equal((await pending).cancelled, true);
+    assert.equal(input.value, '/screen');
+    assert.match(view.sendError, /draft is unchanged/);
+    assert.equal(view.sending, false);
 });
 test('interleaved response streams update their own cards and preserve navigation', () => {
     const App=loadClass('src/components/app/ContextHaloApp.js','ContextHaloApp');

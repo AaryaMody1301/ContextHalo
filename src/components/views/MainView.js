@@ -1058,8 +1058,11 @@ export class MainView extends LitElement {
         const languageError = this._localLanguageError();
         if (languageError) { this.startError = languageError; this._setupOpen = true; return; }
         if (getContextState().captureSourceUnavailable) {
-            this.focusSessionSetting('capture');
-            return;
+            await refreshCaptureSources();
+            if (getContextState().captureSourceUnavailable) {
+                this.focusSessionSetting('capture');
+                return;
+            }
         }
         return this.onStart();
     }

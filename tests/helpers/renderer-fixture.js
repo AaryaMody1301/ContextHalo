@@ -66,6 +66,7 @@ function rendererFixture(options = {}) {
                 return {
                     play: async () => {}, pause() {}, readyState: 2, videoWidth: options.videoWidth || 1920, videoHeight: options.videoHeight || 1080, srcObject: null,
                     requestVideoFrameCallback(callback) {
+                        if (options.staticVideo) return 0;
                         const id = setTimeout(() => callback(Date.now(), { presentedFrames: ++presentedFrames, mediaTime: presentedFrames }), 0);
                         return id;
                     },
@@ -96,7 +97,7 @@ function rendererFixture(options = {}) {
             throw new Error('Unexpected element: ' + tag);
         },
     };
-    const scope = { structuredClone, window, document, AudioContext, AudioWorkletNode, AbortController, CustomEvent, Blob, URL, Uint8ClampedArray, console: { log() {}, warn() {}, error() {} },
+    const scope = { structuredClone, window, document, AudioContext, AudioWorkletNode, AbortController, AbortSignal, CustomEvent, Blob, URL, Uint8ClampedArray, console: { log() {}, warn() {}, error() {} },
         process: { platform: options.platform || 'win32' }, setTimeout, clearTimeout, setInterval, clearInterval,
         btoa: value => Buffer.from(value, 'binary').toString('base64'),
         navigator: { mediaDevices: {

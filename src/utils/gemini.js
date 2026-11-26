@@ -1506,9 +1506,9 @@ function setupGeminiIpcHandlers(geminiSessionRef, isErasing = () => false) {
         }
     });
 
-    register('cancel-screen-analysis', async () => {
-        cancelSessionRequests('screen');
-        require('./contextCaptureMain').cancelRegionSelection();
+    register('cancel-screen-analysis', async (_event, options) => {
+        if (options === undefined) require('./contextCaptureMain').cancelRegionSelection();
+        else cancelSessionRequests('screen', validateUserRequestContext(options).requestId);
         return { success: true };
     });
 

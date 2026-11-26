@@ -10,6 +10,26 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const closed = reason => params => { params.callbacks.onopen({}); params.callbacks.onclose({ code: 1011, reason }); return new Promise(() => {}); };
 const ready = () => ({ close() {}, sendRealtimeInput() {}, sendClientContent() {} });
 
+test('a delayed screenshot cancellation cannot cancel a newer request or act on a later session', async t => {
+    let notifyStart;
+    const started = new Promise(resolve => { notifyStart = resolve; });
+    const f = geminiFixture({ generate: params => {
+        notifyStart(params.config.abortSignal);
+        return new Promise(() => {});
+    } });
+    t.after(() => f.close());
+    await f.start('byok', { uiEpoch: 8 });
+    const current = { requestId: 'current-screen', uiEpoch: 8 };
+    const pending = f.call('send-image-content', { data: Buffer.alloc(1200).toString('base64'), prompt: 'Synthetic screen', request: current });
+    const signal = await started;
+    assert.equal((await f.call('cancel-screen-analysis', { requestId: 'old-screen', uiEpoch: 8 })).success, true);
+    assert.equal((await f.call('cancel-screen-analysis', { ...current, uiEpoch: 7 })).success, false);
+    assert.equal(signal.aborted, false);
+    assert.equal((await f.call('cancel-screen-analysis', current)).success, true);
+    assert.equal((await pending).cancelled, true);
+    assert.equal(signal.aborted, true);
+});
+
 for (const reason of ['Quota exceeded', 'RESOURCE_EXHAUSTED', '429 grounding quota exceeded']) {
     test(`Search setup ${reason}: one same-model control restores Live without changing HTTP Search`, async t => {
         const f = geminiFixture({ search: true, live: (params, n) => n === 1 ? closed(reason)(params) : ready() });
