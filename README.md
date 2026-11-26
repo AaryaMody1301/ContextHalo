@@ -53,7 +53,7 @@ ContextHalo currently ships as a portable Windows executable. Packaged releases 
 
 The portable app does not silently download, replace, or execute an update. Replace the executable manually after verifying the release/checksum. Release builds embed the exact portable SemVer (for example, `0.8.0-portable.372` for tag `v0.8.0-portable.372`) and the source commit used to build them. A future installer-based auto-update channel requires a signed Windows distribution identity and separate validation before it can replace this portable/manual path.
 
-Pushes and pull requests to `main` run source and provenance checks, then build and test the portable app. To publish a release, open [Build ContextHalo Windows Portable EXE](https://github.com/AaryaMody1301/ContextHalo/actions/workflows/build-windows.yml), select **Run workflow** on `main` and enable **publish**. That run validates and attests the artifacts before publication. Repository maintenance follows a verified release.
+The Windows workflow records the tested portable EXE and checksum file in `release-candidate.json` after all four packaged smoke runs pass. Once publication is approved, dispatch the workflow on `main` with **publish** enabled and **candidate_run_id** set to the successful main build. Publication attests those files and verifies the Git tag and downloaded bytes. See the [Windows workflow](https://github.com/AaryaMody1301/ContextHalo/actions/workflows/build-windows.yml) and [v0.9 release notes and verification steps](docs/PHASE_10_V0_9_RELEASE_NOTES.md).
 
 Release artifacts receive GitHub artifact provenance attestations. With the GitHub CLI installed, a downloaded executable can be checked against this repository with:
 

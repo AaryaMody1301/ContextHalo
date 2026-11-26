@@ -287,7 +287,7 @@ test('Phase 7 portable updates remain notification-only and build provenance is 
     assert.match(workflow, /extraMetadata\.releaseBuild=\$\{\{ github\.run_number \}\}/);
     assert.match(workflow, /extraMetadata\.releaseTag=\$\{\{ steps\.release_metadata\.outputs\.tag \}\}/);
     assert.match(workflow, /extraMetadata\.releaseCommit=\$\{\{ github\.sha \}\}/);
-    assert.match(workflow, /tag_name: \$\{\{ needs\.build\.outputs\.release_tag \}\}/);
+    assert.match(workflow, /tag_name: \$\{\{ needs\.attest-release\.outputs\.release_tag \}\}/);
     assert.match(workflow, /outcome\.version -ne "\$\{\{ steps\.release_metadata\.outputs\.app_version \}\}"/);
     assert.match(workflow, /releaseTag -ne "\$\{\{ steps\.release_metadata\.outputs\.tag \}\}"/);
 });
