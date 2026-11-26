@@ -1,5 +1,5 @@
 const storage = require('../storage');
-const { formatRetrievedContext, normalizeText, retrieveChunks, retrievePreviewChunks } = require('./knowledgeCore');
+const { formatRetrievedContext, normalizeText, retrieveChunks, tokenize } = require('./knowledgeCore');
 const { getEnabledDocuments } = require('./knowledgeStore');
 
 const { getProviderSessionPack } = require('./sessionPackMain');
@@ -17,27 +17,21 @@ function messageText(content) {
 
 function lastUserQuery(messages) {
     if (!Array.isArray(messages)) return '';
-    for (let index = messages.length - 1; index >= 0; index--) {
-        if (messages[index]?.role !== 'user') continue;
-        const text = normalizeText(messageText(messages[index].content), 12_000);
-        if (text) return text;
-    }
-    return '';
+    const latest = messages.findLast(message => message?.role === 'user');
+    return normalizeText(messageText(latest?.content), 12_000);
 }
 
 function retrieveContext(query, options = {}, preferences = storage.getPreferences()) {
     const scope = options.scope || 'cloud';
     if (scope !== 'local' && preferences?.cloudKnowledgeEnabled !== true) return '';
-    const documents = getEnabledDocuments();
-    if (!documents.length) return '';
+    const question = normalizeText(query, 12_000);
     const pack = getProviderSessionPack(scope, preferences);
     const seed = normalizeText([pack.goal, pack.notes, pack.clipboardText].filter(Boolean).join('\n'), 10_000);
-    const effectiveQuery = normalizeText(query, 12_000) || seed;
+    const effectiveQuery = [question, seed].find(value => tokenize(value).length > 0);
+    if (!effectiveQuery) return '';
+
     const budget = { limit: options.limit || 5, maxChars: options.maxChars || 7200 };
-    const results = effectiveQuery
-        ? retrieveChunks(documents, effectiveQuery, budget)
-        : retrievePreviewChunks(documents, budget);
-    return formatRetrievedContext(results, KNOWLEDGE_MARKER);
+    return formatRetrievedContext(retrieveChunks(getEnabledDocuments(), effectiveQuery, budget), KNOWLEDGE_MARKER);
 }
 
 function appendContext(base, context) {

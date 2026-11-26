@@ -110,6 +110,12 @@ test('source and dependency checks gate the Windows build for pushes and PRs', (
     assert.match(build, /^    if: needs\.source-check\.outputs\.scope != 'source'$/m);
     assert.match(build, /BUILD_PORTABLE: \$\{\{ needs\.source-check\.outputs\.scope != 'windows' \}\}/);
     assert.match(build, /- name: Run all regression tests\n        run: npm test\n/);
+    assert.match(build, /npm audit --audit-level=high/);
+    assert.doesNotMatch(build, /npm audit --omit=dev/);
+    const benchmark = build.split('- name: Compare synthetic retrieval performance')[1]?.split('- name:')[0] || '';
+    assert.match(benchmark, /git diff --name-only[^\n]*-- @benchmarkPaths/);
+    assert.match(benchmark, /'src\/utils\/knowledgeCore\.js'/);
+    assert.match(benchmark, /'src\/utils\/knowledgeRagMain\.js'/);
     assert.doesNotMatch(build, /- name: Run Electron behavior and layout smoke test\n        if:/);
     for (const step of ['Resolve release metadata', 'Build portable Windows EXE',
         'Verify portable EXE and record checksum', 'Record portable EXE Authenticode state',

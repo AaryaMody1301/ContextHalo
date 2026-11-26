@@ -231,7 +231,7 @@ async function rendererBehaviorSmoke() {
     await call('knowledge:set-enabled',knowledgeDoc.id,false);
     verify((await call('knowledge:search','idempotent ingestion')).length===0,'Disabled knowledge is excluded from retrieval');
     const sessionId='1234567890123';
-    await call('storage:save-session',sessionId,{profile:'meeting',liveTranscript:[{text:'We decided to deploy on Friday.',provider:'gemini',timestamp:1}],markers:[{type:'decision',timestamp:1}],sessionPack:{title:'Smoke session'}});
+    await call('storage:save-session',sessionId,{profile:'meeting',liveTranscript:[{text,provider:'gemini',timestamp:1}],markers:[{type:'decision',timestamp:1}],sessionPack:{title:'Smoke session'}});
     await call('storage:save-session',sessionId,{conversationHistory:[{transcription:'What is next?',ai_response:'Test the deployment.'}]});
     const saved=await call('storage:get-session',sessionId);
     verify(saved.liveTranscript.length===1 && saved.markers.length===1 && saved.sessionPack.title==='Smoke session','Session updates preserve transcript, markers and context pack');
@@ -257,7 +257,6 @@ async function rendererBehaviorSmoke() {
     await historyView.loadSessions(); historyView.searchQuery = ''; await settle(historyView);
     await historyView.openSession(sessionId); await settle(historyView);
     verify(historyView.shadowRoot.querySelector('.back-btn')?.getAttribute('aria-label') === 'Back to session history', 'History Back has an accessible action name');
-    await call('storage:delete-session',sessionId);
     verify((await ipc.invoke('storage:get-session','../escape')).success===false,'IPC rejects invalid session paths');
     app.navigate('main');await settle(app);
     const home=app.shadowRoot.querySelector('main-view'); await settle(home);
@@ -371,16 +370,32 @@ async function rendererBehaviorSmoke() {
             const answerSelector = 'select[aria-label="Your practice answer"]';
             await waitUntil(() => panel.querySelector(answerSelector));
             panel.querySelector(answerSelector).value = '0';
+            const attempts = (await call('practice:history')).length + 1;
             button('Check answer').click();
             await waitUntil(() => panel.querySelector('.phase4-feedback')?.textContent.includes('0% · Incorrect.'));
             verify(panel.querySelector('.phase4-feedback').textContent.includes('COUNT(column) skips NULL'),
                 'Practice Lab explains a wrong SQL answer in the renderer');
+            await waitUntil(() => !button('Check answer').disabled);
+            verify(panel.textContent.includes(`${attempts} saved attempts.`), 'Practice history updates when an answer is saved');
             panel.querySelector(answerSelector).value = '1';
             button('Check answer').click();
             await waitUntil(() => panel.querySelector('.phase4-feedback')?.textContent.includes('100% · Correct.'));
         }
+        if (id === 'phase4-review-nav') {
+            await waitUntil(() => panel.querySelector('.phase4-source-button'));
+            panel.querySelector('.phase4-source-button').click();
+            await waitUntil(() => button('Practice this session') && !button('Practice this session').disabled);
+            button('Practice this session').click();
+            const select = () => panel.querySelector('[aria-label="Practice source"]');
+            await waitUntil(() => select());
+            verify(select().value === `session:${sessionId}` && !panel.querySelector('.phase4-practice-question'),
+                'Session Review selects its session and clears the previous practice set');
+            button('Start practice').click();
+            await waitUntil(() => panel.querySelector('.phase4-progress')?.textContent.includes('Smoke session'));
+        }
         app.shadowRoot.querySelector('.phase4-close')?.click();
     }
+    await call('storage:delete-session',sessionId);
     // Real native controls and isolated provider attribution; no external account needed.
     app.navigate('assistant');await settle(app);
     const live=app.shadowRoot.querySelector('.live-bar');

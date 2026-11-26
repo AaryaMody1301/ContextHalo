@@ -70,7 +70,7 @@ test('request retrieval loads enabled documents once and reuses them for ranking
     });
     assert.match(rag.retrieveContext('database query indexes'), /indexes reduce query/);
     assert.equal(reads, 1);
-    assert.match(rag.retrieveContext('', { maxChars: 12 }), /Source 1: Database\nDatabase ind$/);
+    assert.match(rag.retrieveContext('database indexes', { maxChars: 12 }), /Source 1: Database\nDatabase ind$/);
 });
 
 test('Gemini knowledge retrieval uses the current question after a long unrelated history', () => {
@@ -94,6 +94,43 @@ test('Gemini knowledge retrieval uses the current question after a long unrelate
     assert.equal(params.config.systemInstruction, 'Answer the question.');
     const screenshot = rag.augmentGenerateParams({ contents: [{ inlineData: { data: 'image' } }, ...question.parts] });
     assert.match(screenshot.config.systemInstruction.parts[0].text, /PostgreSQL MVCC/);
+});
+
+test('provider retrieval skips empty queries, stop words and an earlier turn on image-only requests', async () => {
+    const preferences = { cloudKnowledgeEnabled: true };
+    let reads = 0;
+    const mocks = {
+        '../storage': { getPreferences: () => preferences },
+        './knowledgeStore': { getEnabledDocuments: () => {
+            reads++;
+            return [{ id: 'fixture', title: 'Data guide', chunks: chunkText('Database indexes reduce scan cost.') }];
+        } },
+    };
+    const rag = loadMain('src/utils/knowledgeRagMain.js', mocks);
+    const text = 'Explain database indexes.';
+    const imageOnly = { contents: [{ role: 'user', parts: [{ inlineData: { data: 'fixture' } }] }] };
+    assert.equal(rag.retrieveContext(''), '', 'Gemini Live setup has no query before the user speaks');
+    assert.equal(rag.retrieveContext('What is it?'), '');
+    assert.equal(rag.retrieveContext('', { scope: 'local' }), '');
+    assert.equal(rag.augmentGenerateParams(imageOnly), imageOnly);
+
+    const wire = [];
+    const { createProviderFetch } = loadMain('src/utils/providerRequestMain.js', mocks);
+    const fetch = createProviderFetch(async (_url, init) => { wire.push(JSON.parse(init.body)); });
+    for (const host of ['https://api.groq.com/openai/v1', 'https://api.mistral.ai/v1', 'http://127.0.0.1:8080/v1']) {
+        const messages = [
+            { role: 'user', content: text },
+            { role: 'assistant', content: 'Answered.' },
+            { role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,fixture' } }] },
+        ];
+        await fetch(host + '/chat/completions', { body: JSON.stringify({ messages }) });
+        assert.doesNotMatch(JSON.stringify(wire.at(-1)), /ContextHalo knowledge|reduce scan cost/);
+    }
+    assert.equal(reads, 0, 'queryless requests must not open the knowledge inventory');
+    preferences.sessionPack = { goal: 'database indexes' };
+    assert.match(rag.retrieveContext(''), /reduce scan cost/, 'explicit session terms still seed retrieval');
+    assert.match(rag.retrieveContext('What is it?'), /reduce scan cost/);
+    assert.equal(reads, 2);
 });
 
 test('outgoing provider requests require separate cloud consent for knowledge and clipboard', async () => {

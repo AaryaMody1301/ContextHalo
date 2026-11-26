@@ -214,12 +214,6 @@ function retrieveChunks(documents, query, options = {}) {
     return collectSnippets(scored, options);
 }
 
-function retrievePreviewChunks(documents, options = {}) {
-    const firstChunks = documents.slice(0, 4).flatMap(document =>
-        (document.chunks || []).slice(0, 1).map(chunk => ({ document, chunk, score: 0 })));
-    return collectSnippets(firstChunks, options);
-}
-
 function formatRetrievedContext(results, marker = '[ContextHalo knowledge]') {
     if (!Array.isArray(results) || !results.length) return '';
     const sections = results.map((result, index) => {
@@ -244,7 +238,6 @@ module.exports = {
     tokenize,
     chunkText,
     retrieveChunks,
-    retrievePreviewChunks,
     formatRetrievedContext,
     topKeywords,
 };

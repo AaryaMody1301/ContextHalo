@@ -119,7 +119,7 @@ function auditRepository(root = process.cwd()) {
     const workflow = read('.github/workflows/build-windows.yml');
     const security = read('docs/PHASE_3_ELECTRON_SECURITY_AUDIT_2026-09-21.md');
     const workflowChecks = {
-        productionAudit: /npm audit --omit=dev --audit-level=high/.test(workflow),
+        dependencyAudit: /npm audit --audit-level=high/.test(workflow),
         artifactAttestation: /name: Attest ContextHalo Windows release/.test(workflow) && /actions\/attest@1e69f48acb82d1966a394da916b4c1698aa569d6/.test(workflow),
         authenticodeMeasured: /Get-AuthenticodeSignature/.test(workflow) && /authenticode\.json/.test(workflow),
         packagedScaleMatrix: /100, 125, 150 and 200 percent Chromium scale/.test(workflow),

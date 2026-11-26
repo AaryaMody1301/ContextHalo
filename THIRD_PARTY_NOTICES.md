@@ -6,7 +6,7 @@ ContextHalo is GPL-3.0 licensed. This file records third-party components that a
 
 | Component | Version | Role | License | Upstream |
 | --- | --- | --- | --- | --- |
-| Electron | 44.7.0 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
+| Electron | 44.11.6 locked | Desktop runtime packaged into the Windows executable | MIT | https://github.com/electron/electron |
 | @google/genai | 2.28.0 locked | Gemini Developer API SDK | Apache-2.0 | https://github.com/googleapis/js-genai |
 | Marked | 18.1.0 locked | Markdown parser; packaged from npm and loaded locally in the renderer | MIT | https://github.com/markedjs/marked |
 
