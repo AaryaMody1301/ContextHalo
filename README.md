@@ -84,6 +84,8 @@ Uses Gemini Live for real-time audio. Typed prompts and screen analysis use the 
 
 The default Live model is `gemini-3.8-live`. Accounts that list `gemini-3.8-live-extended-thinking` can also select it for audio. ContextHalo keeps spoken updates together until the interaction is idle. [Google’s Live thinking guide](https://aistudio.google.com/docs/live-api/thinking)
 
+Live speech detection waits through 1.6 seconds of silence to tolerate pauses. Interrupted partial replies are excluded from completed conversation History. [Google’s speech detection guidance](https://aistudio.google.com/docs/live-api/capabilities#vad-quality-best-practices)
+
 Typed questions and screenshots default to `gemini-3.8-flash`. Gemini 4 Hydrogen supports both tasks. Carbon, Neon and Argon require paid access. Eligible projects can also select the legacy `gemini-2.5-flash-lite`. The model picker uses the catalog returned for your key. [Gemini models](https://aistudio.google.com/docs/models) · [Gemini pricing](https://aistudio.google.com/docs/pricing)
 
 ### Groq API
@@ -91,6 +93,8 @@ Typed questions and screenshots default to `gemini-3.8-flash`. Gemini 4 Hydrogen
 Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
 
 The default text, vision, and transcription models are `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, and `whisper-large-v3-turbo`. Muse Spark Open also accepts screenshots for accounts with preview access. Rate limits depend on the account and model. [Groq models](https://console.groq.com/docs/models) · [Muse Spark Open](https://console.groq.com/docs/model/meta-models/muse-spark-open) · [Groq rate limits](https://console.groq.com/docs/rate-limits)
+
+Groq waits through 1.6 seconds of silence before transcribing. Speech that resumes during a pending reply cancels that work and retains the full question for the next attempt. Audio is bounded to two minutes per question. Longer input asks for a shorter question. Transcription uses Whisper’s segment metadata to suppress low-confidence non-speech. [Groq transcription metadata](https://console.groq.com/docs/speech-to-text)
 
 ### Local AI
 
@@ -111,6 +115,8 @@ Mistral API access depends on your organization’s plan and included usage. Che
 Use a Studio API key from a workspace with API access. On HTTP 402, Session details identifies the spending limit, exhausted API budget, payment failure or depleted wallet when Mistral supplies a recognized code. Check the corresponding allowance in Mistral Admin. [Mistral API key setup](https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key) · [Mistral error codes](https://docs.mistral.ai/resources/error-glossary) · [429 troubleshooting](docs/MISTRAL_429_DIAGNOSIS_2026-10-13.md)
 
 Text and screen failures show their sanitized explanation directly in Session details, including the model, known HTTP status and retry availability.
+
+Gemini, Groq and Mistral screen requests include bounded recent question context from the current session when available. Speech context expires after two minutes. The selected image remains the primary evidence, and missing questions or unreadable details prompt clarification.
 
 ### Request composition
 

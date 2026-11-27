@@ -102,7 +102,7 @@ test('Groq model discovery and transcription endpoints keep documented request f
     assert.match(hardening, /https:\/\/api\.groq\.com\/openai\/v1\/audio\/transcriptions/);
     assert.match(hardening, /new Blob\(\[pcmToWavBuffer\(pcm, sampleRate\)\], \{ type: 'audio\/wav' \}\)/);
     assert.match(hardening, /groqTranscriptionModel \|\| 'whisper-large-v3-turbo'/);
-    assert.match(hardening, /form\.append\('response_format', 'json'\)/);
+    assert.match(hardening, /form\.append\('response_format', 'verbose_json'\)/);
     assert.match(hardening, /form\.append\('language', language\)/);
 });
 

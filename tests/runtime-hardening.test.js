@@ -24,7 +24,7 @@ test('audio modes and Groq voice use VAD without interleaving microphone and sys
     const main = read('src/utils/runtimeHardeningMain.js');
 
     assert.match(main, /GROQ_VAD/);
-    assert.match(main, /silenceFramesRequired/);
+    assert.match(main, /silenceMs/);
     assert.match(main, /processGroqVadChunk/);
     assert.match(main, /runtimeProviderMode === 'groq'/);
     assert.match(main, /if \(mode === 'mic_only'\) return channel === 'send-mic-audio-content'/);

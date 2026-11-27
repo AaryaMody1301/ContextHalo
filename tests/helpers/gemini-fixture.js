@@ -21,6 +21,8 @@ function geminiFixture(options = {}) {
     const preparations = [];
     const frame = {};
     const webContents = { id: 1, mainFrame: frame, getURL: () => 'file:///app/src/index.html', send: (...args) => events.push(args) };
+    const electron = { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] },
+        ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
     const preferences = { googleSearchEnabled: options.search === true, responseMode: 'balanced', ...options.preferences };
     const config = { geminiLiveModel: 'gemini-3.8-live', groqModel: 'test-chat', ...options.config };
     const storage = {
@@ -81,7 +83,7 @@ function geminiFixture(options = {}) {
         AbortController, AbortSignal, setTimeout, clearTimeout, global: {},
         fetch: options.fetch || (async () => new Response('data:{"choices":[{"delta":{"content":"Groq answer"},"finish_reason":"stop"}]}\n\n')),
         require: name => {
-            if (name === 'electron') return { BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents }] }, ipcMain: { handle: (key, fn) => handlers.set(key, fn) } };
+            if (name === 'electron') return electron;
             if (name === '@google/genai') return options.sdk || { GoogleGenAI: AI, Modality: { AUDIO: 'AUDIO' } };
             if (name === '../storage') return storage;
             if (name === './localai') return local;
@@ -93,6 +95,7 @@ function geminiFixture(options = {}) {
             if (name === './sessionPackMain') return { appendSessionPack: text => text + '\nSession pack: mock goal' };
             if (name === './realtimeContextMain') return {
                 emitLiveTranscript: data => events.push(['live-transcript', data]),
+                getRecentTranscript: () => options.transcript || '',
                 extractGeminiTranscript: (message, field) => message.serverContent?.[field]?.text?.trim() || '',
                 tuneLiveSystemInstruction: text => text,
             };
@@ -102,7 +105,7 @@ function geminiFixture(options = {}) {
                 retrieveContext: () => null, appendContextToInstruction: text => text,
             };
             if (name === './windowsRuntimeMain') return { prepareWindowsProvider: (mode, epoch) => preparations.push(['windows', mode, epoch]) };
-            if (name === './runtimeHardeningMain') return { prepareRuntimeProvider: mode => preparations.push(['runtime', mode]) };
+            if (name === './runtimeHardeningMain') return audioRuntime || { prepareRuntimeProvider: mode => preparations.push(['runtime', mode]) };
             if (name === './contextCaptureMain') return { cancelRegionSelection() {} };
             if (name === './geminiLiveRuntime') return {
                 ...liveRuntimeModule,
@@ -123,6 +126,10 @@ function geminiFixture(options = {}) {
     };
     const { createProviderFetch } = loadMain('src/utils/providerRequestMain.js', requestMocks);
     scope.fetch = createProviderFetch(scope.fetch, () => api?.getActiveSessionId());
+    const audioRuntime = options.audio ? loadMain('src/utils/runtimeHardeningMain.js', {
+        electron, '../storage': storage, './sessionRequests': actual('./sessionRequests'),
+    }, { fetch: (...args) => scope.fetch(...args) }) : null;
+    if (audioRuntime) audioRuntime.installIpcHandlerHardening();
     vm.runInNewContext(fs.readFileSync(filename, 'utf8'), scope, { filename });
     api = scope.module.exports;
     api.setupGeminiIpcHandlers({ current: null });

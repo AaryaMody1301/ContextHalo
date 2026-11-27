@@ -1,7 +1,8 @@
 const { BrowserWindow, ipcMain } = require('electron');
 const storage = require('../storage');
-const { runSessionRequest, assertCurrentRequest } = require('./sessionRequests');
-const { groqHttpFailure } = require('./groqRequestPolicy');
+const { randomUUID } = require('node:crypto');
+const { runSessionRequest, assertCurrentRequest, getRequestSignal, cancelSessionRequests } = require('./sessionRequests');
+const { groqHttpFailure, groqTranscriptText } = require('./groqRequestPolicy');
 
 let runtimeProviderMode = 'byok';
 let originalIpcHandle = null;
@@ -9,10 +10,11 @@ const registeredHandlers = new Map();
 
 const GROQ_VAD = {
     energyThreshold: 0.012,
-    speechFramesRequired: 3,
-    silenceFramesRequired: 8,
-    preRollFrames: 5,
-    maxUtteranceSeconds: 35,
+    speechStartMs: 100,
+    minimumSpeechMs: 250,
+    silenceMs: 1600,
+    preRollMs: 500,
+    maxUtteranceSeconds: 120,
 };
 
 let groqVadState = createGroqVadState();
@@ -20,16 +22,23 @@ let groqVadState = createGroqVadState();
 function createGroqVadState() {
     return {
         speaking: false,
-        speechFrames: 0,
-        silenceFrames: 0,
-        sampleRate: 24000,
+        speechMs: 0,
+        voicedMs: 0,
+        silenceMs: 0,
+        sampleRate: 0,
         preRoll: [],
+        preRollMs: 0,
         chunks: [],
         bytes: 0,
+        pending: false,
+        revision: 0,
+        requestId: randomUUID(),
+        tooLong: false,
     };
 }
 
 function resetGroqVad() {
+    if (groqVadState.pending) cancelSessionRequests('voice', groqVadState.requestId);
     groqVadState = createGroqVadState();
 }
 
@@ -81,7 +90,8 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
     const result = await (async () => {
         const form = new FormData();
         form.append('model', storage.getConfig().groqTranscriptionModel || 'whisper-large-v3-turbo');
-        form.append('response_format', 'json');
+        form.append('response_format', 'verbose_json');
+        form.append('temperature', '0');
         form.append('file', new Blob([pcmToWavBuffer(pcm, sampleRate)], { type: 'audio/wav' }), 'utterance.wav');
         if (language) form.append('language', language);
 
@@ -90,12 +100,13 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${apiKey}` },
                 body: form,
+                signal: getRequestSignal(),
             });
 
             if (!response.ok) {
                 return groqHttpFailure(response, 'transcription', form.get('model'));
             }
-            return { success: true, text: (await response.json())?.text?.trim() || '' };
+            return { success: true, text: groqTranscriptText(await response.json()) };
         } catch (error) {
             return { success: false, error: error?.message || String(error) };
         }
@@ -105,66 +116,99 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
     return result.text || '';
 }
 
-function queueGroqUtterance(event, pcm, sampleRate) {
-    if (!pcm.length) return;
+function queueGroqUtterance(event, state) {
+    const revision = ++state.revision;
+    state.pending = true;
 
     runSessionRequest('voice', async () => {
-            const transcript = await transcribeGroqUtterance(pcm, sampleRate);
+            const transcript = await transcribeGroqUtterance(Buffer.concat(state.chunks), state.sampleRate);
             assertCurrentRequest();
             if (!transcript) return;
             const textHandler = registeredHandlers.get('send-text-message');
             if (!textHandler) throw new Error('Groq text handler is not ready');
             const result = await textHandler(event, transcript);
             if (result?.success === false) throw new Error(result.error || 'Groq response failed');
-        })
+        }, { requestId: state.requestId })
         .catch(error => {
-            if (error.name === 'AbortError') return;
-            console.error('Groq utterance processing failed:', error);
+            if (state !== groqVadState || state.revision !== revision) return;
+            // Keep transcripts and provider-returned error bodies out of diagnostics.
             const windows = BrowserWindow.getAllWindows();
             if (windows.length > 0 && !windows[0].isDestroyed()) {
                 windows[0].webContents.send('update-status', 'Groq voice error: ' + error.message);
             }
+        })
+        .finally(() => {
+            if (state === groqVadState && state.revision === revision) resetGroqVad();
         });
 }
 
-function processGroqVadChunk(event, data, mimeType) {
-    const pcm = Buffer.from(data, 'base64');
-    if (pcm.length < 2) return { success: true };
-
-    const sampleRate = parseSampleRate(mimeType);
-    groqVadState.sampleRate = sampleRate;
+function processGroqVadFrame(event, pcm, sampleRate) {
+    const state = groqVadState;
+    const durationMs = pcm.length / (sampleRate * 2) * 1000;
     const rms = calculatePcmRms(pcm);
     const voice = rms >= GROQ_VAD.energyThreshold;
 
-    groqVadState.preRoll.push(pcm);
-    if (groqVadState.preRoll.length > GROQ_VAD.preRollFrames) groqVadState.preRoll.shift();
-
-    if (!groqVadState.speaking) {
-        if (voice) {
-            groqVadState.speechFrames += 1;
-            if (groqVadState.speechFrames >= GROQ_VAD.speechFramesRequired) {
-                groqVadState.speaking = true;
-                groqVadState.chunks = [...groqVadState.preRoll];
-                groqVadState.bytes = groqVadState.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-                groqVadState.silenceFrames = 0;
-            }
-        } else {
-            groqVadState.speechFrames = 0;
+    if (!state.speaking) {
+        state.preRoll.push(pcm);
+        state.preRollMs += durationMs;
+        while (state.preRollMs > GROQ_VAD.preRollMs && state.preRoll.length > 1) {
+            state.preRollMs -= state.preRoll.shift().length / (sampleRate * 2) * 1000;
         }
-        return { success: true };
+        state.speechMs = voice ? state.speechMs + durationMs : 0;
+        if (state.speechMs >= GROQ_VAD.speechStartMs) {
+            state.speaking = true;
+            state.voicedMs = state.speechMs;
+            state.chunks = state.preRoll;
+            state.preRoll = [];
+            state.bytes = state.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        }
+        return;
     }
 
-    groqVadState.chunks.push(pcm);
-    groqVadState.bytes += pcm.length;
-    groqVadState.silenceFrames = voice ? 0 : groqVadState.silenceFrames + 1;
+    if (state.pending) {
+        if (!voice) return;
+        // A pause can end before transcription or generation finishes. Cancel
+        // that answer and retain the full audio for the continued question.
+        state.pending = false;
+        state.revision += 1;
+        cancelSessionRequests('voice', state.requestId);
+    }
+    state.silenceMs = voice ? 0 : state.silenceMs + durationMs;
+    if (voice) state.voicedMs += durationMs;
+    if (!state.tooLong) {
+        state.chunks.push(pcm);
+        state.bytes += pcm.length;
+        if (state.bytes > sampleRate * 2 * GROQ_VAD.maxUtteranceSeconds) {
+            state.tooLong = true;
+            state.chunks = [];
+            state.bytes = 0;
+        }
+    }
 
-    const seconds = groqVadState.bytes / (sampleRate * 2);
-    if (groqVadState.silenceFrames >= GROQ_VAD.silenceFramesRequired || seconds >= GROQ_VAD.maxUtteranceSeconds) {
-        const utterance = Buffer.concat(groqVadState.chunks);
+    if (state.silenceMs >= GROQ_VAD.silenceMs) {
+        if (state.tooLong) {
+            resetGroqVad();
+            const window = BrowserWindow.getAllWindows().find(candidate => !candidate.isDestroyed());
+            window?.webContents.send('update-status', 'Groq voice input exceeded two minutes. Please repeat a shorter question.');
+        } else if (state.voicedMs < GROQ_VAD.minimumSpeechMs) resetGroqVad();
+        else queueGroqUtterance(event, state);
+    }
+}
+
+function processGroqVadChunk(event, data, mimeType) {
+    if (!data) return { success: true };
+    const pcm = Buffer.from(data, 'base64');
+    if (pcm.length % 2) return { success: false, error: 'Invalid PCM audio' };
+    const sampleRate = parseSampleRate(mimeType);
+    if (groqVadState.sampleRate && groqVadState.sampleRate !== sampleRate) {
         resetGroqVad();
-        queueGroqUtterance(event, utterance, sampleRate);
     }
-
+    // Fixed 20 ms analysis windows make turn timing independent of IPC chunk size.
+    const frameBytes = sampleRate * 2 / 50;
+    for (let offset = 0; offset < pcm.length; offset += frameBytes) {
+        groqVadState.sampleRate = sampleRate;
+        processGroqVadFrame(event, pcm.subarray(offset, offset + frameBytes), sampleRate);
+    }
     return { success: true };
 }
 
@@ -186,9 +230,9 @@ function wrapIpcHandler(channel, handler) {
 
     if (channel === 'close-session') {
         return async (event, ...args) => {
+            resetGroqVad();
             const result = await handler(event, ...args);
             runtimeProviderMode = 'byok';
-            resetGroqVad();
             return result;
         };
     }
@@ -227,6 +271,7 @@ function installIpcHandlerHardening() {
             if (channel === 'send-audio-content' || channel === 'send-mic-audio-content') {
                 const payload = args[0];
                 if (typeof payload?.data !== 'string' || payload.data.length > 262144
+                    || payload.data.length % 4 || (payload.data && !/^[A-Za-z0-9+/]+={0,2}$/.test(payload.data))
                     || !/^audio\/pcm;rate=(16000|24000|48000)$/.test(payload.mimeType || '')) {
                     return { success: false, error: 'Invalid audio payload' };
                 }

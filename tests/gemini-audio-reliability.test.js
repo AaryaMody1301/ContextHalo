@@ -42,3 +42,20 @@ test('Gemini microphone audio also uses 16 kHz and audioStreamEnd closes a pause
     assert.equal((await f.call('audio-stream-end')).success, true);
     assert.equal(f.realtime.at(-1)?.audioStreamEnd, true);
 });
+
+test('Gemini Live tolerates thinking pauses and never saves interrupted partial replies as completed turns', async t => {
+    const f = geminiFixture();
+    t.after(() => f.close());
+    assert.equal((await f.start()).success, true);
+    assert.deepEqual(structuredClone(f.connections[0].config.realtimeInputConfig.automaticActivityDetection), {
+        disabled: false, endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', prefixPaddingMs: 300, silenceDurationMs: 1600,
+    });
+    f.callbacks.onmessage({ serverContent: { inputTranscription: { text: 'What is six ' }, modelTurn: { parts: [{ text: 'Premature answer' }] } } });
+    f.callbacks.onmessage({ serverContent: { interrupted: true, inputTranscription: { text: 'plus six?' } } });
+    assert.equal(f.api.getCurrentSessionData().history.length, 0);
+    f.callbacks.onmessage({ serverContent: { modelTurn: { parts: [{ text: 'Twelve' }] }, turnComplete: true } });
+    const history = f.api.getCurrentSessionData().history;
+    assert.equal(history.length, 1);
+    assert.equal(history[0].transcription, 'What is six plus six?');
+    assert.equal(history[0].ai_response, 'Twelve');
+});
