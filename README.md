@@ -82,13 +82,15 @@ Fresh installations select Groq. Existing saved provider selections are preserve
 
 Uses Gemini Live for real-time audio. Typed prompts and screen analysis use the selected Gemini text/analysis model through separate bounded HTTP requests. Typed questions include recent saved transcript, conversation, session-pack, knowledge, and screen-analysis context; they do not pause audio capture. Live and HTTP models are separate selections because not every model supports both APIs.
 
-The default Live selection is `gemini-3.8-live`. The default HTTP selection is `gemini-3.8-flash`. A saved `gemini-2.5-flash-lite` HTTP choice remains selectable for eligible projects that report it in model discovery. A saved model and a valid key still require project access. Limits apply per project and model. Google Search and Live access depend on the project and tier. [Gemini models and lifecycle](https://ai.google.dev/gemini-api/docs/deprecations) · [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+The default Live model is `gemini-3.8-live`. Accounts that list `gemini-3.8-live-extended-thinking` can also select it for audio. ContextHalo keeps spoken updates together until the interaction is idle. [Google’s Live thinking guide](https://aistudio.google.com/docs/live-api/thinking)
+
+Typed questions and screenshots default to `gemini-3.8-flash`. Gemini 4 Hydrogen supports both tasks. Carbon, Neon and Argon require paid access. Eligible projects can also select the legacy `gemini-2.5-flash-lite`. The model picker uses the catalog returned for your key. [Gemini models](https://aistudio.google.com/docs/models) · [Gemini pricing](https://aistudio.google.com/docs/pricing)
 
 ### Groq API
 
 Uses Whisper for transcription, GPT-OSS for text reasoning, and Qwen vision for screenshots.
 
-The default text, vision, and transcription models are `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, and `whisper-large-v3-turbo`. Rate limits depend on the account and model. Check the returned 429 status and any Retry-After value against your account’s limits. [Groq rate limits](https://console.groq.com/docs/rate-limits)
+The default text, vision, and transcription models are `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, and `whisper-large-v3-turbo`. Muse Spark Open also accepts screenshots for accounts with preview access. Rate limits depend on the account and model. [Groq models](https://console.groq.com/docs/models) · [Muse Spark Open](https://console.groq.com/docs/model/meta-models/muse-spark-open) · [Groq rate limits](https://console.groq.com/docs/rate-limits)
 
 ### Local AI
 
@@ -106,7 +108,7 @@ Uses your explicitly selected pinned model for streamed text and JPEG screenshot
 
 Mistral API access depends on your organization’s plan and included usage. Check the current eligibility guidance before configuring a key. A billing rejection (HTTP 402) and a confirmed zero request limit stop automatic retries. Requests are paced across text and screenshots at 2.2 seconds or more for Ministral 14B and one second or more for the other choices. See [Mistral usage and limits](https://docs.mistral.ai/admin/billing-usage/usage-limits/) and [October live validation](docs/MISTRAL_FREE_MODEL_VALIDATION_2026-10-13.md).
 
-Mistral applies organization/model request and token limits, included monthly usage, and spending caps. Application pacing cannot enforce token budgets or account for traffic from other applications. Session details preserves recognized error codes and any supplied retry delay, with a link to Mistral Admin. See the [429 troubleshooting guide](docs/MISTRAL_429_DIAGNOSIS_2026-10-13.md) for official guidance.
+Use a Studio API key from a workspace with API access. On HTTP 402, Session details identifies the spending limit, exhausted API budget, payment failure or depleted wallet when Mistral supplies a recognized code. Check the corresponding allowance in Mistral Admin. [Mistral API key setup](https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key) · [Mistral error codes](https://docs.mistral.ai/resources/error-glossary) · [429 troubleshooting](docs/MISTRAL_429_DIAGNOSIS_2026-10-13.md)
 
 Text and screen failures show their sanitized explanation directly in Session details, including the model, known HTTP status and retry availability.
 

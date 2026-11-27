@@ -1,6 +1,7 @@
 const { BrowserWindow, ipcMain } = require('electron');
 const storage = require('../storage');
 const { runSessionRequest, assertCurrentRequest } = require('./sessionRequests');
+const { groqHttpFailure } = require('./groqRequestPolicy');
 
 let runtimeProviderMode = 'byok';
 let originalIpcHandle = null;
@@ -91,19 +92,10 @@ async function transcribeGroqUtterance(pcm, sampleRate) {
                 body: form,
             });
 
-            const body = await response.text();
             if (!response.ok) {
-                let detail = body;
-                try {
-                    detail = JSON.parse(body)?.error?.message || body;
-                } catch {}
-                return {
-                    success: false,
-                    error: `Groq transcription HTTP ${response.status}: ${String(detail).slice(0, 240)}`,
-                };
+                return groqHttpFailure(response, 'transcription', form.get('model'));
             }
-
-            return { success: true, text: JSON.parse(body)?.text?.trim() || '' };
+            return { success: true, text: (await response.json())?.text?.trim() || '' };
         } catch (error) {
             return { success: false, error: error?.message || String(error) };
         }

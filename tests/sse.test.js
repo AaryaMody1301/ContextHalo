@@ -14,6 +14,8 @@ test('SSE preserves split Unicode, CRLF, no-space data and an unterminated final
 });
 test('SSE handles comments, DONE, and reports provider stream errors', async () => {
     assert.deepEqual(await collect([Buffer.from(':keepalive\n\ndata: [DONE]\n\n')]), []);
-    await assert.rejects(collect([Buffer.from('data: {"error":{"message":"quota exhausted"}}\n\n')]), /quota exhausted/);
-    await assert.rejects(collect([Buffer.from('data: invalid\n\n')]), SyntaxError);
+    await assert.rejects(collect([Buffer.from('data: {"error":{"message":"private-fixture"}}\n\n')]),
+        { message: 'The provider reported an error while streaming the answer.' });
+    await assert.rejects(collect([Buffer.from('data: private-fixture\n\n')]),
+        { name: 'SyntaxError', message: 'The provider sent an invalid JSON stream event.' });
 });

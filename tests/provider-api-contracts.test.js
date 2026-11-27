@@ -71,6 +71,27 @@ test('Groq typed and vision requests serialize the documented current contracts'
     assert.match(imagePart?.image_url?.url || '', /^data:image\/jpeg;base64,/);
 });
 
+test('Groq text, screen and transcription keep raw HTTP errors out of answers and diagnostics', async t => {
+    const privateData = 'private-fixture-for-a-returned-prompt';
+    const denial = () => new Response(privateData, { status: 429, headers: { 'retry-after': '9', 'x-ratelimit-reset-tokens': privateData } });
+    const fixture = geminiFixture({ config: { groqImageModel: 'qwen/qwen3.8-27b' }, fetch: denial });
+    t.after(() => fixture.close());
+    assert.equal((await fixture.start('groq')).success, true);
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(1200)]).toString('base64');
+    const { groqHttpFailure } = require('../src/utils/groqRequestPolicy');
+    const results = [await fixture.call('send-text-message', 'Synthetic question'),
+        await fixture.call('send-image-content', { data: jpeg, prompt: 'Read fixture' }),
+        groqHttpFailure(denial(), 'transcription', 'whisper-large-v3')];
+    for (const result of results) {
+        assert.equal(result.success, false);
+        assert.equal(result.failure.httpStatus, 429);
+        assert.equal(result.failure.retryAfterMs, 9000);
+        assert.match(result.error, /Retry in 9s/);
+    }
+    assert.doesNotMatch(JSON.stringify([results, fixture.events, fixture.diagnostics]), new RegExp(privateData));
+    assert.equal(fixture.events.some(([name]) => ['new-response', 'save-conversation-turn', 'save-screen-analysis'].includes(name)), false);
+});
+
 test('Groq model discovery and transcription endpoints keep documented request fields', () => {
     const registry = fs.readFileSync('src/utils/providerModelRegistry.js', 'utf8');
     const gemini = fs.readFileSync('src/utils/gemini.js', 'utf8');

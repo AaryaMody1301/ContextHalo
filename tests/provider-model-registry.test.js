@@ -54,17 +54,18 @@ test('Gemini catalog separates Live and generateContent models from API metadata
         },
     ]);
 
-    assert.deepEqual(catalog.live.map(model => model.id), ['gemini-3.8-live']);
+    assert.deepEqual(catalog.live.map(model => model.id).sort(), ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
     assert.deepEqual(catalog.liveMapped.map(model => model.id).sort(), ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
     const extended = catalog.liveMapped.find(model => model.id === 'gemini-3.8-live-extended-thinking');
-    assert.equal(extended.contextHaloCompatibility, 'mapped-not-selectable');
-    assert.match(extended.capabilityLabel, /Extended Thinking mapped, not enabled/);
+    assert.equal(extended.contextHaloCompatibility, 'supported');
+    assert.match(extended.capabilityLabel, /Extended Thinking/);
     assert.deepEqual(catalog.screen.map(model => model.id).sort(), [
         'gemini-2.5-flash-lite',
         'gemini-3.1-flash-lite',
         'gemini-3.5-flash-lite',
         'gemini-3.8-flash',
         'gemini-4-hydrogen',
+        'gemini-4-neon',
     ]);
     assert.equal(catalog.screen.some(model => model.id === 'gemini-2.5-flash'), false);
     assert.equal(catalog.screen.some(model => /pro-preview/.test(model.id)), false);
@@ -72,6 +73,7 @@ test('Gemini catalog separates Live and generateContent models from API metadata
     assert.equal(catalog.recommended.live, 'gemini-3.8-live');
     assert.equal(catalog.recommended.screen, 'gemini-4-hydrogen');
     assert.equal(catalog.generate.some(model => model.id === 'gemini-4-neon'), true);
+    assert.equal(buildGeminiCatalog([{ name: 'models/gemini-4-neon', supportedActions: ['generateContent'] }]).recommended.screen, null);
     assert.match(catalog.screen.find(model => model.id === 'gemini-3.8-flash').capabilityLabel, /Thinking low\/medium\/high/);
 });
 
@@ -102,6 +104,7 @@ test('Groq catalog keeps active task models and recommends the current vision re
         { id: 'openai/gpt-oss-120b', active: true, owned_by: 'OpenAI' },
         { id: 'qwen/qwen3.6-27b', active: true, owned_by: 'Qwen' },
         { id: 'qwen/qwen3.8-27b', active: true, owned_by: 'Qwen' },
+        { id: 'meta-models/muse-spark-open', active: true, owned_by: 'Meta' },
         { id: 'whisper-large-v3-turbo', active: true, owned_by: 'OpenAI' },
         { id: 'canopylabs/orpheus-v1-english', active: true, owned_by: 'Canopy Labs' },
         { id: 'retired-model', active: false, owned_by: 'Example' },
@@ -109,7 +112,8 @@ test('Groq catalog keeps active task models and recommends the current vision re
 
     assert.equal(catalog.all.some(model => model.id === 'retired-model'), false);
     assert.equal(catalog.chat.some(model => model.id === 'openai/gpt-oss-120b'), true);
-    assert.deepEqual(catalog.vision.map(model => model.id).sort(), ['qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']);
+    assert.deepEqual(catalog.vision.map(model => model.id).sort(), ['meta-models/muse-spark-open', 'qwen/qwen3.6-27b', 'qwen/qwen3.8-27b']);
+    assert.match(catalog.vision.find(model => model.id === 'meta-models/muse-spark-open').capabilityLabel, /Enterprise/);
     assert.equal(catalog.vision.every(model => model.preview), true);
     assert.equal(catalog.recommended.vision, 'qwen/qwen3.8-27b');
     assert.deepEqual(catalog.transcription.map(model => model.id), ['whisper-large-v3-turbo']);
@@ -135,6 +139,24 @@ test('catalog cancellation aborts the fetch and never returns a cached fallback 
     assert.equal(requestSignal.aborted, true);
 });
 
+
+test('model discovery evicts a cached catalog when the same key loses access and hides the response body', async t => {
+    const original = global.fetch;
+    t.after(() => { global.fetch = original; registry.clearProviderModelCache(); });
+    for (const [provider, status] of [['gemini', 401], ['groq', 403]]) {
+        const key = 'revoked-fixture-' + provider;
+        global.fetch = async () => Response.json(provider === 'gemini' ? { models: [] } : { data: [] });
+        await registry.listProviderModels(provider, key);
+        global.fetch = async () => new Response('private-fixture', { status });
+        for (const forceRefresh of [true, false]) {
+            await assert.rejects(registry.listProviderModels(provider, key, { forceRefresh }), error => {
+                assert.equal(error.status, status);
+                assert.doesNotMatch(error.message, /private-fixture/);
+                return true;
+            });
+        }
+    }
+});
 
 test('credential rotation evicts old catalogs and stale fallback expires after 24 hours', async t => {
     const original = global.fetch;

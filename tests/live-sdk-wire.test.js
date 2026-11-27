@@ -47,7 +47,7 @@ async function liveServer(t, mode = 'success', fixtureOptions = {}) {
     }
     const fixture = geminiFixture({ ...fixtureOptions, sdk: { ...sdk, GoogleGenAI: LoopbackAI } });
     t.after(() => fixture.close());
-    return { fixture, received };
+    return { fixture, received, sockets };
 }
 
 test('real SDK completes the production Live setup and serializes its audio/transcription contract', { skip: !sdk, timeout: 5000 }, async t => {
@@ -68,6 +68,36 @@ test('real SDK completes the production Live setup and serializes its audio/tran
     assert.equal(setup.generationConfig.thinkingConfig, undefined, 'Gemini 3.8 Live rejects thinkingConfig');
     assert.equal(JSON.stringify(setup).includes('abortSignal'), false);
     assert.deepEqual(fixture.preparations, [['windows', 'byok', 31], ['runtime', 'byok']]);
+});
+
+test('real SDK preserves Extended Thinking utterances through the idle event and saves one answer', { skip: !sdk, timeout: 5000 }, async t => {
+    const model = 'gemini-3.8-live-extended-thinking';
+    const { fixture, received, sockets } = await liveServer(t, 'success', {
+        config: { geminiLiveModel: model }, catalog: async () => ({ live: [{ id: model }] }),
+    });
+    const result = await fixture.start();
+    assert.equal(result.success, true, result.error);
+    assert.equal(received[0].setup.model, 'models/' + model);
+    assert.equal(received[0].setup.generationConfig.thinkingConfig.thinkingLevel.toLowerCase(), 'low');
+    const socket = [...sockets.clients][0];
+    const send = serverContent => socket.send(JSON.stringify({ serverContent }));
+    send({ inputTranscription: { text: 'Test question' }, outputTranscription: { text: 'Checking.' },
+        turnComplete: true, interactionStatus: 'IN_PROGRESS' });
+    for (let i = 0; i < 100 && !fixture.events.some(([type]) => type === 'new-response'); i++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(fixture.events.some(([type]) => type === 'new-response'));
+    assert.equal(fixture.api.getCurrentSessionData().history.length, 0);
+    send({ modelTurn: { parts: [{ text: 'Private thought', thought: true }, { text: 'It is blue.' }] }, turnComplete: true });
+    send({ interactionStatus: 'IDLE' });
+    send({ turnComplete: true, interactionStatus: 'IDLE' });
+    for (let i = 0; i < 100 && !fixture.api.getCurrentSessionData().history.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const turns = fixture.api.getCurrentSessionData().history;
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0].transcription, 'Test question');
+    assert.equal(turns[0].ai_response, 'Checking.\nIt is blue.');
 });
 
 test('real SDK recovers from a setup-level 1011 by retrying the session without Search', { skip: !sdk, timeout: 5000 }, async t => {

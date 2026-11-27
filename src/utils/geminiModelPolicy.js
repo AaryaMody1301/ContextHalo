@@ -1,5 +1,5 @@
-const GEMINI_MODEL_POLICY = Object.freeze({
-    'gemini-4-hydrogen': Object.freeze({
+function gemini4GeneratePolicy(thinkingLevels, defaultThinking, paidOnly = false) {
+    return Object.freeze({
         lifecycle: 'stable',
         route: 'generate',
         roles: Object.freeze(['text', 'screen']),
@@ -7,12 +7,20 @@ const GEMINI_MODEL_POLICY = Object.freeze({
         outputs: Object.freeze(['text']),
         search: true,
         live: false,
-        thinkingLevels: Object.freeze(['low', 'medium', 'high', 'xhigh']),
-        defaultThinking: 'high',
+        thinkingLevels: Object.freeze(thinkingLevels),
+        defaultThinking,
+        paidOnly,
         inputTokenLimit: 1048576,
         outputTokenLimit: 65536,
         contextHaloCompatibility: 'supported',
-    }),
+    });
+}
+
+const GEMINI_MODEL_POLICY = Object.freeze({
+    'gemini-4-hydrogen': gemini4GeneratePolicy(['low', 'medium', 'high', 'xhigh'], 'high'),
+    'gemini-4-carbon': gemini4GeneratePolicy(['low', 'medium', 'high'], 'medium', true),
+    'gemini-4-neon': gemini4GeneratePolicy(['low', 'medium', 'high', 'xhigh'], 'high', true),
+    'gemini-4-argon': gemini4GeneratePolicy(['low', 'medium', 'high'], 'medium', true),
     'gemini-3.8-flash': Object.freeze({
         lifecycle: 'stable',
         route: 'generate',
@@ -141,8 +149,7 @@ const GEMINI_MODEL_POLICY = Object.freeze({
         outputTokenLimit: 65536,
         requiresInteractionStatus: true,
         asyncFunctionsOnly: true,
-        contextHaloCompatibility: 'mapped-not-selectable',
-        compatibilityReason: 'Requires interactionStatus lifecycle handling; turnComplete alone does not mean the interaction is idle.',
+        contextHaloCompatibility: 'supported',
     }),
 });
 
@@ -172,7 +179,6 @@ function geminiModelRouteError(model, route) {
     const id = normalizeGeminiModelId(model);
     const policy = geminiModelPolicy(id);
     if (!/^[a-z0-9][a-z0-9.-]{0,127}$/.test(id)) return 'Enter a valid Gemini model ID in Home.';
-    if (policy?.contextHaloCompatibility === 'mapped-not-selectable') return policy.compatibilityReason;
     if (route === 'live' && policy?.route === 'generate') return 'Choose a Gemini Live model for live audio. The selected model uses text and screen requests.';
     if (route === 'generate' && (policy?.route === 'live' || /^gemini.*(?:-live(?:-|$)|-native-audio)/.test(id))) {
         return 'Choose a Gemini model for text and screen analysis. The selected model uses the Live API.';
@@ -186,13 +192,13 @@ function geminiCapabilityLabel(model) {
     if (policy.lifecycle === 'legacy') return 'Legacy project access · Text/Image · Search';
     if (policy.lifecycle === 'deprecated') return `Deprecated · Google routes requests to ${policy.replacement}; select a current model explicitly`;
     if (policy.route === 'live') {
-        if (policy.contextHaloCompatibility !== 'supported') {
-            return 'Stable · Live audio · Search · Extended Thinking mapped, not enabled';
+        if (policy.requiresInteractionStatus) {
+            return 'Stable · Live audio · Search · Extended Thinking';
         }
         return 'Stable · Live audio · Search · fixed interleaved thinking';
     }
     const thinking = policy.thinkingLevels.length ? `Thinking ${policy.thinkingLevels.join('/')}` : 'Thinking unavailable';
-    return `Stable · Text/Image · Search · ${thinking}`;
+    return `Stable · ${policy.paidOnly ? 'Paid tier · ' : ''}Text/Image · Search · ${thinking}`;
 }
 
 function screenThinkingConfigForModel(model) {

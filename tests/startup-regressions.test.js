@@ -105,12 +105,12 @@ test('current Gemini 3.8 Live starts without a blocking advisory model-list requ
     assert.equal(f.connections.length, 1);
 });
 
-test('a saved Extended Thinking Live model explains its unsupported interaction lifecycle', async t => {
-    const f = geminiFixture({ config: { geminiLiveModel: 'gemini-3.8-live-extended-thinking' } });
+test('a saved Hydrogen selection on the Live route explains which selector to use', async t => {
+    const f = geminiFixture({ config: { geminiLiveModel: 'gemini-4-hydrogen' } });
     t.after(() => f.close());
     const result = await f.start();
     assert.equal(result.success, false);
-    assert.match(result.error, /interactionStatus/);
+    assert.match(result.error, /Gemini Live model/);
     assert.equal(f.connections.length, 0);
 });
 

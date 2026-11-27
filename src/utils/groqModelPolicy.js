@@ -25,6 +25,10 @@ const GROQ_MODEL_POLICY = Object.freeze({
         lifecycle: 'preview', roles: Object.freeze(['chat']), access: 'enterprise',
         contextHaloCompatibility: 'advanced-preview',
     }),
+    'meta-models/muse-spark-open': Object.freeze({
+        lifecycle: 'preview', roles: Object.freeze(['chat', 'vision']), access: 'enterprise',
+        reasoning: Object.freeze(['low', 'medium', 'high', 'xhigh']), contextHaloCompatibility: 'advanced-preview',
+    }),
     'openai/gpt-oss-safeguard-20b': Object.freeze({
         lifecycle: 'preview', roles: Object.freeze(['safety']), contextHaloCompatibility: 'not-chat-default',
     }),

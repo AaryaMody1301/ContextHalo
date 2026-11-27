@@ -249,7 +249,8 @@ function setupGeneralIpcHandlers() {
             const data = await listProviderModels(provider, apiKey, { forceRefresh: forceRefresh === true });
             return { success: true, data };
         } catch (error) {
-            return { success: false, error: error?.message || String(error) };
+            const httpStatus = Number.isInteger(error?.status) ? error.status : null;
+            return { success: false, httpStatus, error: 'The provider model list could not be refreshed.' };
         }
     });
 
