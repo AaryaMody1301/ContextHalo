@@ -13,7 +13,7 @@ const { emitLiveTranscript, extractGeminiTranscript, tuneLiveSystemInstruction }
 const { augmentGenerateParams, augmentLiveTextPayload, retrieveContext, appendContextToInstruction } = require('./knowledgeRagMain');
 const { readSseJson } = require('./sse');
 const { getResponseMode, applyResponseModeInstruction } = require('./realtimeContextCore');
-const { buildGroqMessages, getGroqReasoningOptions } = require('./groqRequestPolicy');
+const { buildGroqMessages, getGroqReasoningOptions, groqHttpFailure } = require('./groqRequestPolicy');
 const { appendSessionPack } = require('./sessionPackMain');
 const { runSessionRequest, resetSessionRequests, closeSessionRequests, cancelSessionRequests, requestIsCurrent,
     assertCurrentRequest, getRequestMetadata, getRequestSignal, markFirstResponse, recordRequestUsage, getRequestMetrics } = require('./sessionRequests');
@@ -506,18 +506,12 @@ function connectGeminiLiveWithGuard(client, params, timeoutMs = 15000, signal) {
     }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); });
 }
 
-function compactGroqErrorBody(body) {
-    try {
-        const parsed = JSON.parse(body);
-        return parsed?.error?.message || parsed?.message || body;
-    } catch {
-        return body || '';
-    }
-}
-
 function captureGroqRateLimitHeaders(headers) {
     if (!headers || typeof headers.get !== 'function') return;
-    const read = name => headers.get(name) || null;
+    const read = name => {
+        const value = headers.get(name);
+        return value && value.length <= 48 && /^(?:\d+(?:\.\d+)?|(?:\d+(?:\.\d+)?(?:ms|[smhd]))+)$/.test(value) ? value : null;
+    };
     groqRateLimitState = {
         limitRequests: read('x-ratelimit-limit-requests'),
         remainingRequests: read('x-ratelimit-remaining-requests'),
@@ -529,19 +523,6 @@ function captureGroqRateLimitHeaders(headers) {
         updatedAt: Date.now(),
     };
     sendToRenderer('groq-rate-limit', groqRateLimitState);
-}
-
-function formatGroqError(status, body, headers) {
-    if (status === 429) {
-        const retryAfter = headers?.get?.('retry-after');
-        const reset = headers?.get?.('x-ratelimit-reset-tokens') || headers?.get?.('x-ratelimit-reset-requests');
-        const detail = compactGroqErrorBody(body);
-        return retryAfter ? `Groq rate limit reached. Retry in ${retryAfter}s.` : `Groq rate limit reached${reset ? ` (reset ${reset})` : ''}${detail ? `: ${detail.slice(0, 180)}` : '.'}`;
-    }
-    if (status === 401) return 'Groq authentication failed. Check the API key.';
-    if (status === 403) return 'Groq request is not permitted for this key/model.';
-    if (status === 413) return 'Groq request is too large. Reduce context.';
-    return `Groq error: ${status}${body ? ` - ${body.slice(0, 180)}` : ''}`;
 }
 
 function sendToGroq(transcription) {
@@ -599,16 +580,10 @@ async function sendToGroqNow(transcription) {
 
         captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
-            const errorText = await response.text();
-            console.warn('Groq API error:');
-            logTransportEvent('groq.text.http_error', {
-                status: response.status,
-                body: errorText,
-            });
-            const message = formatGroqError(response.status, errorText, response.headers);
-            sendToRenderer('update-status', message);
-            sendToRenderer('new-response', message);
-            return { success: false, error: message };
+            logTransportEvent('groq.text.http_error', { status: response.status, model: modelToUse });
+            const result = groqHttpFailure(response, 'text', modelToUse);
+            sendToRenderer('update-status', result.error);
+            return result;
         }
 
         logTransportEvent('groq.text.http_response', {
@@ -655,7 +630,6 @@ async function sendToGroqNow(transcription) {
                 fullText,
                 finishReason,
             });
-            sendToRenderer('new-response', GROQ_EMPTY_RESPONSE_MESSAGE);
             sendToRenderer('update-status', 'Groq returned no text answer');
             return { success: false, error: GROQ_EMPTY_RESPONSE_MESSAGE };
         }
@@ -722,13 +696,8 @@ async function sendImageToGroq(base64Data, prompt) {
 
         captureGroqRateLimitHeaders(response.headers);
         if (!response.ok) {
-            const errorText = await response.text();
-            console.warn('Groq image API error:');
-            logTransportEvent('groq.image.http_error', {
-                status: response.status,
-                body: errorText,
-            });
-            return { success: false, error: formatGroqError(response.status, errorText, response.headers) };
+            logTransportEvent('groq.image.http_error', { status: response.status, model });
+            return groqHttpFailure(response, 'screen', model);
         }
 
         logTransportEvent('groq.image.http_response', {
@@ -797,8 +766,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     let liveResponseId = randomUUID();
     let modelTextBuffer = '';
     let audioTextBuffer = '';
+    let completedUtterances = '';
     let liveGrounding;
     const liveModel = normalizeGeminiModelId(getConfig().geminiLiveModel || 'gemini-3.8-live');
+    const extendedThinking = geminiModelPolicy(liveModel)?.requiresInteractionStatus === true;
     if (!geminiLiveRuntime) {
         geminiLiveRuntime = createGeminiLiveRuntime({
             reconnect: async details => {
@@ -868,16 +839,17 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 if (content.outputTranscription?.text) audioTextBuffer += content.outputTranscription.text;
                 // Some Live models emit both text parts and an audio transcript.
                 // They are alternative views, not two strings to concatenate.
-                const visible = audioTextBuffer || modelTextBuffer;
+                const utterance = audioTextBuffer || modelTextBuffer;
+                const visible = [completedUtterances, utterance].filter(Boolean).join('\n');
                 if (visible && visible !== messageBuffer) {
                     const isFirstChunk = messageBuffer === '';
                     messageBuffer = visible;
                     sendToRenderer(isFirstChunk ? 'new-response' : 'update-response', messageBuffer,
                         { requestId: liveResponseId, kind: 'voice', grounding: publicGrounding(liveGrounding) });
                 }
-                // generationComplete can precede the final transcription. Save
-                // once at turnComplete (or interruption), not at generationComplete.
-                if (content.turnComplete || content.interrupted) {
+                // Extended Thinking can finish several utterances before the interaction is idle.
+                const idle = (content.interactionStatus || message.interactionStatus) === 'IDLE';
+                if (content.interrupted || (extendedThinking ? idle : content.turnComplete)) {
                     if (currentTranscription.trim() && messageBuffer.trim()) {
                         saveConversationTurn(currentTranscription, messageBuffer, publicGrounding(liveGrounding));
                     }
@@ -885,9 +857,14 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     messageBuffer = '';
                     modelTextBuffer = '';
                     audioTextBuffer = '';
+                    completedUtterances = '';
                     liveGrounding = undefined;
                     liveResponseId = randomUUID();
                     sendToRenderer('update-status', content.interrupted ? 'Response interrupted' : 'Gemini ready');
+                } else if (extendedThinking && content.turnComplete && utterance) {
+                    completedUtterances = visible;
+                    modelTextBuffer = '';
+                    audioTextBuffer = '';
                 }
             },
             onerror(error, recovery) {
@@ -945,6 +922,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         return connectGeminiLiveWithGuard(client, {
                             model: liveModel, callbacks,
                             config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                                ...(extendedThinking ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
                                 ...connectConfig,
                                 ...(contextMessage ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
                                 systemInstruction: buildInstruction(searchEnabled), ...(searchEnabled ? { tools: [{ googleSearch: {} }] } : {}) },

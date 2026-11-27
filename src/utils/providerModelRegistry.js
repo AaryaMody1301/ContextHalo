@@ -62,9 +62,7 @@ function normalizeGeminiModel(raw) {
 
 function buildGeminiCatalog(rawModels) {
     const all = sortModels(rawModels.map(normalizeGeminiModel).filter(Boolean));
-    // ContextHalo exposes only documented stable interactive model families.
-    // Gemini 3.8 Live Extended Thinking is mapped below for transparency but is
-    // not selectable until ContextHalo owns its interactionStatus lifecycle.
+    // Require both account-advertised methods and a supported application route.
     const liveIds = new Set(GEMINI_LIVE_SELECTABLE_IDS);
     const mappedLiveIds = new Set(GEMINI_LIVE_MAPPED_IDS);
     const live = all.filter(model => model.methods.includes('bidiGenerateContent') && liveIds.has(model.id));
@@ -90,7 +88,8 @@ function buildGeminiCatalog(rawModels) {
         screen,
         recommended: {
             live: pick(live, ['gemini-3.8-live']),
-            screen: pick(screen, ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']),
+            screen: pick(screen.filter(model => !geminiModelPolicy(model.id)?.paidOnly),
+                ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']),
         },
     };
 }
@@ -126,9 +125,8 @@ function buildGroqCatalog(rawModels) {
     const transcription = all.filter(model => /(whisper|transcrib)/i.test(model.id));
     const nonChat = /(whisper|transcrib|orpheus|tts|speech|(?:^|[-/])guard|safeguard)/i;
     const chat = all.filter(model => !nonChat.test(model.id));
-    const vision = chat.filter(
-        model => /(vision|(?:^|[-/])vl(?:[-/]|$)|maverick|scout|qwen\/qwen3\.(?:6|8)-27b)/i.test(model.id)
-    );
+    const vision = chat.filter(model => model.roles.includes('vision') ||
+        (!model.roles.length && /(vision|(?:^|[-/])vl(?:[-/]|$)|maverick|scout)/i.test(model.id)));
 
     const pick = (list, preferredIds) => {
         for (const id of preferredIds) {
@@ -163,14 +161,11 @@ async function fetchJson(url, options = {}) {
     try {
         const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
         const response = await abortable(() => fetch(url, { ...options, signal }), signal);
-        const text = await abortable(() => response.text(), signal);
         if (!response.ok) {
-            let detail = text;
-            try {
-                detail = JSON.parse(text)?.error?.message || text;
-            } catch {}
-            throw new Error(`HTTP ${response.status}: ${String(detail).slice(0, 240)}`);
+            void response.body?.cancel().catch(() => {});
+            throw Object.assign(new Error(`Provider model list returned HTTP ${response.status}`), { status: response.status });
         }
+        const text = await abortable(() => response.text(), signal);
         return text ? JSON.parse(text) : {};
     } finally {
         clearTimeout(timer);
@@ -248,7 +243,7 @@ function startRefresh(entry, provider, apiKey) {
         return { ...catalog, fetchedAt: entry.fetchedAt, source: 'api', stale: false };
     }).catch(error => {
         signal.throwIfAborted();
-        if (!entry.catalog || Date.now() - entry.fetchedAt >= STALE_TTL_MS) {
+        if ([401, 403].includes(error.status) || !entry.catalog || Date.now() - entry.fetchedAt >= STALE_TTL_MS) {
             discardCatalog(entry);
             throw error;
         }

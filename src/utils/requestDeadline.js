@@ -25,4 +25,15 @@ function deadlineSignal(parent, timeoutMs) {
         },
     };
 }
-module.exports = { abortable, deadlineSignal };
+function parseRetryAfterMs(headers) {
+    const value = headers?.get?.('retry-after')?.trim();
+    if (!value || value.length > 128) return null;
+    if (/^\d+(?:\.\d+)?$/.test(value)) {
+        const ms = Math.ceil(Number(value) * 1000);
+        return Number.isSafeInteger(ms) ? ms : null;
+    }
+    const date = /[a-z]{3}/i.test(value) ? Date.parse(value) : NaN;
+    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+}
+
+module.exports = { abortable, deadlineSignal, parseRetryAfterMs };

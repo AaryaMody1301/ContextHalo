@@ -15,13 +15,16 @@ const {
 test('Gemini policy covers current stable text, screen and Live model families', () => {
     assert.deepEqual(GEMINI_SCREEN_MODEL_IDS.filter(id => geminiModelPolicy(id).lifecycle === 'stable'), [
         'gemini-4-hydrogen',
+        'gemini-4-carbon',
+        'gemini-4-neon',
+        'gemini-4-argon',
         'gemini-3.8-flash',
         'gemini-3.6-flash',
         'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
     ]);
     assert.deepEqual(geminiModelPolicy('gemini-4-hydrogen').thinkingLevels, ['low', 'medium', 'high', 'xhigh']);
-    assert.deepEqual(GEMINI_LIVE_SELECTABLE_IDS, ['gemini-3.8-live']);
+    assert.deepEqual(GEMINI_LIVE_SELECTABLE_IDS, ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
     assert.deepEqual(GEMINI_LIVE_MAPPED_IDS, ['gemini-3.8-live', 'gemini-3.8-live-extended-thinking']);
 
     for (const id of GEMINI_SCREEN_MODEL_IDS.filter(id => geminiModelPolicy(id).lifecycle === 'stable')) {
@@ -76,13 +79,13 @@ test('standard and Extended Thinking Live models remain distinct protocol contra
     assert.equal(standard.defaultThinking, 'interleaved-fixed');
     assert.equal(standard.search, true);
 
-    assert.equal(extended.contextHaloCompatibility, 'mapped-not-selectable');
+    assert.equal(extended.contextHaloCompatibility, 'supported');
     assert.equal(extended.requiresInteractionStatus, true);
     assert.equal(extended.asyncFunctionsOnly, true);
     assert.deepEqual(extended.thinkingLevels, ['low', 'medium', 'high']);
-    assert.match(extended.compatibilityReason, /interactionStatus/);
     assert.equal(extended, GEMINI_MODEL_POLICY['gemini-3.8-live-extended-thinking']);
-    assert.match(geminiCapabilityLabel('gemini-3.8-live-extended-thinking'), /not enabled/);
+    assert.match(geminiCapabilityLabel('gemini-3.8-live-extended-thinking'), /Extended Thinking/);
+    assert.match(geminiCapabilityLabel('gemini-4-neon'), /Paid tier/);
 });
 
 test('unknown, preview and specialized models do not inherit screen thinking support', () => {
@@ -95,6 +98,6 @@ test('model picker renders capability metadata returned by provider discovery', 
     const source = fs.readFileSync('src/utils/dynamicModelRegistryRenderer.js', 'utf8');
     assert.match(source, /model\.capabilityLabel/);
     const main = fs.readFileSync('src/components/views/MainView.js', 'utf8');
-    assert.match(main, /Extended Thinking is mapped but not selectable yet/);
-    assert.match(main, /screen analysis uses low thinking and bounded 503 backoff/);
+    assert.match(main, /Extended Thinking can continue reasoning/);
+    assert.match(main, /Hydrogen supports typed requests and screenshots/);
 });

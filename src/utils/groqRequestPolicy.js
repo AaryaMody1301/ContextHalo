@@ -1,3 +1,4 @@
+const { parseRetryAfterMs } = require('./requestDeadline');
 const QWEN_REASONING_MODELS = /^qwen\/qwen3\.(?:6|8)-27b$/;
 const GPT_OSS_MODELS = /^openai\/gpt-oss-(?:20b|120b)$/;
 
@@ -42,6 +43,9 @@ function formatGroqMessages(model, messages) {
 
 function getGroqReasoningOptions(model, disableThinking) {
     const normalizedModel = String(model || '');
+    if (normalizedModel === 'meta-models/muse-spark-open') {
+        return { reasoning_effort: disableThinking ? 'low' : 'medium' };
+    }
     if (QWEN_REASONING_MODELS.test(normalizedModel)) {
         return {
             reasoning_format: 'hidden',
@@ -57,9 +61,33 @@ function getGroqReasoningOptions(model, disableThinking) {
     return {};
 }
 
+function groqHttpFailure(response, operation, model) {
+    const httpStatus = response.status;
+    // Status and retry timing suffice. Error bodies can echo the user's input.
+    void response.body?.cancel().catch(() => {});
+    const known = {
+        400: ['invalid-configuration', 'Review the selected Groq model and request settings.'],
+        401: ['authentication', 'Check the saved Groq API key.'],
+        403: ['permission', 'Check this key’s access to the selected model in Groq Console.'],
+        404: ['model-unavailable', 'Refresh the Groq model list and review the selected model.'],
+        413: ['request-too-large', 'Reduce the request size.'],
+        429: ['rate-or-quota', 'Groq reached a rate or usage limit.'],
+        498: ['service-unavailable', 'Groq Flex capacity is temporarily unavailable.'],
+    };
+    const [category, advice] = known[httpStatus] || (httpStatus >= 500
+        ? ['service-unavailable', 'Groq is temporarily unavailable. Try again later.']
+        : ['request-failed', 'Review the selected model and request settings.']);
+    const delay = [429, 503].includes(httpStatus) ? parseRetryAfterMs(response.headers) : null;
+    const retryAfterMs = Number.isSafeInteger(delay) ? delay : null;
+    const message = `Groq ${operation} (HTTP ${httpStatus}). ${advice}${retryAfterMs === null ? '' : ` Retry in ${Math.ceil(retryAfterMs / 1000)}s.`}`;
+    return { success: false, error: message, failure: { operation, model, category, httpStatus, message, retryAfterMs,
+        retryAt: retryAfterMs === null ? null : Date.now() + retryAfterMs } };
+}
+
 module.exports = {
     buildGroqMessages,
     formatGroqMessages,
     getGroqReasoningOptions,
+    groqHttpFailure,
     _test: { prependInstruction, normalizedInstruction },
 };

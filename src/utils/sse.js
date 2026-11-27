@@ -13,8 +13,11 @@ async function* readSseJson(body, signal) {
         data = []; dataSize = 0;
         if (value === '[DONE]') { ended = true; return null; }
         if (!value) return null;
-        const event = JSON.parse(value);
-        if (event.error) throw new Error(event.error.message || 'Provider stream failed');
+        let event;
+        try { event = JSON.parse(value); }
+        catch { throw new SyntaxError('The provider sent an invalid JSON stream event.'); }
+        if (!event || typeof event !== 'object' || Array.isArray(event)) throw new SyntaxError('The provider sent an invalid stream event.');
+        if (event.error) throw new Error('The provider reported an error while streaming the answer.');
         return event;
     };
     const line = value => {

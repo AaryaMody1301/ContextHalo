@@ -1,5 +1,5 @@
 const { readSseJson } = require('./sse');
-const { abortable, deadlineSignal } = require('./requestDeadline');
+const { abortable, deadlineSignal, parseRetryAfterMs } = require('./requestDeadline');
 const { assertChatCompletionOutcome } = require('./chatCompletionOutcome');
 const { recordRequestUsage } = require('./sessionRequests');
 const { setTimeout: sleep } = require('node:timers/promises');
@@ -9,7 +9,15 @@ const MISTRAL_MODEL = MISTRAL_MODELS.find(model => model.legacyDefault).id;
 const RATE_LIMIT_HEADERS = { requestsPerMinute: 'x-ratelimit-limit-req-minute', remainingRequestsPerMinute: 'x-ratelimit-remaining-req-minute',
     tokensPerMinute: 'x-ratelimit-limit-tokens-minute', remainingTokensPerMinute: 'x-ratelimit-remaining-tokens-minute' };
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
-const SAFE_ERROR_CODES = new Set(['1300', 'rate_limit_exceeded', 'quota_exceeded', 'insufficient_quota']);
+const BILLING_MESSAGES = Object.freeze({
+    2300: 'The organization reached its monthly spending limit. Check the limit and reset date in Mistral Admin.',
+    2301: 'The workspace reached its monthly spending limit. Check the workspace limit and reset date in Mistral Admin.',
+    2302: 'Mistral reported a payment failure. Ask the organization administrator to review the billing status.',
+    2303: 'The API budget is exhausted. Check available API usage for this workspace in Mistral Admin.',
+    2304: 'The Vibe budget is exhausted. For third-party apps, use a Studio API key with available API usage.',
+    2308: 'The API wallet has no remaining credits. Check the workspace balance in Mistral Admin.',
+});
+const SAFE_ERROR_CODES = new Set(['1300', 'rate_limit_exceeded', 'quota_exceeded', 'insufficient_quota', ...Object.keys(BILLING_MESSAGES)]);
 const SAFE_ERROR_TYPES = new Set(['rate_limited', 'rate_limit_error', 'invalid_request_error', 'authentication_error', 'server_error']);
 let nextRequestAt = 0;
 
@@ -22,7 +30,8 @@ function classifyMistralFailure(error, operation, model = MISTRAL_MODEL) {
     const messages = {
         cancelled: 'Request cancelled.',
         authentication: 'Mistral rejected the credential or project permissions. Check your Mistral API key in provider settings.',
-        billing: 'Mistral requires payment for this request. Check your organization’s API access and included usage in Mistral Admin.',
+        billing: Object.hasOwn(BILLING_MESSAGES, error?.providerCode) ? BILLING_MESSAGES[error.providerCode]
+            : 'Mistral declined this request for billing. Check your organization’s API access and available workspace usage in Mistral Admin.',
         'rate-or-quota': 'Mistral rejected this request under an organization rate or usage limit. Check this model\'s limits and included monthly usage in Mistral Admin. A 429 alone does not identify the limit. If a small request still fails with unused allowance and positive limits, contact Mistral support.',
         'invalid-configuration': 'Mistral rejected the request configuration. Review the question and image input.',
         'model-unavailable': 'The selected Mistral model is unavailable to this account. Check model access in Mistral Studio.',
@@ -36,18 +45,18 @@ function classifyMistralFailure(error, operation, model = MISTRAL_MODEL) {
     }
     const zeroRequestLimit = httpStatus === 429 && rateLimits.requestsPerMinute === 0;
     if (zeroRequestLimit) messages['rate-or-quota'] = 'Mistral currently allows zero requests per minute for this model and key. End this session and explicitly choose another Mistral model, or check model access in Mistral Admin. More retries cannot increase a zero allowance.';
+    const retryable = !cancelled && !zeroRequestLimit && (RETRYABLE_STATUS.has(httpStatus) || !httpStatus && !error?.completionFailure);
     const retryAfterMs = Number.isFinite(error?.retryAfterMs) ? error.retryAfterMs : null;
     return { operation, model: MISTRAL_MODELS.some(item => item.id === model) ? model : MISTRAL_MODEL, category, httpStatus, retryAfterMs,
         ...(Object.keys(rateLimits).length ? { rateLimits } : {}),
         ...(SAFE_ERROR_CODES.has(error?.providerCode) ? { providerCode: error.providerCode } : {}),
         ...(SAFE_ERROR_TYPES.has(error?.providerType) ? { providerType: error.providerType } : {}),
-        retryAt: retryAfterMs === null ? null : Date.now() + retryAfterMs,
-        retryable: !cancelled && !zeroRequestLimit && (RETRYABLE_STATUS.has(httpStatus) || !httpStatus && !error?.completionFailure),
+        retryAt: retryable && retryAfterMs !== null ? Date.now() + retryAfterMs : null, retryable,
         message: messages[category] + (httpStatus ? ` (HTTP ${httpStatus})` : '') };
 }
 
 async function httpFailure(response, signal) {
-    const failure = Object.assign(new Error('Mistral HTTP request failed'), { status: response.status, retryAfterMs: retryDelay(response.headers) });
+    const failure = Object.assign(new Error('Mistral HTTP request failed'), { status: response.status, retryAfterMs: parseRetryAfterMs(response.headers) });
     failure.rateLimits = {};
     for (const [name, header] of Object.entries(RATE_LIMIT_HEADERS)) {
         const raw = response.headers.get(header);
@@ -80,15 +89,6 @@ async function httpFailure(response, signal) {
     }
     signal.throwIfAborted();
     return failure;
-}
-
-function retryDelay(headers) {
-    const value = headers.get('retry-after');
-    if (!value) return null;
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
-    const date = Date.parse(value);
-    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
 function textDelta(content) {

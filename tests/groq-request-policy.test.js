@@ -59,6 +59,11 @@ test('enterprise Qwen 3.6 keeps its legacy reasoning contract', () => {
     assert.equal(getGroqReasoningOptions('qwen/qwen3.6-27b', true).reasoning_effort, 'none');
 });
 
+test('Muse Spark Open uses a supported effort for both thinking settings', () => {
+    assert.deepEqual(getGroqReasoningOptions('meta-models/muse-spark-open', true), { reasoning_effort: 'low' });
+    assert.deepEqual(getGroqReasoningOptions('meta-models/muse-spark-open', false), { reasoning_effort: 'medium' });
+});
+
 test('GPT-OSS keeps its low-latency reasoning policy without unsupported reasoning_format', () => {
     const options = getGroqReasoningOptions('openai/gpt-oss-120b', false);
     assert.deepEqual(options, { include_reasoning: false, reasoning_effort: 'low' });

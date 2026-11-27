@@ -2,7 +2,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const { getRequestSignal } = require('./sessionRequests');
-const { abortable, deadlineSignal } = require('./requestDeadline');
+const { abortable, deadlineSignal, parseRetryAfterMs } = require('./requestDeadline');
 const { classifyProviderRequest, createProviderFetch } = require('./providerRequestMain');
 const { guardGeminiStream } = require('./geminiStreamGuard');
 
@@ -32,18 +32,6 @@ function createAbortError(message) {
     const error = new Error(message);
     error.name = 'AbortError';
     return error;
-}
-
-function parseRetryAfterMs(headers) {
-    const value = headers?.get?.('retry-after');
-    if (!value) return null;
-
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
-
-    const date = Date.parse(value);
-    if (Number.isFinite(date)) return Math.max(0, date - Date.now());
-    return null;
 }
 
 function getRetryDelayMs(response, attempt, random = Math.random) {

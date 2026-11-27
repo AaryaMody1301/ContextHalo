@@ -928,9 +928,15 @@ export class MainView extends LitElement {
             if (this._mode === 'local') return;
             const result = await window.electronAPI.invoke('provider-models:list', provider, forceRefresh === true);
             if (!this.isConnected || this._mode === 'local' || epoch !== this._catalogEpochs[provider]) return;
+            if (!result?.success && [401, 403].includes(result?.httpStatus)) {
+                this[gemini ? '_geminiCatalog' : '_groqCatalog'] = null;
+                this[errorKey] = `Model discovery returned HTTP ${result.httpStatus}. Check the saved key and its model-list permission.`;
+                return;
+            }
             if (!result?.success) throw new Error('Model discovery failed. Check the provider key or retry.');
             this[gemini ? '_geminiCatalog' : '_groqCatalog'] = result.data;
-            const selections = gemini ? [this._geminiLiveModel, this._geminiHttpModel] : [this._groqModel];
+            const selections = gemini ? [this._geminiLiveModel, this._geminiHttpModel]
+                : [this._groqModel, this._groqImageModel, this._groqTranscriptionModel];
             const missing = selections.filter(id => id && !result.data?.all?.some(model =>
                 model.id === (gemini ? id.trim().toLowerCase().replace(/^models\//, '') : id)));
             if (missing.length) {
@@ -1248,13 +1254,11 @@ export class MainView extends LitElement {
         const fields = gemini ? [
             { label: 'Gemini Live Model', value: this._geminiLiveModel, preferred: catalog?.live, all: catalog?.live || [],
                 currentModel: all.find(model => model.id === this._geminiLiveModel), allowAdvanced: false, onSave: this._saveGeminiLiveModel,
-                helper: catalog?.liveMapped?.some(model => model.id === 'gemini-3.8-live-extended-thinking')
-                    ? 'Gemini 3.8 Live is the low-latency default. Extended Thinking is mapped but not selectable yet because Google requires interactionStatus lifecycle handling rather than turnComplete alone.'
-                    : 'Live audio requires bidiGenerateContent support. Search depends on the model and project.' },
+                helper: 'Choose a Live audio model listed for your key. Gemini 3.8 Live is the low-latency default. Extended Thinking can continue reasoning between spoken updates.' },
             { label: 'Text / Screen Analysis Model', value: this._geminiHttpModel, preferred: catalog?.screen, all: catalog?.screen || [],
                 currentModel: all.find(model => model.id === this._geminiHttpModel),
                 allowAdvanced: false, onSave: this._saveGeminiHttpModel,
-                helper: 'Text and screenshots use documented stable Gemini Flash models. Gemini 3.8 Flash is the default; screen analysis uses low thinking and bounded 503 backoff.' },
+                helper: 'Gemini 4 Hydrogen supports typed requests and screenshots. Gemini 3.8 Flash is the default for new installs. Some models require a paid tier.' },
         ] : [
             { label: 'Text / Reasoning Model', value: this._groqModel, preferred: catalog?.chat, all, onSave: this._saveGroqModel },
             { label: 'Screenshot / Vision Model', value: this._groqImageModel, preferred: catalog?.vision, all, onSave: this._saveGroqImageModel,
@@ -1293,7 +1297,7 @@ export class MainView extends LitElement {
                         <select id="mistral-model" .value=${this._mistralModel} ?disabled=${this.sessionActive || this.isInitializing} @change=${event => this._saveMistralModel(event.target.value)}>
                             ${MISTRAL_MODELS.map(model => html`<option value=${model.id} ?selected=${model.id === this._mistralModel}>${model.displayName}${model.recommended ? ' (recommended)' : ''} · ${model.id}</option>`)}
                         </select>
-                        <p>All choices support text and screenshots. Ministral 3 8B is recommended for free evaluation. Model access, rate limits and included usage depend on your Mistral account. Small 4 reasoning is off. End the session before changing models.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
+                        <p>All choices support text and screenshots. Use a Studio API key from a workspace with API access and available usage. Check the workspace allowance in Mistral Admin. Small 4 reasoning is off. End the session before changing models.</p>` : html`<details class="advanced-models"><summary>Advanced: model selection and capabilities</summary>
                         ${fields.map(field => renderModelPicker(this, { ...field, stale: catalog?.stale === true }))}
                     </details>`}
                     <div class="config-note">${gemini ? 'Search preferences apply to the next session. Live audio and text/screen Search may differ after recovery; Session details shows each route.' : `Google Search is not available in ${label} mode. Its saved preference is retained for Gemini.`}</div>

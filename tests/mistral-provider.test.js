@@ -59,6 +59,19 @@ test('Mistral billing denial reaches the selected text and screen model without 
     } finally { await f.close(); }
 });
 
+test('Mistral explains documented billing codes and ignores Retry-After for a permanent denial', async t => {
+    const f = geminiFixture({ config: { mistralModel: 'ministral-8b-2512' }, fetch: async () =>
+        new Response(JSON.stringify({ code: 2303, message: 'private-fixture' }), { status: 402, headers: { 'retry-after': '300' } }) });
+    t.after(() => f.close());
+    assert.equal((await f.start('mistral')).success, true);
+    const result = await f.call('send-text-message', 'Test');
+    assert.equal(result.failure.providerCode, '2303');
+    assert.equal(result.failure.retryAt, null);
+    assert.equal(result.failure.retryable, false);
+    assert.match(result.error, /API budget is exhausted/);
+    assert.doesNotMatch(JSON.stringify(result), /private-fixture/);
+});
+
 test('zero runtime RPM stops retries, preserves safe numeric limits and reports the selected model', async () => {
     let calls = 0;
     const api = loadMain('src/utils/mistral.js', {}, { fetch: async () => {
