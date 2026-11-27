@@ -107,9 +107,9 @@ test('source and dependency checks gate the Windows build for pushes and PRs', (
     const build = workflowJob(workflow, 'build');
     assert.match(build, /^    name: Build ContextHalo Windows x64 EXE$/m);
     assert.match(build, /^    needs: source-check$/m);
-    assert.match(build, /^    if: needs\.source-check\.outputs\.scope != 'source'$/m);
+    assert.match(build, /^    if: needs\.source-check\.outputs\.scope != 'source' && !\(github\.event_name == 'workflow_dispatch' && inputs\.publish == true\)$/m);
     assert.match(build, /BUILD_PORTABLE: \$\{\{ needs\.source-check\.outputs\.scope != 'windows' \}\}/);
-    assert.match(build, /- name: Run all regression tests\n        run: npm test\n/);
+    assert.match(build, /npm test \| Tee-Object -FilePath/);
     assert.match(build, /npm audit --audit-level=high/);
     assert.doesNotMatch(build, /npm audit --omit=dev/);
     const benchmark = build.split('- name: Compare synthetic retrieval performance')[1]?.split('- name:')[0] || '';
@@ -119,7 +119,7 @@ test('source and dependency checks gate the Windows build for pushes and PRs', (
     assert.doesNotMatch(build, /- name: Run Electron behavior and layout smoke test\n        if:/);
     for (const step of ['Resolve release metadata', 'Build portable Windows EXE',
         'Verify portable EXE and record checksum', 'Record portable EXE Authenticode state',
-        'Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale', 'Upload portable EXE artifact']) {
+        'Launch portable EXE at 100, 125, 150 and 200 percent Chromium scale', 'Record verified release candidate', 'Upload portable EXE artifact']) {
         assert.ok(build.includes('      - name: ' + step + '\n        if: env.BUILD_PORTABLE == \'true\'\n'), step);
     }
 });
@@ -127,7 +127,7 @@ test('source and dependency checks gate the Windows build for pushes and PRs', (
 test('release workflow requires explicit publication from main and verifies published identity', () => {
     const workflow = read('.github/workflows/build-windows.yml').replace(/\r\n/g, '\n');
     const releaseGate = "github.repository == 'AaryaMody1301/ContextHalo' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true";
-    assert.match(workflow, /^  workflow_dispatch:\n    inputs:\n      publish:\n(?:        [^\n]+\n)*        type: boolean\n        default: false$/m);
+    assert.match(workflow, /^  workflow_dispatch:\n    inputs:\n      publish:\n(?:        [^\n]+\n)*        type: boolean\n        default: false\n      candidate_run_id:$/m);
     for (const jobId of ['attest-release', 'publish-release']) {
         const condition = workflowJob(workflow, jobId).match(/^    if: (.+)$/m)?.[1];
         assert.equal(condition, releaseGate, jobId);
@@ -135,15 +135,24 @@ test('release workflow requires explicit publication from main and verifies publ
     assert.match(workflow, /Attest validated release artifacts/);
     assert.match(workflow, /actions\/attest@1e69f48acb82d1966a394da916b4c1698aa569d6/);
     assert.match(workflow, /name: Attest ContextHalo Windows release/);
-    assert.match(workflow, /needs: build/);
-    assert.match(workflow, /release\/ContextHalo-Windows-x64\.exe/);
-    assert.match(workflow, /release\/SHA256SUMS\.txt/);
-    assert.match(workflow, /needs: \[build, attest-release\]/);
-    assert.match(workflow, /name: ContextHalo Windows Portable \$\{\{ needs\.build\.outputs\.release_tag \}\}/);
-    assert.match(workflow, /overwrite_files: false/);
-    assert.match(workflow, /fail_on_unmatched_files: true/);
-    assert.match(workflow, /Published release target does not match workflow commit/);
-    assert.match(workflow, /asset\[0\]\.digest -notmatch '\^sha256:/);
+    const attest = workflowJob(workflow, 'attest-release');
+    const publish = workflowJob(workflow, 'publish-release');
+    assert.match(attest, /needs: source-check/);
+    assert.match(attest, /run: node scripts\/verify-windows-release\.js select/);
+    for (const job of [attest, publish]) {
+        assert.match(job, /run-id: \$\{\{ inputs\.candidate_run_id \}\}/);
+        assert.match(job, /node scripts\/verify-windows-release\.js check-files release\/release-candidate\.json/);
+        assert.match(job, /release\/ContextHalo-Windows-x64\.exe/);
+        assert.match(job, /release\/SHA256SUMS\.txt/);
+    }
+    assert.match(attest, /artifact-ids: \$\{\{ steps\.candidate\.outputs\.artifact_id \}\}/);
+    assert.match(publish, /needs: attest-release/);
+    assert.match(publish, /artifact-ids: \$\{\{ needs\.attest-release\.outputs\.artifact_id \}\}/);
+    assert.match(publish, /target_commitish: \$\{\{ needs\.attest-release\.outputs\.release_commit \}\}/);
+    assert.match(publish, /overwrite_files: false/);
+    assert.match(publish, /fail_on_unmatched_files: true/);
+    assert.ok(publish.indexOf('preflight release/release-candidate.json') < publish.indexOf('uses: softprops/'));
+    assert.match(publish, /node scripts\/verify-windows-release\.js verify release\/release-candidate\.json/);
 });
 
 test('automatic release maintenance follows successful publication', () => {
