@@ -1,19 +1,32 @@
 const { requestIsCurrent } = require('./sessionRequests');
+const { groqTranscriptText } = require('./groqRequestPolicy');
 const {
     applyResponseModeInstruction,
     normalizeTranscriptEvent,
 } = require('./realtimeContextCore');
 
+let recentTranscript = { sessionId: null, entries: [] };
+
 function emitLiveTranscript(payload) {
     if (!payload?.sessionId || !requestIsCurrent()) return;
     const event = normalizeTranscriptEvent(payload);
     if (!event) return;
+    if (event.final) {
+        if (recentTranscript.sessionId !== payload.sessionId) recentTranscript = { sessionId: payload.sessionId, entries: [] };
+        recentTranscript.entries = [...recentTranscript.entries.slice(-11), event];
+    }
 
     const { BrowserWindow } = require('electron');
     for (const window of BrowserWindow.getAllWindows()) {
         if (!window || window.isDestroyed()) continue;
         window.webContents.send('live-transcript', { ...event, sessionId: payload.sessionId });
     }
+}
+
+function getRecentTranscript(sessionId, now = Date.now()) {
+    if (!sessionId || recentTranscript.sessionId !== sessionId) return '';
+    return recentTranscript.entries.filter(entry => now - entry.timestamp >= 0 && now - entry.timestamp <= 120000)
+        .map(entry => entry.text).join(' ').slice(-6000);
 }
 
 function observeTranscriptResponse(response, provider, sessionId, getActiveSessionId) {
@@ -23,7 +36,7 @@ function observeTranscriptResponse(response, provider, sessionId, getActiveSessi
         const copy = response.clone();
         void copy.json().then(result => {
             if (sessionId !== getActiveSessionId()) return;
-            const text = typeof result?.text === 'string' ? result.text : '';
+            const text = provider === 'groq' ? groqTranscriptText(result) : typeof result?.text === 'string' ? result.text : '';
             emitLiveTranscript({ provider, text, final: true, timestamp: Date.now(), sessionId });
         }).catch(() => {});
     } catch {}
@@ -65,6 +78,7 @@ const { sanitizeTranscriptHistory, sanitizeMarkers } = require('./sessionData');
 module.exports = {
     observeTranscriptResponse,
     emitLiveTranscript,
+    getRecentTranscript,
     extractGeminiTranscript,
     tuneLiveSystemInstruction,
     sanitizeTranscriptHistory,

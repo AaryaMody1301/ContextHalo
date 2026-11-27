@@ -84,10 +84,24 @@ function groqHttpFailure(response, operation, model) {
         retryAt: retryAfterMs === null ? null : Date.now() + retryAfterMs } };
 }
 
+function groqTranscriptText(result) {
+    if (!Array.isArray(result?.segments) || !result.segments.length) {
+        return typeof result?.text === 'string' ? result.text.trim() : '';
+    }
+    return result.segments.filter(segment => {
+        // Whisper's standard silence rule combines both measurements so quiet,
+        // confidently recognized speech is retained.
+        const silence = Number.isFinite(segment?.no_speech_prob) && segment.no_speech_prob > 0.6;
+        const uncertain = Number.isFinite(segment?.avg_logprob) && segment.avg_logprob < -1;
+        return !(silence && uncertain);
+    }).map(segment => typeof segment?.text === 'string' ? segment.text.trim() : '').filter(Boolean).join(' ');
+}
+
 module.exports = {
     buildGroqMessages,
     formatGroqMessages,
     getGroqReasoningOptions,
     groqHttpFailure,
+    groqTranscriptText,
     _test: { prependInstruction, normalizedInstruction },
 };
